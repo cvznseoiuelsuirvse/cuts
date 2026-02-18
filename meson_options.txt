@@ -1,0 +1,5 @@
+option('use_musl',
+  type: 'boolean',
+  value: false,
+  description: 'Build using musl libc instead of glibc'
+)
