@@ -1,14 +1,15 @@
-#include "server/server.h"
-#include "server/wayland.h"
 #include <stdarg.h>
 #include <stdio.h>
 
+#include "server.h"
+#include "proto/wayland.h"
+
 static char       __error_msg[WL_MAX_STRING_SIZE] = {0};
 static wl_int     __error_code = 0;
-static wl_object  __error_object_id = 0;
+static wl_object_id  __error_object_id = 0;
 
 
-int c_error_set(wl_object object_id, wl_int code, wl_string msg, ...) {
+int c_error_set(wl_object_id object_id, wl_int code, wl_string msg, ...) {
   __error_code = code;
   __error_object_id = object_id;
   

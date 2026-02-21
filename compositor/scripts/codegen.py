@@ -8,7 +8,7 @@ WL_TYPES = {
     "int":      "wl_int",
     "uint":     "wl_uint",
     "fixed":    "wl_fixed",
-    "object":   "wl_object",
+    "object":   "wl_object_id",
     "new_id":   "wl_new_id",
     "string":   "wl_string",
     "array":    "wl_array",
@@ -38,7 +38,7 @@ def parse_event(interface_name: str, event: ET.Element, event_n: int, file_type:
         s += f" /* {desc.text.strip()} */\n"
 
     args = [c for c in event if c.tag == "arg"]
-    s+=f"WL_EVENT {interface_name}_{event_name}(struct wl_connection *conn, wl_object {interface_name}{", " if args else ""}"
+    s+=f"WL_EVENT {interface_name}_{event_name}(struct wl_connection *conn, wl_object_id {interface_name}{", " if args else ""}"
 
     fd = ""
     signature = []
@@ -61,8 +61,12 @@ def parse_event(interface_name: str, event: ET.Element, event_n: int, file_type:
         if arg_c_type == "wl_fd":
             fd = arg_name
 
-        if arg != args[-1]:
+        if arg_c_type == "wl_array":
+            s+=f"{arg_c_type} {arg_name}, wl_uint {arg_name}_size"
+
+        elif arg != args[-1]:
             s+=f"{arg_c_type} {arg_name}, "
+
         else:
             s+=f"{arg_c_type} {arg_name}"
 
@@ -94,10 +98,10 @@ def parse_request(interface_name: str, request: ET.Element, file_type: Literal["
     desc = next(c for c in request if c.tag == "description")
     if interface_name == "wl_registry" and request_name == "bind":
         args = [
-            ET.Element("arg", {"name": "name", "type": "uint"}),
+            ET.Element("arg", {"name": "name",      "type": "uint"}),
             ET.Element("arg", {"name": "interface", "type": "string"}),
-            ET.Element("arg", {"name": "version", "type": "uint"}),
-            ET.Element("arg", {"name": "id", "type": "new_id"}),
+            ET.Element("arg", {"name": "version",   "type": "uint"}),
+            ET.Element("arg", {"name": "id",        "type": "new_id"}),
         ]
     else:
         args = [c for c in request if c.tag == "arg"]
@@ -121,9 +125,9 @@ def parse_request(interface_name: str, request: ET.Element, file_type: Literal["
             decl = "   /*\n"
 
 
-        for i, arg in enumerate(args):
+        for i, arg in enumerate(args, 1):
             attrs = arg.attrib
-            arg_name = attrs["name"]
+            arg_name = attrs["name"] if not attrs.get("interface") else attrs["interface"]
             arg_wl_type = attrs["type"]
             if not attrs.get("enum"):
                 arg_c_type = WL_TYPES[arg_wl_type]
@@ -212,13 +216,13 @@ def parse(xml_path: str, basename: str) -> None:
     tree = ET.parse(xml_path)
     root = tree.getroot()
 
-    h_guard_name = f"CUTS_{os.path.basename(basename).upper()}_H"
+    h_guard_name = f"CUTS_{os.path.basename(basename).replace("-", "_").upper()}_H"
 
     with open(f"{basename}.h", "w") as f:
         f.write(f'#ifndef {h_guard_name}\n')
         f.write(f'#define {h_guard_name}\n\n')
 
-        f.write('#include "server/server.h"\n')
+        f.write('#include "../server.h"\n')
         f.write('#include <stdint.h>\n\n\n')
 
         enums_s = []
@@ -239,8 +243,8 @@ def parse(xml_path: str, basename: str) -> None:
         f.write("#endif")
 
     with open(f"{basename}.c", "w") as f:
-        f.write('#include "server/server.h"\n')
-        f.write(f'#include "server/{os.path.basename(basename)}.h"\n\n')
+        f.write('#include "../server.h"\n')
+        f.write(f'#include "{os.path.basename(basename)}.h"\n\n')
         f.write('#include <stdint.h>\n\n\n')
 
         for child in root:

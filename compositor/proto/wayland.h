@@ -1,7 +1,7 @@
 #ifndef CUTS_WAYLAND_H
 #define CUTS_WAYLAND_H
 
-#include "server/server.h"
+#include "../server.h"
 #include <stdint.h>
 
 
@@ -388,14 +388,14 @@ enum wl_subsurface_error_enum {
 	by the object interface.  As such, each interface defines its
 	own set of error codes.  The message is a brief description
 	of the error, for (debugging) convenience. */
-WL_EVENT wl_display_error(struct wl_connection *conn, wl_object wl_display, wl_object object_id, wl_uint code, wl_string message);
+WL_EVENT wl_display_error(struct wl_connection *conn, wl_object_id wl_display, wl_object_id object_id, wl_uint code, wl_string message);
 
  /* This event is used internally by the object ID management
 	logic. When a client deletes an object that it had created,
 	the server will send this event to acknowledge that it has
 	seen the delete request. When the client receives this event,
 	it will know that it can safely reuse the object ID. */
-WL_EVENT wl_display_delete_id(struct wl_connection *conn, wl_object wl_display, wl_uint id);
+WL_EVENT wl_display_delete_id(struct wl_connection *conn, wl_object_id wl_display, wl_uint id);
 
    /* The sync request asks the server to emit the 'done' event
 	on the returned wl_callback object.  Since requests are
@@ -409,7 +409,7 @@ WL_EVENT wl_display_delete_id(struct wl_connection *conn, wl_object wl_display, 
 
 	The callback_data passed in the callback is undefined and should be ignored.
 
-    @arg0: wl_new_id callback
+    @arg1: wl_new_id wl_callback
    */
 WL_REQUEST wl_display_sync(struct wl_connection *conn, union wl_arg *args);
 
@@ -423,7 +423,7 @@ WL_REQUEST wl_display_sync(struct wl_connection *conn, union wl_arg *args);
 	Therefore, clients should invoke get_registry as infrequently as
 	possible to avoid wasting memory.
 
-    @arg0: wl_new_id registry
+    @arg1: wl_new_id wl_registry
    */
 WL_REQUEST wl_display_get_registry(struct wl_connection *conn, union wl_arg *args);
 
@@ -433,7 +433,7 @@ WL_REQUEST wl_display_get_registry(struct wl_connection *conn, union wl_arg *arg
 	The event notifies the client that a global object with
 	the given name is now available, and it implements the
 	given version of the given interface. */
-WL_EVENT wl_registry_global(struct wl_connection *conn, wl_object wl_registry, wl_uint name, wl_string interface, wl_uint version);
+WL_EVENT wl_registry_global(struct wl_connection *conn, wl_object_id wl_registry, wl_uint name, wl_string interface, wl_uint version);
 
  /* Notify the client of removed global objects.
 
@@ -445,32 +445,32 @@ WL_EVENT wl_registry_global(struct wl_connection *conn, wl_object wl_registry, w
 	The object remains valid and requests to the object will be
 	ignored until the client destroys it, to avoid races between
 	the global going away and a client sending a request to it. */
-WL_EVENT wl_registry_global_remove(struct wl_connection *conn, wl_object wl_registry, wl_uint name);
+WL_EVENT wl_registry_global_remove(struct wl_connection *conn, wl_object_id wl_registry, wl_uint name);
 
    /* Binds a new, client-created object to the server using the
 	specified name as the identifier.
 
-    @arg0: wl_uint name
-    @arg1: wl_string interface
-    @arg2: wl_uint version
-    @arg3: wl_new_id id
+    @arg1: wl_uint name
+    @arg2: wl_string interface
+    @arg3: wl_uint version
+    @arg4: wl_new_id id
    */
 WL_REQUEST wl_registry_bind(struct wl_connection *conn, union wl_arg *args);
 
 
  /* Notify the client when the related request is done. */
-WL_EVENT wl_callback_done(struct wl_connection *conn, wl_object wl_callback, wl_uint callback_data);
+WL_EVENT wl_callback_done(struct wl_connection *conn, wl_object_id wl_callback, wl_uint callback_data);
 
 
    /* Ask the compositor to create a new surface.
 
-    @arg0: wl_new_id id
+    @arg1: wl_new_id wl_surface
    */
 WL_REQUEST wl_compositor_create_surface(struct wl_connection *conn, union wl_arg *args);
 
    /* Ask the compositor to create a new region.
 
-    @arg0: wl_new_id id
+    @arg1: wl_new_id wl_region
    */
 WL_REQUEST wl_compositor_create_region(struct wl_connection *conn, union wl_arg *args);
 
@@ -487,12 +487,12 @@ WL_REQUEST wl_compositor_create_region(struct wl_connection *conn, union wl_arg 
 	so it is valid to destroy the pool immediately after creating
 	a buffer from it.
 
-    @arg0: wl_new_id id
-    @arg1: wl_int offset
-    @arg2: wl_int width
-    @arg3: wl_int height
-    @arg4: wl_int stride
-    @arg5: enum wl_shm_format_enum format
+    @arg1: wl_new_id wl_buffer
+    @arg2: wl_int offset
+    @arg3: wl_int width
+    @arg4: wl_int height
+    @arg5: wl_int stride
+    @arg6: enum wl_shm_format_enum format
    */
 WL_REQUEST wl_shm_pool_create_buffer(struct wl_connection *conn, union wl_arg *args);
 
@@ -514,7 +514,7 @@ WL_REQUEST wl_shm_pool_destroy(struct wl_connection *conn, union wl_arg *args);
 	responsibility to ensure that the file is at least as big as
 	the new pool size.
 
-    @arg0: wl_int size
+    @arg1: wl_int size
    */
 WL_REQUEST wl_shm_pool_resize(struct wl_connection *conn, union wl_arg *args);
 
@@ -522,7 +522,7 @@ WL_REQUEST wl_shm_pool_resize(struct wl_connection *conn, union wl_arg *args);
  /* Informs the client about a valid pixel format that
 	can be used for buffers. Known formats include
 	argb8888 and xrgb8888. */
-WL_EVENT wl_shm_format(struct wl_connection *conn, wl_object wl_shm, enum wl_shm_format_enum format);
+WL_EVENT wl_shm_format(struct wl_connection *conn, wl_object_id wl_shm, enum wl_shm_format_enum format);
 
    /* Create a new wl_shm_pool object.
 
@@ -530,9 +530,9 @@ WL_EVENT wl_shm_format(struct wl_connection *conn, wl_object wl_shm, enum wl_shm
 	objects.  The server will mmap size bytes of the passed file
 	descriptor, to use as backing memory for the pool.
 
-    @arg0: wl_new_id id
-    @arg1: wl_fd fd
-    @arg2: wl_int size
+    @arg1: wl_new_id wl_shm_pool
+    @arg2: wl_fd fd
+    @arg3: wl_int size
    */
 WL_REQUEST wl_shm_create_pool(struct wl_connection *conn, union wl_arg *args);
 
@@ -557,7 +557,7 @@ WL_REQUEST wl_shm_release(struct wl_connection *conn, union wl_arg *args);
 	this is possible, when the compositor maintains a copy of the
 	wl_surface contents, e.g. as a GL texture. This is an important
 	optimization for GL(ES) compositors with wl_shm clients. */
-WL_EVENT wl_buffer_release(struct wl_connection *conn, wl_object wl_buffer);
+WL_EVENT wl_buffer_release(struct wl_connection *conn, wl_object_id wl_buffer);
 
    /* Destroy a buffer. If and how you need to release the backing
 	storage is defined by the buffer factory interface.
@@ -568,13 +568,13 @@ WL_REQUEST wl_buffer_destroy(struct wl_connection *conn, union wl_arg *args);
 
  /* Sent immediately after creating the wl_data_offer object.  One
 	event per offered mime type. */
-WL_EVENT wl_data_offer_offer(struct wl_connection *conn, wl_object wl_data_offer, wl_string mime_type);
+WL_EVENT wl_data_offer_offer(struct wl_connection *conn, wl_object_id wl_data_offer, wl_string mime_type);
 
  /* This event indicates the actions offered by the data source. It
 	will be sent immediately after creating the wl_data_offer object,
 	or anytime the source side changes its offered actions through
 	wl_data_source.set_actions. */
-WL_EVENT wl_data_offer_source_actions(struct wl_connection *conn, wl_object wl_data_offer, enum wl_data_device_manager_dnd_action_enum source_actions);
+WL_EVENT wl_data_offer_source_actions(struct wl_connection *conn, wl_object_id wl_data_offer, enum wl_data_device_manager_dnd_action_enum source_actions);
 
  /* This event indicates the action selected by the compositor after
 	matching the source/destination side actions. Only one action (or
@@ -611,7 +611,7 @@ WL_EVENT wl_data_offer_source_actions(struct wl_connection *conn, wl_object wl_d
 	user (e.g. popping up a menu with the available options). The
 	final wl_data_offer.set_actions and wl_data_offer.accept requests
 	must happen before the call to wl_data_offer.finish. */
-WL_EVENT wl_data_offer_action(struct wl_connection *conn, wl_object wl_data_offer, enum wl_data_device_manager_dnd_action_enum dnd_action);
+WL_EVENT wl_data_offer_action(struct wl_connection *conn, wl_object_id wl_data_offer, enum wl_data_device_manager_dnd_action_enum dnd_action);
 
    /* Indicate that the client can accept the given mime type, or
 	NULL for not accepted.
@@ -628,8 +628,8 @@ WL_EVENT wl_data_offer_action(struct wl_connection *conn, wl_object wl_data_offe
 	wl_data_source.cancelled. Clients may still use this event in
 	conjunction with wl_data_source.action for feedback.
 
-    @arg0: wl_uint serial
-    @arg1: wl_string mime_type
+    @arg1: wl_uint serial
+    @arg2: wl_string mime_type
    */
 WL_REQUEST wl_data_offer_accept(struct wl_connection *conn, union wl_arg *args);
 
@@ -649,8 +649,8 @@ WL_REQUEST wl_data_offer_accept(struct wl_connection *conn, union wl_arg *args);
 	clients may preemptively fetch data or examine it more closely to
 	determine acceptance.
 
-    @arg0: wl_string mime_type
-    @arg1: wl_fd fd
+    @arg1: wl_string mime_type
+    @arg2: wl_fd fd
    */
 WL_REQUEST wl_data_offer_receive(struct wl_connection *conn, union wl_arg *args);
 
@@ -705,8 +705,8 @@ WL_REQUEST wl_data_offer_finish(struct wl_connection *conn, union wl_arg *args);
 	This request can only be made on drag-and-drop offers, a protocol error
 	will be raised otherwise.
 
-    @arg0: enum wl_data_device_manager_dnd_action_enum dnd_actions
-    @arg1: enum wl_data_device_manager_dnd_action_enum preferred_action
+    @arg1: enum wl_data_device_manager_dnd_action_enum dnd_actions
+    @arg2: enum wl_data_device_manager_dnd_action_enum preferred_action
    */
 WL_REQUEST wl_data_offer_set_actions(struct wl_connection *conn, union wl_arg *args);
 
@@ -715,12 +715,12 @@ WL_REQUEST wl_data_offer_set_actions(struct wl_connection *conn, union wl_arg *a
 	a target does not accept any of the offered types, type is NULL.
 
 	Used for feedback during drag-and-drop. */
-WL_EVENT wl_data_source_target(struct wl_connection *conn, wl_object wl_data_source, wl_string mime_type);
+WL_EVENT wl_data_source_target(struct wl_connection *conn, wl_object_id wl_data_source, wl_string mime_type);
 
  /* Request for data from the client.  Send the data as the
 	specified mime type over the passed file descriptor, then
 	close it. */
-WL_EVENT wl_data_source_send(struct wl_connection *conn, wl_object wl_data_source, wl_string mime_type, wl_fd fd);
+WL_EVENT wl_data_source_send(struct wl_connection *conn, wl_object_id wl_data_source, wl_string mime_type, wl_fd fd);
 
  /* This data source is no longer valid. There are several reasons why
 	this could happen:
@@ -742,7 +742,7 @@ WL_EVENT wl_data_source_send(struct wl_connection *conn, wl_object wl_data_sourc
 	For objects of version 2 or older, wl_data_source.cancelled will
 	only be emitted if the data source was replaced by another data
 	source. */
-WL_EVENT wl_data_source_cancelled(struct wl_connection *conn, wl_object wl_data_source);
+WL_EVENT wl_data_source_cancelled(struct wl_connection *conn, wl_object_id wl_data_source);
 
  /* The user performed the drop action. This event does not indicate
 	acceptance, wl_data_source.cancelled may still be emitted afterwards
@@ -753,7 +753,7 @@ WL_EVENT wl_data_source_cancelled(struct wl_connection *conn, wl_object wl_data_
 
 	Note that the data_source may still be used in the future and should
 	not be destroyed here. */
-WL_EVENT wl_data_source_dnd_drop_performed(struct wl_connection *conn, wl_object wl_data_source);
+WL_EVENT wl_data_source_dnd_drop_performed(struct wl_connection *conn, wl_object_id wl_data_source);
 
  /* The drop destination finished interoperating with this data
 	source, so the client is now free to destroy this data source and
@@ -761,7 +761,7 @@ WL_EVENT wl_data_source_dnd_drop_performed(struct wl_connection *conn, wl_object
 
 	If the action used to perform the operation was "move", the
 	source can now delete the transferred data. */
-WL_EVENT wl_data_source_dnd_finished(struct wl_connection *conn, wl_object wl_data_source);
+WL_EVENT wl_data_source_dnd_finished(struct wl_connection *conn, wl_object_id wl_data_source);
 
  /* This event indicates the action selected by the compositor after
 	matching the source/destination side actions. Only one action (or
@@ -788,13 +788,13 @@ WL_EVENT wl_data_source_dnd_finished(struct wl_connection *conn, wl_object wl_da
 
 	Clients can trigger cursor surface changes from this point, so
 	they reflect the current action. */
-WL_EVENT wl_data_source_action(struct wl_connection *conn, wl_object wl_data_source, enum wl_data_device_manager_dnd_action_enum dnd_action);
+WL_EVENT wl_data_source_action(struct wl_connection *conn, wl_object_id wl_data_source, enum wl_data_device_manager_dnd_action_enum dnd_action);
 
    /* This request adds a mime type to the set of mime types
 	advertised to targets.  Can be called several times to offer
 	multiple types.
 
-    @arg0: wl_string mime_type
+    @arg1: wl_string mime_type
    */
 WL_REQUEST wl_data_source_offer(struct wl_connection *conn, union wl_arg *args);
 
@@ -815,7 +815,7 @@ WL_REQUEST wl_data_source_destroy(struct wl_connection *conn, union wl_arg *args
 	wl_data_device.start_drag. Attempting to use the source other than
 	for drag-and-drop will raise a protocol error.
 
-    @arg0: enum wl_data_device_manager_dnd_action_enum dnd_actions
+    @arg1: enum wl_data_device_manager_dnd_action_enum dnd_actions
    */
 WL_REQUEST wl_data_source_set_actions(struct wl_connection *conn, union wl_arg *args);
 
@@ -827,24 +827,24 @@ WL_REQUEST wl_data_source_set_actions(struct wl_connection *conn, union wl_arg *
 	following the data_device.data_offer event, the new data_offer
 	object will send out data_offer.offer events to describe the
 	mime types it offers. */
-WL_EVENT wl_data_device_data_offer(struct wl_connection *conn, wl_object wl_data_device, wl_new_id wl_data_offer);
+WL_EVENT wl_data_device_data_offer(struct wl_connection *conn, wl_object_id wl_data_device, wl_new_id wl_data_offer);
 
  /* This event is sent when an active drag-and-drop pointer enters
 	a surface owned by the client.  The position of the pointer at
 	enter time is provided by the x and y arguments, in surface-local
 	coordinates. */
-WL_EVENT wl_data_device_enter(struct wl_connection *conn, wl_object wl_data_device, wl_uint serial, wl_object wl_surface, wl_fixed x, wl_fixed y, wl_object wl_data_offer);
+WL_EVENT wl_data_device_enter(struct wl_connection *conn, wl_object_id wl_data_device, wl_uint serial, wl_object_id wl_surface, wl_fixed x, wl_fixed y, wl_object_id wl_data_offer);
 
  /* This event is sent when the drag-and-drop pointer leaves the
 	surface and the session ends.  The client must destroy the
 	wl_data_offer introduced at enter time at this point. */
-WL_EVENT wl_data_device_leave(struct wl_connection *conn, wl_object wl_data_device);
+WL_EVENT wl_data_device_leave(struct wl_connection *conn, wl_object_id wl_data_device);
 
  /* This event is sent when the drag-and-drop pointer moves within
 	the currently focused surface. The new position of the pointer
 	is provided by the x and y arguments, in surface-local
 	coordinates. */
-WL_EVENT wl_data_device_motion(struct wl_connection *conn, wl_object wl_data_device, wl_uint time, wl_fixed x, wl_fixed y);
+WL_EVENT wl_data_device_motion(struct wl_connection *conn, wl_object_id wl_data_device, wl_uint time, wl_fixed x, wl_fixed y);
 
  /* The event is sent when a drag-and-drop operation is ended
 	because the implicit grab is removed.
@@ -859,7 +859,7 @@ WL_EVENT wl_data_device_motion(struct wl_connection *conn, wl_object wl_data_dev
 	final. The drag-and-drop destination is expected to perform one last
 	wl_data_offer.set_actions request, or wl_data_offer.destroy in order
 	to cancel the operation. */
-WL_EVENT wl_data_device_drop(struct wl_connection *conn, wl_object wl_data_device);
+WL_EVENT wl_data_device_drop(struct wl_connection *conn, wl_object_id wl_data_device);
 
  /* The selection event is sent out to notify the client of a new
 	wl_data_offer for the selection for this device.  The
@@ -873,7 +873,7 @@ WL_EVENT wl_data_device_drop(struct wl_connection *conn, wl_object wl_data_devic
 	keyboard focus within the same client doesn't mean a new selection
 	will be sent.  The client must destroy the previous selection
 	data_offer, if any, upon receiving this event. */
-WL_EVENT wl_data_device_selection(struct wl_connection *conn, wl_object wl_data_device, wl_object wl_data_offer);
+WL_EVENT wl_data_device_selection(struct wl_connection *conn, wl_object_id wl_data_device, wl_object_id wl_data_offer);
 
    /* This request asks the compositor to start a drag-and-drop
 	operation on behalf of the client.
@@ -905,10 +905,10 @@ WL_EVENT wl_data_device_selection(struct wl_connection *conn, wl_object wl_data_
 	start_drag requests. Attempting to reuse a previously-used source
 	may send a used_source error.
 
-    @arg0: wl_object source
-    @arg1: wl_object origin
-    @arg2: wl_object icon
-    @arg3: wl_uint serial
+    @arg1: wl_object_id wl_data_source
+    @arg2: wl_object_id wl_surface
+    @arg3: wl_object_id wl_surface
+    @arg4: wl_uint serial
    */
 WL_REQUEST wl_data_device_start_drag(struct wl_connection *conn, union wl_arg *args);
 
@@ -921,8 +921,8 @@ WL_REQUEST wl_data_device_start_drag(struct wl_connection *conn, union wl_arg *a
 	start_drag requests. Attempting to reuse a previously-used source
 	may send a used_source error.
 
-    @arg0: wl_object source
-    @arg1: wl_uint serial
+    @arg1: wl_object_id wl_data_source
+    @arg2: wl_uint serial
    */
 WL_REQUEST wl_data_device_set_selection(struct wl_connection *conn, union wl_arg *args);
 
@@ -932,14 +932,14 @@ WL_REQUEST wl_data_device_release(struct wl_connection *conn, union wl_arg *args
 
    /* Create a new data source.
 
-    @arg0: wl_new_id id
+    @arg1: wl_new_id wl_data_source
    */
 WL_REQUEST wl_data_device_manager_create_data_source(struct wl_connection *conn, union wl_arg *args);
 
    /* Create a new data device for a given seat.
 
-    @arg0: wl_new_id id
-    @arg1: wl_object seat
+    @arg1: wl_new_id wl_data_device
+    @arg2: wl_object_id wl_seat
    */
 WL_REQUEST wl_data_device_manager_get_data_device(struct wl_connection *conn, union wl_arg *args);
 
@@ -950,15 +950,15 @@ WL_REQUEST wl_data_device_manager_get_data_device(struct wl_connection *conn, un
 
 	Only one shell surface can be associated with a given surface.
 
-    @arg0: wl_new_id id
-    @arg1: wl_object surface
+    @arg1: wl_new_id wl_shell_surface
+    @arg2: wl_object_id wl_surface
    */
 WL_REQUEST wl_shell_get_shell_surface(struct wl_connection *conn, union wl_arg *args);
 
 
  /* Ping a client to check if it is receiving events and sending
 	requests. A client is expected to reply with a pong request. */
-WL_EVENT wl_shell_surface_ping(struct wl_connection *conn, wl_object wl_shell_surface, wl_uint serial);
+WL_EVENT wl_shell_surface_ping(struct wl_connection *conn, wl_object_id wl_shell_surface, wl_uint serial);
 
  /* The configure event asks the client to resize its surface.
 
@@ -977,17 +977,17 @@ WL_EVENT wl_shell_surface_ping(struct wl_connection *conn, wl_object wl_shell_su
 
 	The width and height arguments specify the size of the window
 	in surface-local coordinates. */
-WL_EVENT wl_shell_surface_configure(struct wl_connection *conn, wl_object wl_shell_surface, enum wl_shell_surface_resize_enum edges, wl_int width, wl_int height);
+WL_EVENT wl_shell_surface_configure(struct wl_connection *conn, wl_object_id wl_shell_surface, enum wl_shell_surface_resize_enum edges, wl_int width, wl_int height);
 
  /* The popup_done event is sent out when a popup grab is broken,
 	that is, when the user clicks a surface that doesn't belong
 	to the client owning the popup surface. */
-WL_EVENT wl_shell_surface_popup_done(struct wl_connection *conn, wl_object wl_shell_surface);
+WL_EVENT wl_shell_surface_popup_done(struct wl_connection *conn, wl_object_id wl_shell_surface);
 
    /* A client must respond to a ping event with a pong request or
 	the client may be deemed unresponsive.
 
-    @arg0: wl_uint serial
+    @arg1: wl_uint serial
    */
 WL_REQUEST wl_shell_surface_pong(struct wl_connection *conn, union wl_arg *args);
 
@@ -997,8 +997,8 @@ WL_REQUEST wl_shell_surface_pong(struct wl_connection *conn, union wl_arg *args)
 	The server may ignore move requests depending on the state of
 	the surface (e.g. fullscreen or maximized).
 
-    @arg0: wl_object seat
-    @arg1: wl_uint serial
+    @arg1: wl_object_id wl_seat
+    @arg2: wl_uint serial
    */
 WL_REQUEST wl_shell_surface_move(struct wl_connection *conn, union wl_arg *args);
 
@@ -1008,9 +1008,9 @@ WL_REQUEST wl_shell_surface_move(struct wl_connection *conn, union wl_arg *args)
 	The server may ignore resize requests depending on the state of
 	the surface (e.g. fullscreen or maximized).
 
-    @arg0: wl_object seat
-    @arg1: wl_uint serial
-    @arg2: enum wl_shell_surface_resize_enum edges
+    @arg1: wl_object_id wl_seat
+    @arg2: wl_uint serial
+    @arg3: enum wl_shell_surface_resize_enum edges
    */
 WL_REQUEST wl_shell_surface_resize(struct wl_connection *conn, union wl_arg *args);
 
@@ -1027,10 +1027,10 @@ WL_REQUEST wl_shell_surface_set_toplevel(struct wl_connection *conn, union wl_ar
 
 	The flags argument controls details of the transient behaviour.
 
-    @arg0: wl_object parent
-    @arg1: wl_int x
-    @arg2: wl_int y
-    @arg3: enum wl_shell_surface_transient_enum flags
+    @arg1: wl_object_id wl_surface
+    @arg2: wl_int x
+    @arg3: wl_int y
+    @arg4: enum wl_shell_surface_transient_enum flags
    */
 WL_REQUEST wl_shell_surface_set_transient(struct wl_connection *conn, union wl_arg *args);
 
@@ -1068,9 +1068,9 @@ WL_REQUEST wl_shell_surface_set_transient(struct wl_connection *conn, union wl_a
 	with the dimensions for the output on which the surface will
 	be made fullscreen.
 
-    @arg0: enum wl_shell_surface_fullscreen_method_enum method
-    @arg1: wl_uint framerate
-    @arg2: wl_object output
+    @arg1: enum wl_shell_surface_fullscreen_method_enum method
+    @arg2: wl_uint framerate
+    @arg3: wl_object_id wl_output
    */
 WL_REQUEST wl_shell_surface_set_fullscreen(struct wl_connection *conn, union wl_arg *args);
 
@@ -1094,12 +1094,12 @@ WL_REQUEST wl_shell_surface_set_fullscreen(struct wl_connection *conn, union wl_
 	corner of the surface relative to the upper left corner of the
 	parent surface, in surface-local coordinates.
 
-    @arg0: wl_object seat
-    @arg1: wl_uint serial
-    @arg2: wl_object parent
-    @arg3: wl_int x
-    @arg4: wl_int y
-    @arg5: enum wl_shell_surface_transient_enum flags
+    @arg1: wl_object_id wl_seat
+    @arg2: wl_uint serial
+    @arg3: wl_object_id wl_surface
+    @arg4: wl_int x
+    @arg5: wl_int y
+    @arg6: enum wl_shell_surface_transient_enum flags
    */
 WL_REQUEST wl_shell_surface_set_popup(struct wl_connection *conn, union wl_arg *args);
 
@@ -1122,7 +1122,7 @@ WL_REQUEST wl_shell_surface_set_popup(struct wl_connection *conn, union wl_arg *
 
 	The details depend on the compositor implementation.
 
-    @arg0: wl_object output
+    @arg1: wl_object_id wl_output
    */
 WL_REQUEST wl_shell_surface_set_maximized(struct wl_connection *conn, union wl_arg *args);
 
@@ -1134,7 +1134,7 @@ WL_REQUEST wl_shell_surface_set_maximized(struct wl_connection *conn, union wl_a
 
 	The string must be encoded in UTF-8.
 
-    @arg0: wl_string title
+    @arg1: wl_string title
    */
 WL_REQUEST wl_shell_surface_set_title(struct wl_connection *conn, union wl_arg *args);
 
@@ -1145,7 +1145,7 @@ WL_REQUEST wl_shell_surface_set_title(struct wl_connection *conn, union wl_arg *
 	file name (or the full path if it is a non-standard location) of
 	the application's .desktop file as the class.
 
-    @arg0: wl_string class_
+    @arg1: wl_string class_
    */
 WL_REQUEST wl_shell_surface_set_class(struct wl_connection *conn, union wl_arg *args);
 
@@ -1155,7 +1155,7 @@ WL_REQUEST wl_shell_surface_set_class(struct wl_connection *conn, union wl_arg *
 	output.
 
 	Note that a surface may be overlapping with zero or more outputs. */
-WL_EVENT wl_surface_enter(struct wl_connection *conn, wl_object wl_surface, wl_object wl_output);
+WL_EVENT wl_surface_enter(struct wl_connection *conn, wl_object_id wl_surface, wl_object_id wl_output);
 
  /* This is emitted whenever a surface's creation, movement, or resizing
 	results in it no longer having any part of it within the scanout region
@@ -1166,7 +1166,7 @@ WL_EVENT wl_surface_enter(struct wl_connection *conn, wl_object wl_surface, wl_o
 	has been sent, and the compositor might expect new surface content
 	updates even if no enter event has been sent. The frame event should be
 	used instead. */
-WL_EVENT wl_surface_leave(struct wl_connection *conn, wl_object wl_surface, wl_object wl_output);
+WL_EVENT wl_surface_leave(struct wl_connection *conn, wl_object_id wl_surface, wl_object_id wl_output);
 
  /* This event indicates the preferred buffer scale for this surface. It is
 	sent whenever the compositor's preference changes.
@@ -1180,7 +1180,7 @@ WL_EVENT wl_surface_leave(struct wl_connection *conn, wl_object wl_surface, wl_o
 	buffer.
 
 	The compositor shall emit a scale value greater than 0. */
-WL_EVENT wl_surface_preferred_buffer_scale(struct wl_connection *conn, wl_object wl_surface, wl_int factor);
+WL_EVENT wl_surface_preferred_buffer_scale(struct wl_connection *conn, wl_object_id wl_surface, wl_int factor);
 
  /* This event indicates the preferred buffer transform for this surface.
 	It is sent whenever the compositor's preference changes.
@@ -1191,7 +1191,7 @@ WL_EVENT wl_surface_preferred_buffer_scale(struct wl_connection *conn, wl_object
 	Applying this transformation to the surface buffer contents and using
 	wl_surface.set_buffer_transform might allow the compositor to use the
 	surface buffer more efficiently. */
-WL_EVENT wl_surface_preferred_buffer_transform(struct wl_connection *conn, wl_object wl_surface, enum wl_output_transform_enum transform);
+WL_EVENT wl_surface_preferred_buffer_transform(struct wl_connection *conn, wl_object_id wl_surface, enum wl_output_transform_enum transform);
 
    /* Deletes the surface and invalidates its object ID. */
 WL_REQUEST wl_surface_destroy(struct wl_connection *conn, union wl_arg *args);
@@ -1262,9 +1262,9 @@ WL_REQUEST wl_surface_destroy(struct wl_connection *conn, union wl_arg *args);
 	ensure that they explicitly remove content from surfaces, even after
 	destroying buffers.
 
-    @arg0: wl_object buffer
-    @arg1: wl_int x
-    @arg2: wl_int y
+    @arg1: wl_object_id wl_buffer
+    @arg2: wl_int x
+    @arg3: wl_int y
    */
 WL_REQUEST wl_surface_attach(struct wl_connection *conn, union wl_arg *args);
 
@@ -1290,10 +1290,10 @@ WL_REQUEST wl_surface_attach(struct wl_connection *conn, union wl_arg *args);
 	posted with wl_surface.damage_buffer which uses buffer coordinates
 	instead of surface coordinates.
 
-    @arg0: wl_int x
-    @arg1: wl_int y
-    @arg2: wl_int width
-    @arg3: wl_int height
+    @arg1: wl_int x
+    @arg2: wl_int y
+    @arg3: wl_int width
+    @arg4: wl_int height
    */
 WL_REQUEST wl_surface_damage(struct wl_connection *conn, union wl_arg *args);
 
@@ -1330,7 +1330,7 @@ WL_REQUEST wl_surface_damage(struct wl_connection *conn, union wl_arg *args);
 	The callback_data passed in the callback is the current time, in
 	milliseconds, with an undefined base.
 
-    @arg0: wl_new_id callback
+    @arg1: wl_new_id wl_callback
    */
 WL_REQUEST wl_surface_frame(struct wl_connection *conn, union wl_arg *args);
 
@@ -1359,7 +1359,7 @@ WL_REQUEST wl_surface_frame(struct wl_connection *conn, union wl_arg *args);
 	destroyed immediately. A NULL wl_region causes the pending opaque
 	region to be set to empty.
 
-    @arg0: wl_object region
+    @arg1: wl_object_id wl_region
    */
 WL_REQUEST wl_surface_set_opaque_region(struct wl_connection *conn, union wl_arg *args);
 
@@ -1386,7 +1386,7 @@ WL_REQUEST wl_surface_set_opaque_region(struct wl_connection *conn, union wl_arg
 	immediately. A NULL wl_region causes the input region to be set
 	to infinite.
 
-    @arg0: wl_object region
+    @arg1: wl_object_id wl_region
    */
 WL_REQUEST wl_surface_set_input_region(struct wl_connection *conn, union wl_arg *args);
 
@@ -1443,7 +1443,7 @@ WL_REQUEST wl_surface_commit(struct wl_connection *conn, union wl_arg *args);
 	wl_output.transform enum the invalid_transform protocol error
 	is raised.
 
-    @arg0: enum wl_output_transform_enum transform
+    @arg1: enum wl_output_transform_enum transform
    */
 WL_REQUEST wl_surface_set_buffer_transform(struct wl_connection *conn, union wl_arg *args);
 
@@ -1471,7 +1471,7 @@ WL_REQUEST wl_surface_set_buffer_transform(struct wl_connection *conn, union wl_
 	If scale is not greater than 0 the invalid_scale protocol error is
 	raised.
 
-    @arg0: wl_int scale
+    @arg1: wl_int scale
    */
 WL_REQUEST wl_surface_set_buffer_scale(struct wl_connection *conn, union wl_arg *args);
 
@@ -1508,10 +1508,10 @@ WL_REQUEST wl_surface_set_buffer_scale(struct wl_connection *conn, union wl_arg 
 	two requests separately and only transform from one to the other
 	after receiving the wl_surface.commit.
 
-    @arg0: wl_int x
-    @arg1: wl_int y
-    @arg2: wl_int width
-    @arg3: wl_int height
+    @arg1: wl_int x
+    @arg2: wl_int y
+    @arg3: wl_int width
+    @arg4: wl_int height
    */
 WL_REQUEST wl_surface_damage_buffer(struct wl_connection *conn, union wl_arg *args);
 
@@ -1531,8 +1531,8 @@ WL_REQUEST wl_surface_damage_buffer(struct wl_connection *conn, union wl_arg *ar
 	arguments in the wl_surface.attach request in wl_surface versions prior
 	to 5. See wl_surface.attach for details.
 
-    @arg0: wl_int x
-    @arg1: wl_int y
+    @arg1: wl_int x
+    @arg2: wl_int y
    */
 WL_REQUEST wl_surface_offset(struct wl_connection *conn, union wl_arg *args);
 
@@ -1562,7 +1562,7 @@ WL_REQUEST wl_surface_offset(struct wl_connection *conn, union wl_arg *args);
 
 	The above behavior also applies to wl_keyboard and wl_touch with the
 	keyboard and touch capabilities, respectively. */
-WL_EVENT wl_seat_capabilities(struct wl_connection *conn, wl_object wl_seat, enum wl_seat_capability_enum capabilities);
+WL_EVENT wl_seat_capabilities(struct wl_connection *conn, wl_object_id wl_seat, enum wl_seat_capability_enum capabilities);
 
  /* In a multi-seat configuration the seat name can be used by clients to
 	help identify which physical devices the seat represents.
@@ -1580,7 +1580,7 @@ WL_EVENT wl_seat_capabilities(struct wl_connection *conn, wl_object wl_seat, enu
 
 	Compositors may re-use the same seat name if the wl_seat global is
 	destroyed and re-created later. */
-WL_EVENT wl_seat_name(struct wl_connection *conn, wl_object wl_seat, wl_string name);
+WL_EVENT wl_seat_name(struct wl_connection *conn, wl_object_id wl_seat, wl_string name);
 
    /* The ID provided will be initialized to the wl_pointer interface
 	for this seat.
@@ -1591,7 +1591,7 @@ WL_EVENT wl_seat_name(struct wl_connection *conn, wl_object wl_seat, wl_string n
 	never had the pointer capability. The missing_capability error will
 	be sent in this case.
 
-    @arg0: wl_new_id id
+    @arg1: wl_new_id wl_pointer
    */
 WL_REQUEST wl_seat_get_pointer(struct wl_connection *conn, union wl_arg *args);
 
@@ -1604,7 +1604,7 @@ WL_REQUEST wl_seat_get_pointer(struct wl_connection *conn, union wl_arg *args);
 	never had the keyboard capability. The missing_capability error will
 	be sent in this case.
 
-    @arg0: wl_new_id id
+    @arg1: wl_new_id wl_keyboard
    */
 WL_REQUEST wl_seat_get_keyboard(struct wl_connection *conn, union wl_arg *args);
 
@@ -1617,7 +1617,7 @@ WL_REQUEST wl_seat_get_keyboard(struct wl_connection *conn, union wl_arg *args);
 	never had the touch capability. The missing_capability error will
 	be sent in this case.
 
-    @arg0: wl_new_id id
+    @arg1: wl_new_id wl_touch
    */
 WL_REQUEST wl_seat_get_touch(struct wl_connection *conn, union wl_arg *args);
 
@@ -1632,19 +1632,19 @@ WL_REQUEST wl_seat_release(struct wl_connection *conn, union wl_arg *args);
 	When a seat's focus enters a surface, the pointer image
 	is undefined and a client should respond to this event by setting
 	an appropriate pointer image with the set_cursor request. */
-WL_EVENT wl_pointer_enter(struct wl_connection *conn, wl_object wl_pointer, wl_uint serial, wl_object wl_surface, wl_fixed surface_x, wl_fixed surface_y);
+WL_EVENT wl_pointer_enter(struct wl_connection *conn, wl_object_id wl_pointer, wl_uint serial, wl_object_id wl_surface, wl_fixed surface_x, wl_fixed surface_y);
 
  /* Notification that this seat's pointer is no longer focused on
 	a certain surface.
 
 	The leave notification is sent before the enter notification
 	for the new focus. */
-WL_EVENT wl_pointer_leave(struct wl_connection *conn, wl_object wl_pointer, wl_uint serial, wl_object wl_surface);
+WL_EVENT wl_pointer_leave(struct wl_connection *conn, wl_object_id wl_pointer, wl_uint serial, wl_object_id wl_surface);
 
  /* Notification of pointer location change. The arguments
 	surface_x and surface_y are the location relative to the
 	focused surface. */
-WL_EVENT wl_pointer_motion(struct wl_connection *conn, wl_object wl_pointer, wl_uint time, wl_fixed surface_x, wl_fixed surface_y);
+WL_EVENT wl_pointer_motion(struct wl_connection *conn, wl_object_id wl_pointer, wl_uint time, wl_fixed surface_x, wl_fixed surface_y);
 
  /* Mouse button click and release notifications.
 
@@ -1660,7 +1660,7 @@ WL_EVENT wl_pointer_motion(struct wl_connection *conn, wl_object wl_pointer, wl_
 	kernel's event code list. All other button codes above 0xFFFF are
 	currently undefined but may be used in future versions of this
 	protocol. */
-WL_EVENT wl_pointer_button(struct wl_connection *conn, wl_object wl_pointer, wl_uint serial, wl_uint time, wl_uint button, enum wl_pointer_button_state_enum state);
+WL_EVENT wl_pointer_button(struct wl_connection *conn, wl_object_id wl_pointer, wl_uint serial, wl_uint time, wl_uint button, enum wl_pointer_button_state_enum state);
 
  /* Scroll and other axis notifications.
 
@@ -1678,7 +1678,7 @@ WL_EVENT wl_pointer_button(struct wl_connection *conn, wl_object wl_pointer, wl_
 
 	When applicable, a client can transform its content relative to the
 	scroll distance. */
-WL_EVENT wl_pointer_axis(struct wl_connection *conn, wl_object wl_pointer, wl_uint time, enum wl_pointer_axis_enum axis, wl_fixed value);
+WL_EVENT wl_pointer_axis(struct wl_connection *conn, wl_object_id wl_pointer, wl_uint time, enum wl_pointer_axis_enum axis, wl_fixed value);
 
  /* Indicates the end of a set of events that logically belong together.
 	A client is expected to accumulate the data in all events within the
@@ -1714,7 +1714,7 @@ WL_EVENT wl_pointer_axis(struct wl_connection *conn, wl_object wl_pointer, wl_ui
 	Compositor-specific policies may require the wl_pointer.leave and
 	wl_pointer.enter event being split across multiple wl_pointer.frame
 	groups. */
-WL_EVENT wl_pointer_frame(struct wl_connection *conn, wl_object wl_pointer);
+WL_EVENT wl_pointer_frame(struct wl_connection *conn, wl_object_id wl_pointer);
 
  /* Source information for scroll and other axes.
 
@@ -1741,7 +1741,7 @@ WL_EVENT wl_pointer_frame(struct wl_connection *conn, wl_object wl_pointer);
 
 	The order of wl_pointer.axis_discrete and wl_pointer.axis_source is
 	not guaranteed. */
-WL_EVENT wl_pointer_axis_source(struct wl_connection *conn, wl_object wl_pointer, enum wl_pointer_axis_source_enum axis_source);
+WL_EVENT wl_pointer_axis_source(struct wl_connection *conn, wl_object_id wl_pointer, enum wl_pointer_axis_source_enum axis_source);
 
  /* Stop notification for scroll and other axes.
 
@@ -1757,7 +1757,7 @@ WL_EVENT wl_pointer_axis_source(struct wl_connection *conn, wl_object wl_pointer
 	The timestamp is to be interpreted identical to the timestamp in the
 	wl_pointer.axis event. The timestamp value may be the same as a
 	preceding wl_pointer.axis event. */
-WL_EVENT wl_pointer_axis_stop(struct wl_connection *conn, wl_object wl_pointer, wl_uint time, enum wl_pointer_axis_enum axis);
+WL_EVENT wl_pointer_axis_stop(struct wl_connection *conn, wl_object_id wl_pointer, wl_uint time, enum wl_pointer_axis_enum axis);
 
  /* Discrete step information for scroll and other axes.
 
@@ -1789,7 +1789,7 @@ WL_EVENT wl_pointer_axis_stop(struct wl_connection *conn, wl_object wl_pointer, 
 
 	The order of wl_pointer.axis_discrete and wl_pointer.axis_source is
 	not guaranteed. */
-WL_EVENT wl_pointer_axis_discrete(struct wl_connection *conn, wl_object wl_pointer, enum wl_pointer_axis_enum axis, wl_int discrete);
+WL_EVENT wl_pointer_axis_discrete(struct wl_connection *conn, wl_object_id wl_pointer, enum wl_pointer_axis_enum axis, wl_int discrete);
 
  /* Discrete high-resolution scroll information.
 
@@ -1812,7 +1812,7 @@ WL_EVENT wl_pointer_axis_discrete(struct wl_connection *conn, wl_object wl_point
 
 	The order of wl_pointer.axis_value120 and wl_pointer.axis_source is
 	not guaranteed. */
-WL_EVENT wl_pointer_axis_value120(struct wl_connection *conn, wl_object wl_pointer, enum wl_pointer_axis_enum axis, wl_int value120);
+WL_EVENT wl_pointer_axis_value120(struct wl_connection *conn, wl_object_id wl_pointer, enum wl_pointer_axis_enum axis, wl_int value120);
 
  /* Relative directional information of the entity causing the axis
 	motion.
@@ -1849,7 +1849,7 @@ WL_EVENT wl_pointer_axis_value120(struct wl_connection *conn, wl_object wl_point
 	The order of wl_pointer.axis_relative_direction,
 	wl_pointer.axis_discrete and wl_pointer.axis_source is not
 	guaranteed. */
-WL_EVENT wl_pointer_axis_relative_direction(struct wl_connection *conn, wl_object wl_pointer, enum wl_pointer_axis_enum axis, enum wl_pointer_axis_relative_direction_enum direction);
+WL_EVENT wl_pointer_axis_relative_direction(struct wl_connection *conn, wl_object_id wl_pointer, enum wl_pointer_axis_enum axis, enum wl_pointer_axis_relative_direction_enum direction);
 
    /* Set the pointer surface, i.e., the surface that contains the
 	pointer image (cursor). This request gives the surface the role
@@ -1885,10 +1885,10 @@ WL_EVENT wl_pointer_axis_relative_direction(struct wl_connection *conn, wl_objec
 	serial number sent to the client. Otherwise the request will be
 	ignored.
 
-    @arg0: wl_uint serial
-    @arg1: wl_object surface
-    @arg2: wl_int hotspot_x
-    @arg3: wl_int hotspot_y
+    @arg1: wl_uint serial
+    @arg2: wl_object_id wl_surface
+    @arg3: wl_int hotspot_x
+    @arg4: wl_int hotspot_y
    */
 WL_REQUEST wl_pointer_set_cursor(struct wl_connection *conn, union wl_arg *args);
 
@@ -1906,7 +1906,7 @@ WL_REQUEST wl_pointer_release(struct wl_connection *conn, union wl_arg *args);
 
 	From version 7 onwards, the fd must be mapped with MAP_PRIVATE by
 	the recipient, as MAP_SHARED may fail. */
-WL_EVENT wl_keyboard_keymap(struct wl_connection *conn, wl_object wl_keyboard, enum wl_keyboard_keymap_format_enum format, wl_fd fd, wl_uint size);
+WL_EVENT wl_keyboard_keymap(struct wl_connection *conn, wl_object_id wl_keyboard, enum wl_keyboard_keymap_format_enum format, wl_fd fd, wl_uint size);
 
  /* Notification that this seat's keyboard focus is on a certain
 	surface.
@@ -1921,7 +1921,7 @@ WL_EVENT wl_keyboard_keymap(struct wl_connection *conn, wl_object wl_keyboard, e
 
 	Clients should not use the list of pressed keys to emulate key-press
 	events. The order of keys in the list is unspecified. */
-WL_EVENT wl_keyboard_enter(struct wl_connection *conn, wl_object wl_keyboard, wl_uint serial, wl_object wl_surface, wl_array keys);
+WL_EVENT wl_keyboard_enter(struct wl_connection *conn, wl_object_id wl_keyboard, wl_uint serial, wl_object_id wl_surface, wl_array keys, wl_uint keys_size);
 
  /* Notification that this seat's keyboard focus is no longer on
 	a certain surface.
@@ -1933,7 +1933,7 @@ WL_EVENT wl_keyboard_enter(struct wl_connection *conn, wl_object wl_keyboard, wl
 	defaults. The compositor must not send this event if the active surface
 	of the wl_keyboard was not equal to the surface argument immediately
 	before this event. */
-WL_EVENT wl_keyboard_leave(struct wl_connection *conn, wl_object wl_keyboard, wl_uint serial, wl_object wl_surface);
+WL_EVENT wl_keyboard_leave(struct wl_connection *conn, wl_object_id wl_keyboard, wl_uint serial, wl_object_id wl_surface);
 
  /* A key was pressed or released.
 	The time argument is a timestamp with millisecond
@@ -1958,7 +1958,7 @@ WL_EVENT wl_keyboard_leave(struct wl_connection *conn, wl_object wl_keyboard, wl
 	key state when a wl_keyboard.repeat_info event with a rate argument of
 	0 has been received. This allows the compositor to take over the
 	responsibility of key repetition. */
-WL_EVENT wl_keyboard_key(struct wl_connection *conn, wl_object wl_keyboard, wl_uint serial, wl_uint time, wl_uint key, enum wl_keyboard_key_state_enum state);
+WL_EVENT wl_keyboard_key(struct wl_connection *conn, wl_object_id wl_keyboard, wl_uint serial, wl_uint time, wl_uint key, enum wl_keyboard_key_state_enum state);
 
  /* Notifies clients that the modifier and/or group state has
 	changed, and it should update its local state.
@@ -1973,7 +1973,7 @@ WL_EVENT wl_keyboard_key(struct wl_connection *conn, wl_object wl_keyboard, wl_u
 
 	In the wl_keyboard logical state, this event updates the modifiers and
 	group. */
-WL_EVENT wl_keyboard_modifiers(struct wl_connection *conn, wl_object wl_keyboard, wl_uint serial, wl_uint mods_depressed, wl_uint mods_latched, wl_uint mods_locked, wl_uint group);
+WL_EVENT wl_keyboard_modifiers(struct wl_connection *conn, wl_object_id wl_keyboard, wl_uint serial, wl_uint mods_depressed, wl_uint mods_latched, wl_uint mods_locked, wl_uint group);
 
  /* Informs the client about the keyboard's repeat rate and delay.
 
@@ -1987,7 +1987,7 @@ WL_EVENT wl_keyboard_modifiers(struct wl_connection *conn, wl_object wl_keyboard
 	This event can be sent later on as well with a new value if necessary,
 	so clients should continue listening for the event past the creation
 	of wl_keyboard. */
-WL_EVENT wl_keyboard_repeat_info(struct wl_connection *conn, wl_object wl_keyboard, wl_int rate, wl_int delay);
+WL_EVENT wl_keyboard_repeat_info(struct wl_connection *conn, wl_object_id wl_keyboard, wl_int rate, wl_int delay);
 
 WL_REQUEST wl_keyboard_release(struct wl_connection *conn, union wl_arg *args);
 
@@ -1996,15 +1996,15 @@ WL_REQUEST wl_keyboard_release(struct wl_connection *conn, union wl_arg *args);
 	assigned a unique ID. Future events from this touch point reference
 	this ID. The ID ceases to be valid after a touch up event and may be
 	reused in the future. */
-WL_EVENT wl_touch_down(struct wl_connection *conn, wl_object wl_touch, wl_uint serial, wl_uint time, wl_object wl_surface, wl_int id, wl_fixed x, wl_fixed y);
+WL_EVENT wl_touch_down(struct wl_connection *conn, wl_object_id wl_touch, wl_uint serial, wl_uint time, wl_object_id wl_surface, wl_int id, wl_fixed x, wl_fixed y);
 
  /* The touch point has disappeared. No further events will be sent for
 	this touch point and the touch point's ID is released and may be
 	reused in a future touch down event. */
-WL_EVENT wl_touch_up(struct wl_connection *conn, wl_object wl_touch, wl_uint serial, wl_uint time, wl_int id);
+WL_EVENT wl_touch_up(struct wl_connection *conn, wl_object_id wl_touch, wl_uint serial, wl_uint time, wl_int id);
 
  /* A touch point has changed coordinates. */
-WL_EVENT wl_touch_motion(struct wl_connection *conn, wl_object wl_touch, wl_uint time, wl_int id, wl_fixed x, wl_fixed y);
+WL_EVENT wl_touch_motion(struct wl_connection *conn, wl_object_id wl_touch, wl_uint time, wl_int id, wl_fixed x, wl_fixed y);
 
  /* Indicates the end of a set of events that logically belong together.
 	A client is expected to accumulate the data in all events within the
@@ -2014,7 +2014,7 @@ WL_EVENT wl_touch_motion(struct wl_connection *conn, wl_object wl_touch, wl_uint
 	guarantee is provided about the set of events within a frame. A client
 	must assume that any state not updated in a frame is unchanged from the
 	previously known state. */
-WL_EVENT wl_touch_frame(struct wl_connection *conn, wl_object wl_touch);
+WL_EVENT wl_touch_frame(struct wl_connection *conn, wl_object_id wl_touch);
 
  /* Sent if the compositor decides the touch stream is a global
 	gesture. No further events are sent to the clients from that
@@ -2024,7 +2024,7 @@ WL_EVENT wl_touch_frame(struct wl_connection *conn, wl_object wl_touch);
 	this surface may reuse the touch point ID.
 
 	No frame event is required after the cancel event. */
-WL_EVENT wl_touch_cancel(struct wl_connection *conn, wl_object wl_touch);
+WL_EVENT wl_touch_cancel(struct wl_connection *conn, wl_object_id wl_touch);
 
  /* Sent when a touchpoint has changed its shape.
 
@@ -2051,7 +2051,7 @@ WL_EVENT wl_touch_cancel(struct wl_connection *conn, wl_object wl_touch);
 	This event is only sent by the compositor if the touch device supports
 	shape reports. The client has to make reasonable assumptions about the
 	shape if it did not receive this event. */
-WL_EVENT wl_touch_shape(struct wl_connection *conn, wl_object wl_touch, wl_int id, wl_fixed major, wl_fixed minor);
+WL_EVENT wl_touch_shape(struct wl_connection *conn, wl_object_id wl_touch, wl_int id, wl_fixed major, wl_fixed minor);
 
  /* Sent when a touchpoint has changed its orientation.
 
@@ -2076,7 +2076,7 @@ WL_EVENT wl_touch_shape(struct wl_connection *conn, wl_object wl_touch, wl_int i
 
 	This event is only sent by the compositor if the touch device supports
 	orientation reports. */
-WL_EVENT wl_touch_orientation(struct wl_connection *conn, wl_object wl_touch, wl_int id, wl_fixed orientation);
+WL_EVENT wl_touch_orientation(struct wl_connection *conn, wl_object_id wl_touch, wl_int id, wl_fixed orientation);
 
 WL_REQUEST wl_touch_release(struct wl_connection *conn, union wl_arg *args);
 
@@ -2101,7 +2101,7 @@ WL_REQUEST wl_touch_release(struct wl_connection *conn, union wl_arg *args);
 	outputs, might fake this information. Instead of using x and y, clients
 	should use xdg_output.logical_position. Instead of using make and model,
 	clients should use name and description. */
-WL_EVENT wl_output_geometry(struct wl_connection *conn, wl_object wl_output, wl_int x, wl_int y, wl_int physical_width, wl_int physical_height, enum wl_output_subpixel_enum subpixel, wl_string make, wl_string model, enum wl_output_transform_enum transform);
+WL_EVENT wl_output_geometry(struct wl_connection *conn, wl_object_id wl_output, wl_int x, wl_int y, wl_int physical_width, wl_int physical_height, enum wl_output_subpixel_enum subpixel, wl_string make, wl_string model, enum wl_output_transform_enum transform);
 
  /* The mode event describes an available mode for the output.
 
@@ -2136,14 +2136,14 @@ WL_EVENT wl_output_geometry(struct wl_connection *conn, wl_object wl_output, wl_
 	Note: this information is not always meaningful for all outputs. Some
 	compositors, such as those exposing virtual outputs, might fake the
 	refresh rate or the size. */
-WL_EVENT wl_output_mode(struct wl_connection *conn, wl_object wl_output, enum wl_output_mode_enum flags, wl_int width, wl_int height, wl_int refresh);
+WL_EVENT wl_output_mode(struct wl_connection *conn, wl_object_id wl_output, enum wl_output_mode_enum flags, wl_int width, wl_int height, wl_int refresh);
 
  /* This event is sent after all other properties have been
 	sent after binding to the output object and after any
 	other property changes done after that. This allows
 	changes to the output properties to be seen as
 	atomic, even if they happen via multiple events. */
-WL_EVENT wl_output_done(struct wl_connection *conn, wl_object wl_output);
+WL_EVENT wl_output_done(struct wl_connection *conn, wl_object_id wl_output);
 
  /* This event contains scaling geometry information
 	that is not in the geometry event. It may be sent after
@@ -2163,7 +2163,7 @@ WL_EVENT wl_output_done(struct wl_connection *conn, wl_object wl_output);
 	scale to use for a surface.
 
 	The scale event will be followed by a done event. */
-WL_EVENT wl_output_scale(struct wl_connection *conn, wl_object wl_output, wl_int factor);
+WL_EVENT wl_output_scale(struct wl_connection *conn, wl_object_id wl_output, wl_int factor);
 
  /* Many compositors will assign user-friendly names to their outputs, show
 	them to the user, allow the user to refer to an output, etc. The client
@@ -2193,7 +2193,7 @@ WL_EVENT wl_output_scale(struct wl_connection *conn, wl_object wl_output, wl_int
 	same name if possible.
 
 	The name event will be followed by a done event. */
-WL_EVENT wl_output_name(struct wl_connection *conn, wl_object wl_output, wl_string name);
+WL_EVENT wl_output_name(struct wl_connection *conn, wl_object_id wl_output, wl_string name);
 
  /* Many compositors can produce human-readable descriptions of their
 	outputs. The client may wish to know this description as well, e.g. for
@@ -2209,7 +2209,7 @@ WL_EVENT wl_output_name(struct wl_connection *conn, wl_object wl_output, wl_stri
 	not be sent at all.
 
 	The description event will be followed by a done event. */
-WL_EVENT wl_output_description(struct wl_connection *conn, wl_object wl_output, wl_string description);
+WL_EVENT wl_output_description(struct wl_connection *conn, wl_object_id wl_output, wl_string description);
 
    /* Using this request a client can tell the server that it is not going to
 	use the output object anymore. */
@@ -2221,19 +2221,19 @@ WL_REQUEST wl_region_destroy(struct wl_connection *conn, union wl_arg *args);
 
    /* Add the specified rectangle to the region.
 
-    @arg0: wl_int x
-    @arg1: wl_int y
-    @arg2: wl_int width
-    @arg3: wl_int height
+    @arg1: wl_int x
+    @arg2: wl_int y
+    @arg3: wl_int width
+    @arg4: wl_int height
    */
 WL_REQUEST wl_region_add(struct wl_connection *conn, union wl_arg *args);
 
    /* Subtract the specified rectangle from the region.
 
-    @arg0: wl_int x
-    @arg1: wl_int y
-    @arg2: wl_int width
-    @arg3: wl_int height
+    @arg1: wl_int x
+    @arg2: wl_int y
+    @arg3: wl_int width
+    @arg4: wl_int height
    */
 WL_REQUEST wl_region_subtract(struct wl_connection *conn, union wl_arg *args);
 
@@ -2263,9 +2263,9 @@ WL_REQUEST wl_subcompositor_destroy(struct wl_connection *conn, union wl_arg *ar
 	This request modifies the behaviour of wl_surface.commit request on
 	the sub-surface, see the documentation on wl_subsurface interface.
 
-    @arg0: wl_new_id id
-    @arg1: wl_object surface
-    @arg2: wl_object parent
+    @arg1: wl_new_id wl_subsurface
+    @arg2: wl_object_id wl_surface
+    @arg3: wl_object_id wl_surface
    */
 WL_REQUEST wl_subcompositor_get_subsurface(struct wl_connection *conn, union wl_arg *args);
 
@@ -2291,8 +2291,8 @@ WL_REQUEST wl_subsurface_destroy(struct wl_connection *conn, union wl_arg *args)
 
 	The initial position is 0, 0.
 
-    @arg0: wl_int x
-    @arg1: wl_int y
+    @arg1: wl_int x
+    @arg2: wl_int y
    */
 WL_REQUEST wl_subsurface_set_position(struct wl_connection *conn, union wl_arg *args);
 
@@ -2310,14 +2310,14 @@ WL_REQUEST wl_subsurface_set_position(struct wl_connection *conn, union wl_arg *
 	A new sub-surface is initially added as the top-most in the stack
 	of its siblings and parent.
 
-    @arg0: wl_object sibling
+    @arg1: wl_object_id wl_surface
    */
 WL_REQUEST wl_subsurface_place_above(struct wl_connection *conn, union wl_arg *args);
 
    /* The sub-surface is placed just below the reference surface.
 	See wl_subsurface.place_above.
 
-    @arg0: wl_object sibling
+    @arg1: wl_object_id wl_surface
    */
 WL_REQUEST wl_subsurface_place_below(struct wl_connection *conn, union wl_arg *args);
 
@@ -2370,7 +2370,7 @@ WL_REQUEST wl_fixes_destroy(struct wl_connection *conn, union wl_arg *args);
 	client should re-use the object ID once it receives the
 	wl_display.delete_id event.
 
-    @arg0: wl_object registry
+    @arg1: wl_object_id wl_registry
    */
 WL_REQUEST wl_fixes_destroy_registry(struct wl_connection *conn, union wl_arg *args);
 

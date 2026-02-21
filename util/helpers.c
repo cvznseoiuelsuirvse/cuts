@@ -4,13 +4,12 @@
 #include <assert.h>
 #include <string.h>
 
-#include "backend/drm.h"
-
-#define PADDED4(n) ((n + 4) & ~3)
+#define PADDED4(n) ((n + 3) & ~3)
 
 void print_buffer(char *buffer, size_t buffer_len) {
   for (size_t i = 0; i < buffer_len; i++) {
     uint8_t c = buffer[i];
+    // printf("%ld|", i);
     if (32 <= c && c <= 126) {
       printf("%c ", c);
     } else {
@@ -45,10 +44,17 @@ uint16_t read_u16(char *buffer, uint32_t *offset) {
 }
 
 void read_string(char *buffer, uint32_t *offset, char *out, size_t out_size) {
-    uint32_t string_size = read_u32(buffer, offset);
-    assert(string_size < out_size);
-    memcpy(out, buffer + *offset, string_size);
-    *offset += PADDED4(string_size);
+  uint32_t string_size = read_u32(buffer, offset);
+  assert(string_size < out_size);
+  memcpy(out, buffer + *offset, string_size);
+  *offset += PADDED4(string_size);
+}
+
+void read_array(char *buffer, uint32_t *offset, char *out, size_t out_size) {
+  uint32_t array_size = read_u32(buffer, offset);
+  assert(array_size < out_size);
+  memcpy(out, buffer + *offset, array_size);
+  *offset += PADDED4(array_size);
 }
 
 
@@ -72,24 +78,25 @@ void write_u16(char *buffer, uint32_t *offset, uint16_t val) {
   *offset += sizeof(uint16_t);
 }
 
-void write_string(char *buffer, uint32_t *offset, const char *val) {
-    size_t string_size = strlen(val);
-    size_t padded_string_size = PADDED4(string_size);
+void write_string(char *buffer, uint32_t *offset, const char *string) {
+    uint32_t string_size = strlen(string);
+    uint32_t padded_string_size = PADDED4(string_size);
 
     write_u32(buffer, offset, string_size + 1);
     memset(buffer + *offset, 0, padded_string_size);
-    snprintf(buffer + *offset, padded_string_size, "%s", val);
+    snprintf(buffer + *offset, padded_string_size, "%s", string);
 
-    *offset += padded_string_size;
+    *offset += padded_string_size ? padded_string_size : sizeof(uint32_t);
+}
+
+void write_array(char *buffer, uint32_t *offset, const uint8_t *array, size_t array_size) {
+    uint32_t padded_array_size = PADDED4(array_size);
+
+    write_u32(buffer, offset, array_size);
+    memset(buffer + *offset, 0, padded_array_size);
+    memcpy(buffer + *offset, array, array_size);
+
+    *offset += padded_array_size ? padded_array_size : sizeof(uint32_t);
 }
 
 
-void draw_rect(struct c_drm_dumb_framebuffer *fb, uint32_t x, uint32_t y, uint32_t width, uint32_t height, uint32_t color) {
-  for (size_t _x = x; _x < (width + x); _x++) {
-    for (size_t _y = y; _y < (height + y); _y++) {
-        uint32_t pos = _y * fb->width + _x;
-        uint32_t *u32_buffer = (uint32_t *)fb->buffer;
-        u32_buffer[pos] = color;
-    }
-  }
-}

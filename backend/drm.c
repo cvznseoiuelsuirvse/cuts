@@ -1,72 +1,65 @@
-#include "backend/drm.h"
-#include "util/helpers.h"
+#include "drm.h"
+#include "util.h"
+#include "../compositor/server.h"
 
 #include <fcntl.h>
+#include <assert.h>
 #include <stdio.h>
 #include <sys/mman.h>
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 #include <unistd.h>
 
 static void page_flip_handler(int fd, unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec, void *user_data) {
   struct c_drm_connector *conn = user_data;
-  struct c_drm_dumb_framebuffer *fb = conn->back;
+  conn->waiting_for_flip = 0;
 
-  draw_rect(fb, 0, 0, fb->width, fb->height, (uint32_t)(tv_usec & 0xffffffff));
+  struct c_drm_dumb_framebuffer *back = conn->back;
+  conn->back =  conn->front;
+  conn->front = back;
 
-  if (drmModePageFlip(fd, conn->crtc_id, fb->id, DRM_MODE_PAGE_FLIP_EVENT, conn) < 0) 
-    perror("c_drm_backend_page_flip");
-
-  conn->back = conn->front;
-  conn->front = fb;
 }
 
-int c_drm_backend_page_flip(struct c_drm_backend *backend) {
+int c_drm_backend_handle_event(struct c_drm_backend *backend) {
   drmEventContext ctx = {
     .version = DRM_EVENT_CONTEXT_VERSION,
     .page_flip_handler = page_flip_handler,
   };
 
   if (drmHandleEvent(backend->fd, &ctx) < 0) {
-    perror("drmHandleEvent");
+    perror("c_drm_backend_page_flip drmHandleEvent");
     return -1;
   }
+
   return 0;
 }
 
 
+int c_drm_backend_page_flip(struct c_drm_backend *backend) {
+  struct c_drm_connector *conn;
+  c_drm_backend_for_each_connector(backend, conn) {
+    // while (conn->waiting_for_flip) usleep(100);
+    if (drmModePageFlip(backend->fd, conn->crtc_id, conn->back->id, DRM_MODE_PAGE_FLIP_EVENT, conn) != 0) return -1;
+    conn->waiting_for_flip = 1;
+  }
+  return 0;
+}
 
-static uint32_t get_crtc_id(int fd, drmModeResPtr res, drmModeConnectorPtr conn, uint32_t *taken_crtcs) {
-  for (int enc_n = 0; enc_n < conn->count_encoders; enc_n++) {
-    drmModeEncoderPtr encoder = drmModeGetEncoder(fd, res->encoders[enc_n]);
-    if (!encoder) continue;
-
-    for (int crtc_n = 0; crtc_n < res->count_crtcs; crtc_n++) {
-      uint32_t bit = 1 << crtc_n;
-      if ((encoder->possible_crtcs & bit) == 0) continue;
-      if (*taken_crtcs & bit) continue;
-
-      drmModeFreeEncoder(encoder);
-      *taken_crtcs |= bit;
-
-      return res->crtcs[crtc_n];
+void c_drm_backend_page_flip2(struct c_drm_backend *backend, int *needs_redraw) {
+  struct c_drm_connector *conn;
+  c_drm_backend_for_each_connector(backend, conn) {
+    if (!conn->waiting_for_flip && *needs_redraw) {
+      if (!drmModePageFlip(backend->fd, conn->crtc_id, conn->back->id, DRM_MODE_PAGE_FLIP_EVENT, conn))
+        conn->waiting_for_flip = 1;
     }
-
-    drmModeFreeEncoder(encoder);
   }
 
-  return 0;
+  *needs_redraw = 0;
 }
 
-int c_drm_connector_set_crtc(int fd, struct c_drm_connector *conn, struct c_drm_dumb_framebuffer *fb) {
-  if (drmModeSetCrtc(fd, conn->crtc_id, fb->id, 0, 0, &conn->id, 1, conn->mode) != 0) {
-    perror("drmModeSetCrtc");
-    return 1;
-  }
-  return 0;
-}
-
-static struct c_drm_dumb_framebuffer *c_drm_dumb_framebuffer_create(int fd, uint32_t width, uint32_t height, uint32_t format) {
+static struct c_drm_dumb_framebuffer *c_drm_dumb_framebuffer_create(int fd, 
+                                                                    uint32_t width, uint32_t height, uint32_t format) {
   struct c_drm_dumb_framebuffer *fb = calloc(1, sizeof(struct c_drm_dumb_framebuffer));
   if (!fb) return NULL;
 
@@ -85,8 +78,7 @@ static struct c_drm_dumb_framebuffer *c_drm_dumb_framebuffer_create(int fd, uint
   uint32_t strides[4] = {fb->stride};
   uint32_t offsets[4] = {0};
 
-  if (drmModeAddFB2(fd, fb->width, fb->height,
-    format, handles, strides, offsets, &fb->id, 0) != 0) {
+  if (drmModeAddFB2(fd, fb->width, fb->height, format, handles, strides, offsets, &fb->id, 0) != 0) {
     perror("drmModeAddFB2");
     return NULL;
   };
@@ -115,6 +107,33 @@ static void c_drm_dumb_framebuffer_free(int fd, struct c_drm_dumb_framebuffer *f
     free(fb);
 }
 
+void c_drm_framebuffer_draw(struct c_drm_dumb_framebuffer *fb, uint32_t x, uint32_t y, struct c_surface *surface) {
+  struct c_buffer *buffer = surface->active;
+
+  uint8_t *src = buffer->shm->buffer + buffer->offset;
+  uint8_t *dst = fb->buffer;
+
+  uint8_t bpp = 4;
+  uint32_t _y = 0;
+  uint32_t _x = 0;
+  uint32_t _width  = buffer->width * bpp;
+  uint32_t _height = buffer->height;
+
+  // if (surface->damaged) {
+  //   _y = surface->y;
+  //   _x = surface->x * bpp;
+  //   _width  = surface->width * bpp;
+  //   _height = surface->height;
+  // }
+
+  for (; _y < _height; _y++) {
+    uint8_t *src_row = src + _y * buffer->stride + _x;
+    uint8_t *dst_row = dst + (y + _y) * fb->stride + x + _x;
+    memcpy(dst_row, src_row, _width);
+  }
+
+}
+
 static int c_drm_backend_get_connectors(struct c_drm_backend *backend) {
   drmModeConnectorPtr connector;
   uint32_t taken_crtcs = 0;
@@ -125,22 +144,14 @@ static int c_drm_backend_get_connectors(struct c_drm_backend *backend) {
       size_t idx = backend->connectors_n;
       struct c_drm_connector *c_connector = &backend->connectors[idx];
 
+      c_connector->waiting_for_flip = 0;
       c_connector->conn = connector;
       c_connector->id = connector->connector_id;
 
       uint32_t crtc_id = get_crtc_id(backend->fd, backend->res, connector, &taken_crtcs);
       c_connector->crtc_id = crtc_id;
-      c_connector->orig_crtc = drmModeGetCrtc(backend->fd, crtc_id);
 
-
-      for (int m = 0; m < connector->count_modes; m++) {
-        drmModeModeInfoPtr mode = &connector->modes[m];
-        if (mode->type & DRM_MODE_TYPE_PREFERRED) {
-          c_connector->mode = mode;
-          break;
-        }
-      }
-
+      c_connector->mode = get_preferred_mode(connector);
       if (!c_connector->mode) {
         c_connector->mode = &connector->modes[0];
       }
@@ -153,7 +164,13 @@ static int c_drm_backend_get_connectors(struct c_drm_backend *backend) {
                                c_connector->mode->hdisplay, c_connector->mode->vdisplay, DRM_FORMAT_XRGB8888);
       if (!c_connector->back) return -1;
 
-      c_drm_connector_set_crtc(backend->fd, c_connector, c_connector->front);
+      c_connector->orig_crtc = drmModeGetCrtc(backend->fd, crtc_id);
+
+      if (drmModeSetCrtc(backend->fd, crtc_id, c_connector->front->id, 0, 0, 
+                         &c_connector->id, 1, c_connector->mode) != 0) {
+        perror("drmModeSetCrtc");
+        return 1;
+      }
 
       if (drmModePageFlip(backend->fd, c_connector->crtc_id, c_connector->front->id, DRM_MODE_PAGE_FLIP_EVENT, c_connector) == -1) {
         perror("drmModePageFlip"); 

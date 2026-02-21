@@ -52,7 +52,7 @@ void c_map_destroy(c_map *m) {
 void *c_map_set(c_map *m, size_t key, void *value, size_t value_size) {
   size_t n = key % m->size;
 
-  struct c_map_pair *new_pair = malloc(sizeof(struct c_map_pair));
+  struct c_map_pair *new_pair = calloc(1, sizeof(struct c_map_pair));
   struct c_map_pair *current_pair = m->pairs[n];
 
   new_pair->prev = NULL;
@@ -68,6 +68,7 @@ void *c_map_set(c_map *m, size_t key, void *value, size_t value_size) {
     memcpy(new_pair->value, value, value_size);
   } else 
     new_pair->value = value;
+  
   
   if (current_pair) {
     current_pair->prev = new_pair;
