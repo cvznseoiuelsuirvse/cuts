@@ -1,7 +1,7 @@
 #ifndef CUTS_WAYLAND_H
 #define CUTS_WAYLAND_H
 
-#include "../server.h"
+#include "wayland/server.h"
 #include <stdint.h>
 
 

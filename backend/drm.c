@@ -1,6 +1,6 @@
 #include "drm.h"
 #include "util.h"
-#include "../compositor/server.h"
+#include "wayland/server.h"
 
 #include <fcntl.h>
 #include <assert.h>
@@ -39,9 +39,10 @@ int c_drm_backend_handle_event(struct c_drm_backend *backend) {
 int c_drm_backend_page_flip(struct c_drm_backend *backend) {
   struct c_drm_connector *conn;
   c_drm_backend_for_each_connector(backend, conn) {
-    // while (conn->waiting_for_flip) usleep(100);
-    if (drmModePageFlip(backend->fd, conn->crtc_id, conn->back->id, DRM_MODE_PAGE_FLIP_EVENT, conn) != 0) return -1;
-    conn->waiting_for_flip = 1;
+    if (!conn->waiting_for_flip) {
+      if (!drmModePageFlip(backend->fd, conn->crtc_id, conn->back->id, DRM_MODE_PAGE_FLIP_EVENT, conn))
+        conn->waiting_for_flip = 1;
+    }
   }
   return 0;
 }
@@ -107,8 +108,8 @@ static void c_drm_dumb_framebuffer_free(int fd, struct c_drm_dumb_framebuffer *f
     free(fb);
 }
 
-void c_drm_framebuffer_draw(struct c_drm_dumb_framebuffer *fb, uint32_t x, uint32_t y, struct c_surface *surface) {
-  struct c_buffer *buffer = surface->active;
+void c_drm_framebuffer_draw(struct c_drm_dumb_framebuffer *fb, uint32_t x, uint32_t y, struct wl_surface *surface) {
+  struct wl_buffer *buffer = surface->active;
 
   uint8_t *src = buffer->shm->buffer + buffer->offset;
   uint8_t *dst = fb->buffer;

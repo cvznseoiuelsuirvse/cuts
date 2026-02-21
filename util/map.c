@@ -4,16 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-static size_t hash_string(const char *string) {
-  size_t hash = 5381;
-  int c;
-
-  while ((c = *string++))
-    hash = ((hash << 5) + hash) + c;
-
-  return hash;
-}
-
 c_map *c_map_new(size_t size) {
   c_map *m = malloc(sizeof(c_map));
   if (m == NULL) {
@@ -79,12 +69,6 @@ void *c_map_set(c_map *m, size_t key, void *value, size_t value_size) {
   return new_pair->value;
 };
 
-void *c_map_set_str(c_map *m, const char *key_str, void *value,
-                       size_t value_size) {
-  size_t key = hash_string(key_str);
-  return c_map_set(m, key, value, value_size);
-};
-
 void c_map_remove(c_map *m, size_t key) {
   size_t n = key % m->size;
   struct c_map_pair *pair = m->pairs[n];
@@ -113,11 +97,6 @@ void c_map_remove(c_map *m, size_t key) {
   }
 }
 
-void c_map_remove_str(c_map *m, const char *key_str) {
-  size_t key = hash_string(key_str);
-  return c_map_remove(m, key);
-}
-
 void *c_map_get(c_map *m, size_t key) {
   size_t n = key % m->size;
   struct c_map_pair *pair = m->pairs[n];
@@ -130,10 +109,3 @@ void *c_map_get(c_map *m, size_t key) {
 
   return NULL;
 };
-
-void *c_map_get_str(c_map *m, const char *key_str) {
-  size_t key = hash_string(key_str);
-  return c_map_get(m, key);
-}
-
-

@@ -5,7 +5,7 @@
 #include <xf86drmMode.h>
 #include <drm_fourcc.h>
 
-#include "../compositor/server.h"
+#include "wayland/server.h"
 
 /* why would you need 16+ outputs */
 #define C_DRM_MAX_CONNECTORS 16
@@ -46,6 +46,6 @@ void c_drm_backend_free(struct c_drm_backend *backend);
 int  c_drm_backend_handle_event(struct c_drm_backend *backend);
 int  c_drm_backend_page_flip(struct c_drm_backend *backend);
 void c_drm_backend_page_flip2(struct c_drm_backend *backend, int *needs_redraw);
-void c_drm_framebuffer_draw(struct c_drm_dumb_framebuffer *fb, uint32_t x, uint32_t y, struct c_surface *surface);
+void c_drm_framebuffer_draw(struct c_drm_dumb_framebuffer *fb, uint32_t x, uint32_t y, struct wl_surface *surface);
 
 #endif

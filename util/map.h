@@ -23,12 +23,7 @@ typedef struct c_map {
 c_map *c_map_new(size_t size);
 void   c_map_destroy(c_map *m);
 void  *c_map_set(c_map *m, size_t key, void *value, size_t value_size);
-void  *c_map_set_str(c_map *m, const char *key_str, void *value, size_t value_size);
 void   c_map_remove(c_map *m, size_t key);
-void   c_map_remove_str(c_map *m, const char *key_str);
 void  *c_map_get(c_map *m, size_t key);
-void  *c_map_get_str(c_map *m, const char *key_str);
-
-
 
 #endif

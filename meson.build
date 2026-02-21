@@ -12,7 +12,7 @@ libdrm_dep = dependency('libdrm')
 
 subdir('util')
 subdir('backend')
-subdir('compositor')
+subdir('wayland')
 
 root_sources = files('cuts.c')
 

@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../backend/drm.h"
+#include "backend/drm.h"
 
 #define STREQ(s1, s2) (strcmp((s1), (s2)) == 0)
 #define LENGTH(s) (sizeof((s)) /  sizeof(*(s)))
