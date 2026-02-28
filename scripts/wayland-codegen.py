@@ -5,15 +5,15 @@ from typing import Literal
 import xml.etree.ElementTree as ET
 
 WL_TYPES = {
-    "int":      "wl_int",
-    "uint":     "wl_uint",
-    "fixed":    "wl_fixed",
-    "object":   "wl_object_id",
-    "new_id":   "wl_new_id",
-    "string":   "wl_string",
-    "array":    "wl_array",
-    "fd":       "wl_fd",
-    "enum":     "wl_enum",
+    "int":      "c_wl_int",
+    "uint":     "c_wl_uint",
+    "fixed":    "c_wl_fixed",
+    "object":   "c_wl_object_id",
+    "new_id":   "c_wl_new_id",
+    "string":   "c_wl_string",
+    "array":    "c_wl_array",
+    "fd":       "c_wl_fd",
+    "enum":     "c_wl_enum",
 }
 
 SIGNATURE = {
@@ -38,7 +38,7 @@ def parse_event(interface_name: str, event: ET.Element, event_n: int, file_type:
         s += f" /* {desc.text.strip()} */\n"
 
     args = [c for c in event if c.tag == "arg"]
-    s+=f"WL_EVENT {interface_name}_{event_name}(struct wl_connection *conn, wl_object_id {interface_name}{", " if args else ""}"
+    s+=f"C_WL_EVENT {interface_name}_{event_name}(struct c_wl_connection *conn, c_wl_object_id {interface_name}{", " if args else ""}"
 
     fd = ""
     signature = []
@@ -58,11 +58,11 @@ def parse_event(interface_name: str, event: ET.Element, event_n: int, file_type:
         arg_name = attrs["name"] if not attrs.get("interface") else attrs["interface"]
         arg_names.append(arg_name)
 
-        if arg_c_type == "wl_fd":
+        if arg_c_type == "c_wl_fd":
             fd = arg_name
 
-        if arg_c_type == "wl_array":
-            s+=f"{arg_c_type} {arg_name}, wl_uint {arg_name}_size"
+        if arg_c_type == "c_wl_array":
+            s+=f"{arg_c_type} *{arg_name}"
 
         elif arg != args[-1]:
             s+=f"{arg_c_type} {arg_name}, "
@@ -77,8 +77,8 @@ def parse_event(interface_name: str, event: ET.Element, event_n: int, file_type:
 
     else:
         s+=") {\n"
-        s+=f"  struct wl_message msg = {{{interface_name}, {event_n}, {fd if fd else 0}, {signature if args else "{0}"}}};\n"
-        s+=f"  return wl_connection_send(conn, &msg, {len(args)}{", " + ', '.join(arg_names) if args else ""});\n"
+        s+=f"  struct c_wl_message msg = {{{interface_name}, {event_n}, {signature if args else "{0}"}, \"{event_name}\"}};\n"
+        s+=f"  return c_wl_connection_send(conn, &msg, {len(args)}{", " + ', '.join(arg_names) if args else ""});\n"
         s+="}\n"
 
     return s
@@ -111,7 +111,7 @@ def parse_request(interface_name: str, request: ET.Element, file_type: Literal["
     signature_list = [SIGNATURE[arg.attrib['type']] for arg in args]
     signature = f'"{"".join(signature_list)}"'
 
-    struct +=  f'    {{{f"\"{request_name}\",":<25} {f"{interface_name}_{request_name},":<30} {f"{nargs},":<3} {signature if nargs > 0 else '{0}'}}},\n'
+    struct +=  f'    {{{f"\"{request_name}\",":<25} {f"{interface_name}_{request_name},":<30}NULL, {f"{nargs},":<3} {signature if nargs > 0 else '{0}'}}},\n'
 
     if file_type == "h":
         if desc.text:
@@ -141,7 +141,7 @@ def parse_request(interface_name: str, request: ET.Element, file_type: Literal["
         if args:
             decl += "   */\n"
 
-    decl+=f"WL_REQUEST {interface_name}_{request_name}(struct wl_connection *conn, union wl_arg *args);\n"
+    decl+=f"C_WL_REQUEST {interface_name}_{request_name}(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata);\n"
 
     return decl, struct
 
@@ -158,7 +158,7 @@ def parse_requests(interface: ET.Element, requests: list[ET.Element], file_type:
         s += decl + "\n"
 
     if file_type == "c":
-        s+=f"WL_INTERFACE_REGISTER({interface_name}_interface, \"{interface_name}\", {interface_version}, {len(ss)}, \n"
+        s+=f"C_WL_INTERFACE_REGISTER({interface_name}_interface, \"{interface_name}\", {interface_version}, {len(ss)}, \n"
         for _, struct in ss:
             s+=struct
         s+=")\n"
@@ -222,7 +222,7 @@ def parse(xml_path: str, basename: str) -> None:
         f.write(f'#ifndef {h_guard_name}\n')
         f.write(f'#define {h_guard_name}\n\n')
 
-        f.write('#include "../server.h"\n')
+        f.write('#include "wayland/server.h"\n')
         f.write('#include <stdint.h>\n\n\n')
 
         enums_s = []
@@ -243,8 +243,8 @@ def parse(xml_path: str, basename: str) -> None:
         f.write("#endif")
 
     with open(f"{basename}.c", "w") as f:
-        f.write('#include "../server.h"\n')
-        f.write(f'#include "{os.path.basename(basename)}.h"\n\n')
+        f.write('#include "wayland/server.h"\n')
+        f.write(f'#include "wayland/types/{os.path.basename(basename)}.h"\n\n')
         f.write('#include <stdint.h>\n\n\n')
 
         for child in root:

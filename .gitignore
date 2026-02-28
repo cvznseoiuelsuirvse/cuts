@@ -1,6 +1,6 @@
 .venv/
 .cache/
-xml/
+protocols/
 build/
 ref/
 build-musl/

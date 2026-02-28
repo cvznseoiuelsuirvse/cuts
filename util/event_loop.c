@@ -80,7 +80,6 @@ int c_event_loop_run(struct c_event_loop *loop) {
         ret = resource->callback(loop, resource->fd, resource->data);
         switch (ret) {
           case -C_EVENT_ERROR_FATAL:
-            c_event_loop_del(loop, resource);
             goto out;
 
           case -C_EVENT_ERROR_WL_PROTO:

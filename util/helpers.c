@@ -1,22 +1,23 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <sys/types.h>
+#include <stdlib.h>
 #include <assert.h>
 #include <string.h>
+#include <drm/drm_fourcc.h>
 
 #define PADDED4(n) ((n + 3) & ~3)
 
 void print_buffer(char *buffer, size_t buffer_len) {
   for (size_t i = 0; i < buffer_len; i++) {
     uint8_t c = buffer[i];
-    // printf("%ld|", i);
     if (32 <= c && c <= 126) {
-      printf("%c ", c);
+      printf("%c", c);
     } else {
-      printf("%02x ", c);
+      printf("%02x", c);
     }
+    if (i < buffer_len - 1) printf(" ");
   }
-  printf("\n");
 }
 
 float read_f32(char *buffer, uint32_t *offset) {
@@ -50,11 +51,14 @@ void read_string(char *buffer, uint32_t *offset, char *out, size_t out_size) {
   *offset += PADDED4(string_size);
 }
 
-void read_array(char *buffer, uint32_t *offset, char *out, size_t out_size) {
+void *read_array(char *buffer, uint32_t *offset, size_t size) {
   uint32_t array_size = read_u32(buffer, offset);
-  assert(array_size < out_size);
+  assert(array_size < size);
+  void *out = malloc(size);
+  if (!out) return NULL;
   memcpy(out, buffer + *offset, array_size);
   *offset += PADDED4(array_size);
+  return out;
 }
 
 
@@ -89,7 +93,7 @@ void write_string(char *buffer, uint32_t *offset, const char *string) {
     *offset += padded_string_size ? padded_string_size : sizeof(uint32_t);
 }
 
-void write_array(char *buffer, uint32_t *offset, const uint8_t *array, size_t array_size) {
+void write_array(char *buffer, uint32_t *offset, const void *array, size_t array_size) {
     uint32_t padded_array_size = PADDED4(array_size);
 
     write_u32(buffer, offset, array_size);
@@ -99,4 +103,50 @@ void write_array(char *buffer, uint32_t *offset, const uint8_t *array, size_t ar
     *offset += padded_array_size ? padded_array_size : sizeof(uint32_t);
 }
 
+uint32_t drm_format_to_bpp(uint32_t format)
+{
+    switch (format) {
+    case DRM_FORMAT_C8:
+    case DRM_FORMAT_R8:
+        return 1;
 
+    case DRM_FORMAT_RGB565:
+    case DRM_FORMAT_BGR565:
+    case DRM_FORMAT_XRGB1555:
+    case DRM_FORMAT_ARGB1555:
+    case DRM_FORMAT_XBGR1555:
+    case DRM_FORMAT_ABGR1555:
+    case DRM_FORMAT_XRGB4444:
+    case DRM_FORMAT_ARGB4444:
+    case DRM_FORMAT_XBGR4444:
+    case DRM_FORMAT_ABGR4444:
+        return 2;
+
+    case DRM_FORMAT_RGB888:
+    case DRM_FORMAT_BGR888:
+        return 3;
+
+    case DRM_FORMAT_XRGB8888:
+    case DRM_FORMAT_ARGB8888:
+    case DRM_FORMAT_XBGR8888:
+    case DRM_FORMAT_ABGR8888:
+    case DRM_FORMAT_RGBX8888:
+    case DRM_FORMAT_RGBA8888:
+    case DRM_FORMAT_BGRX8888:
+    case DRM_FORMAT_BGRA8888:
+    case DRM_FORMAT_XRGB2101010:
+    case DRM_FORMAT_ARGB2101010:
+    case DRM_FORMAT_XBGR2101010:
+    case DRM_FORMAT_ABGR2101010:
+        return 4;
+
+    case DRM_FORMAT_XRGB16161616:
+    case DRM_FORMAT_ARGB16161616:
+    case DRM_FORMAT_XBGR16161616:
+    case DRM_FORMAT_ABGR16161616:
+        return 8;
+
+    default:
+        return 0;
+    }
+}

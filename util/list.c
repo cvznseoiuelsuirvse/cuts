@@ -47,10 +47,9 @@ void *c_list_push(c_list *l, void *data, size_t data_size) {
 }
 
 void c_list_remove(c_list **head, size_t n) {
-  size_t i;
   c_list *l = *head;
 
-  for (i = 0; l; l = l->next, i++) {
+  for (size_t i = 0; l; l = l->next, i++) {
     if (n == i) {
       if (l->prev) {
         l->prev->next = l->next;
@@ -69,10 +68,9 @@ void c_list_remove(c_list **head, size_t n) {
 }
 
 void c_list_remove_ptr(c_list **head, void *ptr) {
-  size_t i;
   c_list *l = *head;
 
-  for (i = 0; l; l = l->next, i++) {
+  for (size_t i = 0; l; l = l->next, i++) {
     if (l->data == ptr) {
       if (l->prev) {
         l->prev->next = l->next;
@@ -91,14 +89,19 @@ void c_list_remove_ptr(c_list **head, void *ptr) {
 }
 
 void *c_list_get(c_list *l, size_t n) {
-  size_t i;
-  for (i = 0; l->next; l = l->next, i++) {
+  for (size_t i = 0; l->next; l = l->next, i++) {
     if (n == i) {
       return l->data;
     }
   }
 
   return NULL;
+}
+
+void *c_list_get_last(c_list *l) {
+  void *data = NULL;
+  for (size_t i = 0; l->next; l = l->next, i++) data = l->data;
+  return data;
 }
 
 size_t c_list_len(c_list *l) {

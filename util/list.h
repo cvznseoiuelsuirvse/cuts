@@ -18,6 +18,7 @@ void   *c_list_push(c_list *l, void *data, size_t data_size);
 void    c_list_remove(c_list **head, size_t n);
 void 	c_list_remove_ptr(c_list **head, void *ptr);
 void   *c_list_get(c_list *l, size_t n);
+void   *c_list_get_last(c_list *l);
 size_t  c_list_len(c_list *l);
 
 #endif

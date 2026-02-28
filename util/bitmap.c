@@ -23,11 +23,8 @@ uint32_t c_bitmap_get_free(c_bitmap *bm) {
   for (size_t byte_i = 0; byte_i < bm->size / 8; byte_i++) {
     uint8_t byte = bm->bytes[byte_i];
     if ((byte & 0xff) != 0xff) {
-      for (size_t bit_i = 0; bit_i < 8; bit_i++) {
-        if (!(byte & (1 << bit_i))) {
-          return byte_i * 8 + bit_i;
-        }
-      }
+      for (size_t bit_i = 0; bit_i < 8; bit_i++)
+        if (!(byte & (1 << bit_i))) return byte_i * 8 + bit_i;
     }
   }
 

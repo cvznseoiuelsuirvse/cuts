@@ -4,41 +4,54 @@
 #include <sys/un.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <stdarg.h>
 
 #include "wayland/error.h"
 #include "wayland/server.h"
-#include "wayland/protocols/wayland.h"
+#include "wayland/types/wayland.h"
 
 #include "util/helpers.h"
 #include "util/log.h"
 #include "util/event_loop.h"
 
-static const struct wl_interface *__interface[WL_MAX_INTERFACES];
+#ifdef CUTS_LOGS
+#define c_wl_printf(fmt, ...) printf(fmt __VA_OPT__(,) __VA_ARGS__)
+#else
+#define c_wl_printf(fmt, ...)
+#endif
+
+
+static struct c_wl_interface *__interface[C_WL_MAX_INTERFACES];
 static size_t __ninterfaces = 0;
 
-struct wl_recv_message {
+struct c_wl_recv_message {
   uint32_t object_id;
   uint16_t op;
   uint16_t message_size;
   char    *buffer;
 };
 
+struct c_wl_callback {
+	c_wl_object_id callback_id;
+	c_wl_object_id target_id;
+};
 
-inline void wl_interface_add(const struct wl_interface *interface) {
-  assert(__ninterfaces < WL_MAX_INTERFACES);
+inline void c_wl_interface_add(struct c_wl_interface *interface) {
+  assert(__ninterfaces < C_WL_MAX_INTERFACES);
   __interface[__ninterfaces++] = interface; 
 }
 
-inline const struct wl_interface *wl_interface_get(const char *interface_name) {
+inline struct c_wl_interface *c_wl_interface_get(const char *interface_name) {
   for (size_t i = 0; i < __ninterfaces; i++) {
-    const struct wl_interface *interface = __interface[i];
+    struct c_wl_interface *interface = __interface[i];
+    // printf("%s %s %d\n", interface_name, interface->name, STREQ(interface_name, interface->name));
     if (STREQ(interface_name, interface->name)) return interface;
   }
   return NULL;
 }
 
 
-static int create_socket(struct wl_display *display) {
+static int create_socket(struct c_wl_display *display) {
   int fd;
   const char *xdg_runtime_dir = getenv("XDG_RUNTIME_DIR");
   if (!xdg_runtime_dir) {
@@ -80,6 +93,7 @@ static int create_socket(struct wl_display *display) {
   }
 
   snprintf(display->socket_path, sizeof(display->socket_path), "%s", addr.sun_path);
+  c_log(C_LOG_INFO, "Created wayland socket at %s", display->socket_path);
   return fd;
 }
 // static inline void unlink_socket() {
@@ -96,38 +110,37 @@ static inline int set_nonblocking(int fd) {
   return fcntl(fd, F_SETFL, flags);
 }
 
-static c_event_callback_errno client_callback(struct c_event_loop *loop, int fd, void *data) {
-  struct wl_connection *connection = data;
-  int ret = wl_connection_dispatch(connection);
+static c_event_callback_errno client_epoll_callback(struct c_event_loop *loop, int fd, void *data) {
+  struct c_wl_connection *connection = data;
+  int ret = c_wl_connection_dispatch(connection);
   if (ret == 1) {
-    wl_connection_free(connection);
-    return -C_EVENT_ERROR_WL_CLIENT_GONE;
-  }
-  if (ret == -1) {
-    wl_error_send(connection);
-    return -C_EVENT_ERROR_WL_PROTO;
+    c_wl_connection_free(connection);
+    ret = C_EVENT_ERROR_WL_CLIENT_GONE;
+  } else if (ret == -1) {
+    c_wl_error_send(connection);
+    ret = C_EVENT_ERROR_WL_PROTO;
   }
 
-  return -C_EVENT_OK;
+  return -ret;
 
 }
 
-static c_event_callback_errno server_callback(struct c_event_loop *loop, int fd, void *data) {
+static c_event_callback_errno server_epoll_callback(struct c_event_loop *loop, int fd, void *data) {
   int client_fd = accept(fd, NULL, NULL);
 
   if (set_nonblocking(client_fd) == -1) {
-    c_log_warn("wayland/server.c", "server_callback", "failed to set client fd to non-blocking\n");
+    c_log(C_LOG_WARNING, "failed to set client fd to non-blocking");
   }
   
-  struct wl_connection *connection = wl_connection_init(client_fd);
+  struct c_wl_connection *connection = c_wl_connection_init(client_fd);
   if (!connection) {
-    c_log_warn("wayland/server.c", "server_callback", "wl_connection_init failed\n");
+    c_log(C_LOG_ERROR, "c_wl_connection_init failed");
     return -C_EVENT_ERROR_FATAL;
   }
   
 
-  if (c_event_loop_add(loop, client_fd, client_callback, connection) == -1) {
-    c_log_warn("wayland/server.c", "server_callback", "c_event_loop_add failed\n");
+  if (c_event_loop_add(loop, client_fd, client_epoll_callback, connection) == -1) {
+    c_log(C_LOG_ERROR, "c_event_loop_add failed");
     return -C_EVENT_ERROR_FATAL;
   }
 
@@ -135,40 +148,40 @@ static c_event_callback_errno server_callback(struct c_event_loop *loop, int fd,
 }
 
 
-struct wl_display *wl_display_init() {
+struct c_wl_display *c_wl_display_init() {
   struct c_event_loop *loop = c_event_loop_init();
   if (!loop) {
-    c_log_err("wayland/server.c", "wl_display_init", "c_event_loop_init() failed\n");
+    c_log(C_LOG_ERROR, "c_event_loop_init() failed");
     return NULL;
   }
 
-  struct wl_display *display = calloc(1, sizeof(struct wl_display));
+  struct c_wl_display *display = calloc(1, sizeof(struct c_wl_display));
   if (!display) {
-    c_log_err("wayland/server.c", "wl_display_init", "failed to calloc\n");
+    c_log(C_LOG_ERROR, "failed to calloc");
     return NULL;
   }
 
   int fd = create_socket(display);
   if (fd == -1) {
-    c_log_err("wayland/server.c", "wl_display_init", "failed to set client fd to non-blocking\n");
+    c_log(C_LOG_ERROR, "failed to set client fd to non-blocking");
     free(display);
     return NULL;
   }
 
   display->loop = loop;
-  c_event_loop_add(loop, fd, server_callback, display);
+  c_event_loop_add(loop, fd, server_epoll_callback, display);
 
   return display;
 
 }
 
-void wl_display_free(struct wl_display *display) {
+void c_wl_display_free(struct c_wl_display *display) {
   if (display->loop) c_event_loop_free(display->loop);
   if (*display->socket_path) unlink(display->socket_path);
   free(display);
 }
 
-static int wl_connection_read(struct wl_connection *conn, char *buffer, size_t buffer_size) {
+static int c_wl_connection_read(struct c_wl_connection *conn, char *buffer, size_t buffer_size) {
   char cmsg[CMSG_SPACE(sizeof(int))];
 
   struct iovec e[1];
@@ -184,41 +197,48 @@ static int wl_connection_read(struct wl_connection *conn, char *buffer, size_t b
   ssize_t n = recvmsg(conn->client_fd, &m, 0);
   struct cmsghdr *c = CMSG_FIRSTHDR(&m);
   if (c != NULL){
-    conn->msg_fd = *(int *)CMSG_DATA(c);
+    conn->req_fd = *(int *)CMSG_DATA(c);
   }
 
   return n;
 }
 
-void wl_connection_callback_add(struct wl_connection *conn, wl_object_id target_id, wl_object_id callback_id) {
-  struct wl_callback c = {
-    .target_id = target_id,
-    .callback_id = callback_id,
-  };
+int c_wl_connection_callback_add(struct c_wl_connection *conn, c_wl_object_id callback_id, c_wl_object_id target_id) {
+  if (c_wl_object_get(conn, callback_id)) return -1;
 
-  c_list_push(conn->callback_queue, &c, sizeof(struct wl_callback));
+  struct c_wl_callback callback = {callback_id, target_id};
+  c_list_push(conn->callback_queue, &callback, sizeof(struct c_wl_callback));
+  c_wl_object_add(conn, callback_id, c_wl_interface_get("wl_callback"), NULL);
+  return 0;
 }
 
-void wl_connection_callback_done(struct wl_connection *conn, wl_object_id target_id) {
-  struct wl_callback *callback = NULL;
+void c_wl_connection_callback_done(struct c_wl_connection *conn, c_wl_object_id target_id) {
+  struct c_wl_callback *callback = NULL;
 
-  struct wl_callback *c;
-  c_list *_c = conn->callback_queue;
-  c_list_for_each(_c, c) {
-    if (c->target_id == target_id) 
-      callback = c;
+  if (!target_id)
+    callback = c_list_get_last(conn->callback_queue);
+  else {
+    struct c_wl_callback *c;
+    c_list *_c = conn->callback_queue;
+    c_list_for_each(_c, c) {
+      if (c->target_id == target_id) {
+        callback = c;
+        break;
+      }
+    }
   }
 
   if (callback) {
-    wl_callback_done(conn, callback->callback_id, WL_SERIAL);
+    wl_callback_done(conn, callback->callback_id, C_WL_SERIAL);
+    c_wl_object_del(conn, callback->callback_id);
     wl_display_delete_id(conn, 1, callback->callback_id);
     c_list_remove_ptr(&conn->callback_queue, callback);
   }
 }
 
 
-static int wl_connection_write(struct wl_connection *conn, char *buffer, size_t buffer_size) {
-  if (conn->msg_fd > 0) {
+static int c_wl_connection_write(struct c_wl_connection *conn, char *buffer, size_t buffer_size) {
+  if (conn->event_fd > 0) {
     struct msghdr m;
     char cmsg[CMSG_SPACE(sizeof(int))];
 
@@ -234,81 +254,111 @@ static int wl_connection_write(struct wl_connection *conn, char *buffer, size_t 
     struct cmsghdr *c = CMSG_FIRSTHDR(&m);
     c->cmsg_level = SOL_SOCKET;
     c->cmsg_type = SCM_RIGHTS;
-    c->cmsg_len = CMSG_LEN(sizeof(conn->msg_fd));
-    *(int *)CMSG_DATA(c) = conn->msg_fd;
+    c->cmsg_len = CMSG_LEN(sizeof(conn->event_fd));
+    *(int *)CMSG_DATA(c) = conn->event_fd;
 
-    return sendmsg(conn->client_fd, &m, 0);
+    return sendmsg(conn->client_fd, &m, MSG_NOSIGNAL);
   }
 
-  return send(conn->client_fd, buffer, buffer_size, 0);
+  return send(conn->client_fd, buffer, buffer_size, MSG_NOSIGNAL);
 
 }
 
-int wl_connection_send(struct wl_connection *conn, struct wl_message *msg, size_t nargs, ...) {
+int c_wl_connection_send(struct c_wl_connection *conn, struct c_wl_message *msg, size_t nargs, ...) {
   va_list args;
   va_start(args, nargs);
 
-  char buffer[WL_CONN_BUFFER_SIZE] = {0};
+  struct c_wl_object *object = c_wl_object_get(conn, msg->id);
+
+  char buffer[C_WL_CONN_BUFFER_SIZE] = {0};
   uint32_t offset = 0;
   write_u32(buffer, &offset, msg->id);
   write_u16(buffer, &offset, msg->op);
   offset += sizeof(uint16_t);
+
+  union c_wl_arg wl_args[nargs];
+  c_wl_array *arr;
 
   for (size_t i = 0; i < nargs; i++) {
     char c = msg->signature[i];
 
     switch (c) {
     case 'i':
+      wl_args[i].i = va_arg(args, c_wl_int);
+      write_i32(buffer, &offset, wl_args[i].i);
+      break;
+
     case 'e':
+      wl_args[i].e = va_arg(args, c_wl_enum);
+      write_i32(buffer, &offset, wl_args[i].e);
+      break;
+
     case 'f':
-      write_i32(buffer, &offset, va_arg(args, wl_int));
+      wl_args[i].f = va_arg(args, uint32_t);
+      write_i32(buffer, &offset, wl_args[i].f);
       break;
 
     case 'u':
+      wl_args[i].u = va_arg(args, c_wl_uint);
+      write_u32(buffer, &offset, wl_args[i].u);
+      break;
+
     case 'o':
+      wl_args[i].o = va_arg(args, c_wl_object_id);
+      write_u32(buffer, &offset, wl_args[i].o);
+      break;
+
     case 'n':
-      write_u32(buffer, &offset, va_arg(args, wl_uint));
+      wl_args[i].n = va_arg(args, c_wl_new_id);
+      write_u32(buffer, &offset, wl_args[i].n);
       break;
 
     case 's':
-      write_string(buffer, &offset, va_arg(args, wl_string));
+      snprintf(wl_args[i].s, sizeof(wl_args[i].s), "%s", va_arg(args, c_wl_string));
+      write_string(buffer, &offset, wl_args[i].s);
       break;
 
     case 'a':
-      write_array(buffer, &offset, va_arg(args, wl_array), va_arg(args, wl_int));
+      arr = va_arg(args, c_wl_array*);
+      write_array(buffer, &offset, arr->data, arr->size);
+      wl_args[i].a = arr;
       break;
 
+    case 'F':
+      conn->event_fd = va_arg(args, c_wl_fd);
+      wl_args[i].F = conn->event_fd;
+      break;
     }
   }
 
-  conn->msg_fd = msg->fd;
   *(uint16_t *)(buffer + 6) = offset;
-  // printf("SEND BUFFER: ");
-  // print_buffer(buffer, offset);
-  wl_connection_write(conn, buffer, offset);
+
+  c_wl_print_event(conn->client_fd, object, msg->event_name, wl_args, nargs, msg->signature);
+  c_wl_connection_write(conn, buffer, offset);
+
   return 0;
 }
 
-static int dispatch(struct wl_connection *conn, 
-                    wl_object_id object_id, uint16_t op, uint16_t message_size, 
+static int dispatch(struct c_wl_connection *conn, 
+                    c_wl_object_id object_id, uint16_t op, uint16_t message_size, 
                     char *buffer) {
 
-  struct wl_object *object = wl_object_get(conn, object_id);
-  if (!object) return wl_error_set(object_id, WL_DISPLAY_ERROR_INVALID_OBJECT, "object not registered");
+  struct c_wl_object *object = c_wl_object_get(conn, object_id);
+  if (!object) return c_wl_error_set(object_id, WL_DISPLAY_ERROR_INVALID_OBJECT, "object not registered");
 
-  const struct wl_interface *iface = object->iface;
+  const struct c_wl_interface *iface = object->iface;
   if (op > iface->nrequests) 
-    return wl_error_set(object_id, WL_DISPLAY_ERROR_INVALID_METHOD, "method does not exist", 
+    return c_wl_error_set(object_id, WL_DISPLAY_ERROR_INVALID_METHOD, "method does not exist", 
                        iface->name, op, op, iface->nrequests);
 
   
-  struct wl_request request = iface->requests[op];
-  printf("%lu: %s.%s( ", object_id, iface->name, request.name);
+  struct c_wl_request request = iface->requests[op];
 
-  union wl_arg args[request.nargs + 1];
+  union c_wl_arg args[request.nargs + 1];
+  c_wl_array arr = {0};
   args[0].o = object_id;
 
-  uint32_t offset = WL_HEADER_SIZE;
+  uint32_t offset = C_WL_HEADER_SIZE;
   for (size_t i = 1; i <= request.nargs; i++) {
     uint8_t c = request.signature[i-1];
     assert(c != 'a');
@@ -316,69 +366,79 @@ static int dispatch(struct wl_connection *conn,
     switch (c) {
       case 'u': 
         args[i].u = read_u32(buffer, &offset);
-        printf("%lu ", args[i].u);
         break;
 
       case 'i': 
         args[i].i = read_i32(buffer, &offset);
-        printf("%li ", args[i].i);
         break;
 
       case 'f': 
         args[i].f = read_f32(buffer, &offset);
-        printf("%f ", args[i].f);
         break;
 
       case 'o': 
         args[i].o = read_u32(buffer, &offset);
-        printf("%lu ", args[i].o);
         break;
 
       case 'n': 
         args[i].n = read_u32(buffer, &offset);
-        printf("%lu ", args[i].n);
         break;
 
       case 's': 
-        read_string(buffer, &offset, args[i].s, WL_MAX_STRING_SIZE);
-        printf("%s ", args[i].s);
+        read_string(buffer, &offset, args[i].s, C_WL_MAX_STRING_SIZE);
         break;
 
       case 'e': 
         args[i].e = read_i32(buffer, &offset);
-        printf("%d ", args[i].e);
         break;
 
       case 'F':
-        args[i].F = conn->msg_fd;
-        printf("%d ", args[i].F);
+        args[i].F = conn->req_fd;
         break;
+
+      case 'a':
+        arr.size = read_u32(buffer, &offset);
+        arr.data = read_array(buffer, &offset, arr.size);
+        args[i].a = &arr;
+        break;
+        
     }
   }
 
-  printf(")\n");
 
-  int ret = request.handler(conn, args);
+  if (!request.handler) {
+    c_wl_error_set(object_id, WL_DISPLAY_ERROR_IMPLEMENTATION, 
+                   "%s.%s method not implemented", iface->name, request.name);
+    return -1;
+  }
+
+  c_wl_print_request(conn->client_fd, object, &request, args);
+  int ret = request.handler(conn, args, request.handler_data);
+
+  if (arr.data) free(arr.data);
+
   return ret;
 
 }
 
-int wl_connection_dispatch(struct wl_connection *conn) {
+int c_wl_connection_dispatch(struct c_wl_connection *conn) {
   int ret;
-  char buffer[WL_CONN_BUFFER_SIZE];
+  char buffer[C_WL_CONN_BUFFER_SIZE];
 
-  int received = wl_connection_read(conn, buffer, WL_CONN_BUFFER_SIZE);
-  if (received == 0) return 1;
+  int received = c_wl_connection_read(conn, buffer, C_WL_CONN_BUFFER_SIZE);
+  if (received <= 0) return 1;
 
+  // print_buffer(buffer, received);
+  // printf("\nreceived %d\n", received);
 
   size_t msg_count = 0;
-  struct wl_recv_message msgs[1024];
+  struct c_wl_recv_message msgs[1024];
 
   int buffer_offset = 0;
-  wl_object_id last_object = 0;
+  c_wl_object_id last_object = 0;
 
   while (buffer_offset < received) {
-    if ((received - buffer_offset) < WL_HEADER_SIZE) return -1;
+    if ((received - buffer_offset) < C_WL_HEADER_SIZE) return -1;
     if (msg_count > LENGTH(msgs))                    return -1;
 
     uint32_t tmp = 0;
@@ -390,54 +450,67 @@ int wl_connection_dispatch(struct wl_connection *conn) {
       read_u16(buffer+buffer_offset, &tmp);
 
 
-    if (object_id == 1 && op == 0 && message_size == WL_HEADER_SIZE + sizeof(uint32_t))
-      wl_connection_callback_add(conn, last_object, read_u32(buffer+buffer_offset, &tmp));
+    if (object_id == 1 && op == 0 && message_size == C_WL_HEADER_SIZE + sizeof(uint32_t)) {
+      c_wl_object_id c_wl_callback_id = read_u32(buffer+buffer_offset, &tmp);
+      if (c_wl_connection_callback_add(conn, c_wl_callback_id, last_object) == -1) {
+        c_wl_error_set(1, WL_DISPLAY_ERROR_INVALID_OBJECT, "object %d already registered", c_wl_callback_id);
+        return -1;
+      }
 
-    struct wl_recv_message *msg = &msgs[msg_count++];
-    msg->object_id = object_id;
-    msg->op = op;
-    msg->message_size = message_size;
-    msg->buffer = buffer+buffer_offset;
+      dispatch(conn, object_id, op, message_size, buffer+buffer_offset);
+    } else {
+      struct c_wl_recv_message *msg = &msgs[msg_count++];
+      msg->object_id = object_id;
+      msg->op = op;
+      msg->message_size = message_size;
+      msg->buffer = buffer+buffer_offset;
+    }
 
     last_object = object_id;
     buffer_offset+=message_size;
   }
 
   for (size_t i = 0; i < msg_count; i++) {
-    struct wl_recv_message msg = msgs[i];
+    struct c_wl_recv_message msg = msgs[i];
     ret = dispatch(conn, msg.object_id, msg.op, msg.message_size, msg.buffer);
     if (ret != 0) 
       break;
   }
 
+  c_wl_connection_callback_done(conn, 0);
+
   return ret;
 }
 
-int wl_object_add(struct wl_connection *conn, wl_new_id id, const struct wl_interface *interface, void *data) {
-  if (wl_object_get(conn, id)) return 1;
+int c_wl_object_add(struct c_wl_connection *conn, c_wl_new_id id, const struct c_wl_interface *interface, void *data) {
+  if (c_wl_object_get(conn, id)) return -1;
+  assert(interface);
 
-  struct wl_object new_object = {
+  struct c_wl_object new_object = {
     .id = id,
     .iface = interface,
     .data = data,
   };
 
-  c_map_set(conn->objects, id, &new_object, sizeof(struct wl_object));
+  c_map_set(conn->objects, id, &new_object, sizeof(struct c_wl_object));
 
-  if (id < 0xFF000000) 
+  if (0 < id && id < 0xFF000000) 
     c_bitmap_set(conn->client_id_pool, id - 1);
-
-  else
+  else if (id == 0) {
+    c_wl_object_id free_id = c_bitmap_get_free(conn->server_id_pool);
+    c_bitmap_set(conn->server_id_pool, free_id);
+    return free_id + 0xFF000000;
+  } else
     c_bitmap_set(conn->server_id_pool, id - 1);
 
-  return 0;
+  return id;
 }
 
-inline struct wl_object *wl_object_get(struct wl_connection *conn, wl_object_id id) {
+inline struct c_wl_object *c_wl_object_get(struct c_wl_connection *conn, c_wl_object_id id) {
   return c_map_get(conn->objects, id);
 }
 
-int wl_object_del(struct wl_connection *conn, wl_object_id id) {
+int c_wl_object_del(struct c_wl_connection *conn, c_wl_object_id id) {
   if (!c_map_get(conn->objects, id)) return 1;
 
   c_map_remove(conn->objects, id);
@@ -450,8 +523,8 @@ int wl_object_del(struct wl_connection *conn, wl_object_id id) {
   return 0;
 }
 
-struct wl_connection *wl_connection_init(int client_fd) {
-  struct wl_connection *conn = calloc(1, sizeof(struct wl_connection));
+struct c_wl_connection *c_wl_connection_init(int client_fd) {
+  struct c_wl_connection *conn = calloc(1, sizeof(struct c_wl_connection));
   if (!conn) {
     perror("calloc");
     return NULL;
@@ -463,12 +536,12 @@ struct wl_connection *wl_connection_init(int client_fd) {
   conn->server_id_pool = c_bitmap_new(4096);
   conn->client_fd = client_fd;
 
-  wl_object_add(conn, 1, (struct wl_interface *)wl_interface_get("wl_display"), NULL);
+  c_wl_object_add(conn, 1, (struct c_wl_interface *)c_wl_interface_get("wl_display"), NULL);
 
   return conn;
 }
 
-int wl_connection_free(struct wl_connection *conn) {
+int c_wl_connection_free(struct c_wl_connection *conn) {
   c_map_destroy(conn->objects);
   c_list_destroy(conn->callback_queue);
   c_bitmap_destroy(conn->client_id_pool);
