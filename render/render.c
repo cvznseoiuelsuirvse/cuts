@@ -1,20 +1,30 @@
-#include <stdlib.h>
+#define _GNU_SOURCE
 #include <errno.h>
-#include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include <sys/mman.h>
+#include <unistd.h>
+#include <inttypes.h>
+#include <stdlib.h>
+#include <gbm.h>
+
+#include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
 
 #include "render/render.h"
 #include "render/egl.h"
-#include "render/vulkan.h"
-
-#include "wayland/server.h"
 
 #include "backend/drm.h"
 #include "util/log.h"
 
-int drm_add_fb_egl(struct c_render *render) {
-  eglSwapBuffers(render->egl->display, render->egl->surface);
+struct vert_pos {
+  float tl_x, tl_y;
+  float bl_x, bl_y;
+  float br_x, br_y;
+  float tr_x, tr_y;
+};
+
+static int add_fb(struct c_render *render) {
   struct gbm_bo *bo = gbm_surface_lock_front_buffer(render->gbm_surface);
   if (!bo) { 
     c_log(C_LOG_ERROR, "gbm_surface_lock_front_buffer failed: %s", strerror(errno));
@@ -28,11 +38,11 @@ int drm_add_fb_egl(struct c_render *render) {
   uint32_t handles[4] = {gbm_bo_get_handle(bo).u32};
   uint32_t pitches[4] = {gbm_bo_get_stride(bo)};
   uint32_t offsets[4] = {gbm_bo_get_offset(bo, 0)};
-  uint64_t modifier[4] = {gbm_bo_get_modifier(bo)};
 
-  if (drmModeAddFB2WithModifiers(render->drm->fd, 
+  render->drm->buf_id_old = render->drm->buf_id;
+  if (drmModeAddFB2(render->drm->fd, 
                     width, height, format, 
-                    handles, pitches, offsets, modifier, &render->drm->buf_id, 0) != 0) {
+                    handles, pitches, offsets, &render->drm->buf_id, 0) != 0) {
     c_log(C_LOG_ERROR, "drmModeAddFB2 failed: %s", strerror(errno));
     return -1;
   }
@@ -41,18 +51,18 @@ int drm_add_fb_egl(struct c_render *render) {
 
 }
 
-int drm_add_fb_vulkan(struct c_render *render) {}
-
 static void page_flip_handler(int fd, unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec, void *user_data) {
+  c_log(C_LOG_INFO, "page_flip_handler");
   struct c_render *render = user_data;
-  if (render->gbm_bo)
+
+  if (render->gbm_bo) {
     gbm_surface_release_buffer(render->gbm_surface, render->gbm_bo);
-   
+  }
+
   render->gbm_bo = render->gbm_bo_next;
   render->gbm_bo_next = NULL;
       
   render->drm->connector->waiting_for_flip = 0;
-  printf("waiting_for_flip: %d\n", render->drm->connector->waiting_for_flip);
 
 }
 
@@ -71,17 +81,24 @@ int c_render_handle_event(struct c_render *render) {
 }
 
 int c_render_new_page_flip(struct c_render *render) {
-  // if (!render->drm->connector->waiting_for_flip) {
-  //   if (drm_add_fb(render) != 0) return -1;
-  //   if (drmModePageFlip(render->drm->fd, render->drm->connector->crtc_id, 
-  //                       render->drm->buf_id, DRM_MODE_PAGE_FLIP_EVENT, render) != 0) {
-  //     c_log(C_LOG_ERROR, "drmModePageFlip failed: %s", strerror(errno));
-  //     return -1;
-  //   }
-  //   render->drm->connector->waiting_for_flip = 1;
-  // }
-  //
-  // printf("waiting_for_flip: %d\n", render->drm->connector->waiting_for_flip);
+  c_log(C_LOG_INFO, "c_render_new_page_flip");
+
+  if (!render->drm->connector->waiting_for_flip) {
+    c_egl_swap_buffers(render->egl);
+
+    if (add_fb(render) != 0) return -1;
+    if (drmModePageFlip(render->drm->fd, render->drm->connector->crtc_id, 
+                        render->drm->buf_id, DRM_MODE_PAGE_FLIP_EVENT, render) != 0) {
+      c_log(C_LOG_ERROR, "drmModePageFlip failed: %s", strerror(errno));
+      return -1;
+    }
+
+    if (render->drm->buf_id_old)
+      drmModeRmFB(render->drm->fd, render->drm->buf_id_old);
+
+    render->drm->connector->waiting_for_flip = 1;
+  }
+
   return 0;
 }
 
@@ -116,11 +133,140 @@ static int gbm_init(struct c_render *render) {
   return 0;
 }
 
+int c_render_get_ft_fd(struct c_render *render) {
+  int fd = memfd_create("format_table", MFD_CLOEXEC);
+  if (!fd) {
+    c_log(C_LOG_ERROR, "memfd_create failed");
+    return -1;
+  }
+
+  for (size_t i = 0; i < render->formats.n_entries; i++) {
+    struct c_format format = render->formats.entries[i];
+    struct {
+      uint32_t format;
+      uint32_t pad;
+      uint64_t modifier;
+    } entry = {
+      .format = format.drm_format,
+      .modifier = format.modifier
+    };
+    write(fd, &entry, sizeof(entry));
+  }
+
+  return fd;
+}
+
+int c_render_destroy_dmabuf(struct c_render *render, struct c_dmabuf *buf) {
+  eglDestroyImage(render->egl->display, buf->image);
+  glDeleteTextures(1, &buf->texture);
+
+  return 0;
+}
+
+int c_render_import_dmabuf(struct c_render *render, struct c_dmabuf_params *params, struct c_dmabuf *buf) {
+  assert(render->egl);
+
+  struct c_format *format = NULL;
+  for (size_t i = 0; i < render->formats.n_entries; i++) {
+    format = &render->formats.entries[i];
+    if (format->drm_format == params->drm_format && format->modifier == params->modifier) break;
+  }
+
+  char *format_name = drmGetFormatName(params->drm_format);
+
+  if (!format) {
+    c_log(C_LOG_ERROR, "%s (0x%08"PRIx32") 0x%08"PRIx64" pair not found", 
+          format_name, params->drm_format, params->modifier);
+    goto err;
+  }
+
+  if (format->n_planes != params->n_planes) {
+    c_log(C_LOG_ERROR, "%s (0x%08"PRIx32") requires %d planes, but %d was specified", 
+          format_name, params->drm_format, format->n_planes, params->n_planes);
+    goto err;
+
+  }
+
+  if (params->width > format->max_width || params->height > format->max_height) {
+    c_log(C_LOG_ERROR, "buffer is too large. %s (0x%08"PRIx32") max resolution: %ux%u", 
+          format_name, format->drm_format, format->max_width, format->max_height);
+    goto err;
+  };
+
+  free(format_name);
+
+  c_egl_import_dmabuf(render->egl, params, buf);
+  return 0;
+
+err:
+  free(format_name);
+  return -1;
+}
+
+static inline float value_transform_x(int value, int max_value) {
+  return -1 + (float)value/max_value * 2;
+}
+
+static inline float value_transform_y(int value, int max_value) {
+  return 1 + (float)value/max_value * -2;
+}
+
+static void rect_transform(struct c_rect *rect, struct vert_pos *vp, 
+                              uint32_t max_width, uint32_t max_height) {
+
+  vp->tl_x = value_transform_x(rect->x, max_width);
+  vp->tl_y = value_transform_y(rect->y, max_height);
+
+  vp->bl_x = value_transform_x(rect->x, max_width);
+  vp->bl_y = value_transform_y(rect->y + rect->height, max_height);
+
+  vp->br_x = value_transform_x(rect->x + rect->width, max_width);
+  vp->br_y = value_transform_y(rect->y + rect->height, max_height);
+
+  vp->tr_x = value_transform_x(rect->x + rect->width, max_width);
+  vp->tr_y = value_transform_y(rect->y, max_height);
+
+}
+
+int draw(struct c_render *render, struct c_rect *rect) {
+  struct c_gles *gl = render->egl->gl;
+  GLuint texture = rect->texture;
+
+  glUseProgram(render->egl->gl->program);
+
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, texture);
+
+  uint32_t width = render->drm->connector->mode->hdisplay;
+  uint32_t height = render->drm->connector->mode->vdisplay;
+
+  struct vert_pos vp = {0};
+  rect_transform(rect, &vp, width, height);
+
+  float vertices[] = {
+  // positions         uv
+    vp.tl_x, vp.tl_y,  0.0f, 0.0f, // top left
+    vp.bl_x, vp.bl_y,  0.0f, 1.0f, // bottom left
+    vp.br_x, vp.br_y,  1.0f, 1.0f, // bottom right
+                            
+    vp.br_x, vp.br_y,  1.0f, 1.0f, // bottom right
+    vp.tr_x, vp.tr_y,  1.0f, 0.0f, // top right
+    vp.tl_x, vp.tl_y,  0.0f, 0.0f, // top left
+  };
+
+  glBindBuffer(GL_ARRAY_BUFFER, gl->vbo);
+  glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
+
+  glUniform1i(glGetUniformLocation(gl->program, "tex"), 0);
+
+  glDrawArrays(GL_TRIANGLES, 0, 6);
+  return 0;
+}
 
 
 void c_render_free(struct c_render *render) {
   if (render->egl) c_egl_free(render->egl);
-  if (render->vk) c_vulkan_free(render->vk);
+  // if (render->vk) c_vulkan_free(render->vk);
 
   if (render->gbm_bo)      gbm_bo_destroy(render->gbm_bo);
   if (render->gbm_bo_next) gbm_bo_destroy(render->gbm_bo_next);
@@ -128,6 +274,9 @@ void c_render_free(struct c_render *render) {
   if (render->gbm_device)  gbm_device_destroy(render->gbm_device);
 
   if (render->drm) c_drm_backend_free(render->drm);
+
+  if (render->formats.entries)
+    free(render->formats.entries);
 
   free(render);
 }
@@ -142,33 +291,34 @@ struct c_render *c_render_init(struct c_drm_backend *drm) {
   ret = gbm_init(render); 
   if (ret != 0) goto error;
 
-  render->vk = c_vulkan_init(drm->fd);
-  if (!render->vk) goto error;
+  render->egl = c_egl_init(render->gbm_device, render->gbm_surface);
+  if (!render->egl) goto error;
 
-  // render->egl = c_egl_init(render->gbm_device, render->gbm_surface);
-  // if (!render->egl) goto error;
-
-  // if (drm_add_fb(render) != 0) goto error;
-  // if (drmModeSetCrtc(drm->fd, drm->connector->crtc_id, drm->buf_id, 
-  //                  0, 0, &drm->connector->id, 1, drm->connector->mode) != 0) {
-  //   c_log(C_LOG_ERROR, "drmModeSetCrtc failed: %s", strerror(errno));
-  //   goto error;
-  // }
-  // c_render_new_page_flip(render);
+  render->formats.entries = c_egl_query_formats(render->egl, &render->formats.n_entries);
 
   struct c_wl_interface *zwp_linux_dmabuf_v1 = c_wl_interface_get("zwp_linux_dmabuf_v1");
   assert(zwp_linux_dmabuf_v1);
-
   zwp_linux_dmabuf_v1->requests[2].handler_data = render; // zwp_linux_dmabuf_v1_get_default_feedback
   zwp_linux_dmabuf_v1->requests[3].handler_data = render; // zwp_linux_dmabuf_v1_get_surface_feedback
     
-
   struct c_wl_interface *zwp_linux_buffer_params_v1 = c_wl_interface_get("zwp_linux_buffer_params_v1");
   assert(zwp_linux_buffer_params_v1);
+  zwp_linux_buffer_params_v1->requests[3].handler_data = render; // zwp_linux_buffer_params_v1_create_immed    
+    
+  struct c_wl_interface *wl_buffer = c_wl_interface_get("wl_buffer");
+  assert(wl_buffer);
+  wl_buffer->requests[0].handler_data = render;
 
-  zwp_linux_buffer_params_v1->requests[2].handler_data = render->egl; // zwp_linux_buffer_params_v1_create
-  zwp_linux_buffer_params_v1->requests[3].handler_data = render->egl; // zwp_linux_buffer_params_v1_create_immed
+  c_egl_swap_buffers(render->egl);
+  if (add_fb(render) != 0) goto error;
+  if (drmModeSetCrtc(drm->fd, drm->connector->crtc_id, drm->buf_id,
+                  0, 0, &drm->connector->id, 1, drm->connector->mode) != 0) { 
+    c_log(C_LOG_ERROR, "drmModeSetCrtc failed: %s", strerror(errno));
+    goto error;
+  }
 
+  glViewport(0, 0, drm->connector->mode->hdisplay, drm->connector->mode->vdisplay);
+    
   return render;
 
 error:

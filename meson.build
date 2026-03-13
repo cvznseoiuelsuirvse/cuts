@@ -5,15 +5,9 @@ project('cuts', 'c',
     'c_std=c11',
     'optimization=0',
     'debug=true',
+    'b_sanitize=address',
   ],
 )
-
-
-libdrm_dep = dependency('libdrm')
-egl_dep = dependency('egl')
-gles_dep = dependency('glesv2')
-gbm_dep = dependency('gbm')
-vulkan_dep = dependency('vulkan')
 
 subdir('util')
 subdir('backend')
@@ -36,6 +30,14 @@ sources = [
 executable('main',
   sources,
   c_args: c_args,
-  dependencies: [libdrm_dep, egl_dep, gbm_dep, gles_dep, vulkan_dep],
+  dependencies: [
+    libdrm_dep, 
+    egl_dep, 
+    gbm_dep, 
+    gles_dep, 
+    libinput_dep, 
+    libseat_dep,
+    libudev_dep,
+  ],
   install: true,
 )

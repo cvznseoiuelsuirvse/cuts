@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+
 #include <stdlib.h>
 #include <drm_fourcc.h>
 #include <assert.h>
@@ -9,13 +10,81 @@
 #include <sys/mman.h>
 #include <drm_mode.h>
 #include <xf86drm.h>
-#include <GL/gl.h>
+#include <gbm.h>
 
+
+#include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
+#include <GLES3/gl3.h>
+
+#include "render/render.h"
 #include "render/egl.h"
+
+#include "backend/drm.h"
 #include "util/log.h"
 #include "util/helpers.h"
 
-#define load_proc(name) egl->proc.name = (void *)eglGetProcAddress(#name);
+#define EGL_DMA_BUF_PLANEX_FD_EXT(n)          EGL_DMA_BUF_PLANE0_FD_EXT + (n) * 3
+#define EGL_DMA_BUF_PLANEX_OFFSET_EXT(n)      EGL_DMA_BUF_PLANE0_FD_EXT + (n) * 3 + 1
+#define EGL_DMA_BUF_PLANEX_PITCH_EXT(n)       EGL_DMA_BUF_PLANE0_FD_EXT + (n) * 3 + 2
+#define EGL_DMA_BUF_PLANEX_MODIFIER_LO_EXT(n) EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT + (n) * 2
+#define EGL_DMA_BUF_PLANEX_MODIFIER_HI_EXT(n) EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT + (n) * 2 + 1
+
+
+static const GLchar *vertex_shader = 
+  "#version 300 es\n"
+  "layout(location = 0) in vec2 pos;\n"
+  "layout(location = 1) in vec2 uv;\n"
+  "\n"
+  "out vec2 v_uv;\n"
+  "\n"
+  "void main() {\n"
+  "    v_uv = uv;\n"
+  "    gl_Position = vec4(pos, 0.0, 1.0);\n"
+  "}\n";
+
+static const GLchar *fragment_shader = 
+  "#version 300 es\n"
+  "precision mediump float;\n"
+  "\n"
+  "in vec2 v_uv;\n"
+  "uniform sampler2D tex;\n"
+  "\n"
+  "out vec4 frag_color;\n"
+  "\n"
+  "void main() {\n"
+  "    frag_color = texture(tex, v_uv);\n"
+  "}\n";
+
+
+static GLuint compile_shader(GLenum type) {
+  GLuint shader = glCreateShader(type);
+  if (type == GL_VERTEX_SHADER)
+    glShaderSource(shader, 1, &vertex_shader, NULL);
+  else
+    glShaderSource(shader, 1, &fragment_shader, NULL);
+
+  glCompileShader(shader);
+
+  GLint success = 0;
+  glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+  if (success == GL_FALSE) {
+    GLint err_size = 0;
+    glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &err_size);
+    char err[err_size];
+    glGetShaderInfoLog(shader, err_size, &err_size, err);
+    if (type == GL_VERTEX_SHADER)
+      c_log(C_LOG_ERROR, "failed to compile vertex shader: %s", err);
+    else
+      c_log(C_LOG_ERROR, "failed to compile fragment shader: %s", err);
+
+    glDeleteShader(shader);
+    return 0;
+  }
+
+  return shader;
+  
+}
 
 static int has_ext(const char *ext, const char *exts) {
   if (!exts) return 0;
@@ -34,15 +103,42 @@ static int has_ext(const char *ext, const char *exts) {
 
 }
 
+static void gl_log(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar *message, const void *userParam) {
+  const char *c_log_level;
+  switch (type) {
+    case GL_DEBUG_TYPE_ERROR_KHR:               c_log_level = C_LOG_ERROR;  break;
+    case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR_KHR: c_log_level = C_LOG_INFO;   break;
+    case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR_KHR:  c_log_level = C_LOG_ERROR;  break;
+    case GL_DEBUG_TYPE_PORTABILITY_KHR:         c_log_level = C_LOG_INFO;   break;
+    case GL_DEBUG_TYPE_PERFORMANCE_KHR:         c_log_level = C_LOG_INFO;   break;
+    case GL_DEBUG_TYPE_OTHER_KHR:               c_log_level = C_LOG_INFO;   break;
+    case GL_DEBUG_TYPE_MARKER_KHR:              c_log_level = C_LOG_INFO;   break;
+    case GL_DEBUG_TYPE_PUSH_GROUP_KHR:          c_log_level = C_LOG_INFO;   break;
+    case GL_DEBUG_TYPE_POP_GROUP_KHR:           c_log_level = C_LOG_INFO;   break;
+    default:                                    c_log_level = C_LOG_INFO;   break;
+	}
 
-static int load_gl_exts(struct c_egl *egl) {
-  const GLubyte *exts = glGetString(GL_EXTENSIONS);
+  c_log(c_log_level, "[GL] %s", message);
+  
+};
 
-  if (has_ext("GL_OES_EGL_image_external", (const char *)exts)) {
-    load_proc(glEGLImageTargetTexture2DOES);
+static int load_gl_exts(struct c_gles *gl) {
+  const char *exts = (const char *)glGetString(GL_EXTENSIONS);
+
+#define load_gl_proc(name) gl->proc.name = (void *)eglGetProcAddress(#name);
+
+  if (has_ext("GL_OES_EGL_image_external", exts)) {
+    load_gl_proc(glEGLImageTargetTexture2DOES);
   } else {
     c_log(C_LOG_ERROR, "GL_OES_EGL_image_external not supported");
     return -1;
+  }
+
+  if (has_ext("GL_KHR_debug", exts)) {
+    load_gl_proc(glDebugMessageControlKHR);
+    load_gl_proc(glDebugMessageCallbackKHR);
+
+    gl->proc.glDebugMessageCallbackKHR(gl_log, NULL);
   }
 
   return 0;
@@ -52,10 +148,10 @@ static int load_gl_exts(struct c_egl *egl) {
 static int load_egl_exts(struct c_egl *egl) {
   const char *exts_display = eglQueryString(egl->display, EGL_EXTENSIONS);
 
-
+#define load_egl_proc(name) egl->proc.name = (void *)eglGetProcAddress(#name);
   if (has_ext("EGL_KHR_image_base", exts_display)) {
-    load_proc(eglCreateImageKHR);
-    load_proc(eglDestroyImageKHR);
+    load_egl_proc(eglCreateImageKHR);
+    load_egl_proc(eglDestroyImageKHR);
   } else {
     c_log(C_LOG_ERROR, "EGL_KHR_image_base not supported");
     return -1;
@@ -68,8 +164,8 @@ static int load_egl_exts(struct c_egl *egl) {
 
   if (has_ext("EGL_EXT_image_dma_buf_import_modifiers", exts_display)) {
     egl->ext_support.EXT_image_dma_buf_import_modifiers = 1;
-    load_proc(eglQueryDmaBufFormatsEXT);
-    load_proc(eglQueryDmaBufModifiersEXT);
+    load_egl_proc(eglQueryDmaBufFormatsEXT);
+    load_egl_proc(eglQueryDmaBufModifiersEXT);
   } else {    
     c_log(C_LOG_ERROR, "EGL_EXT_image_dma_buf_import_modifiers not supported");
     return -1;
@@ -79,7 +175,7 @@ static int load_egl_exts(struct c_egl *egl) {
 
 }
 
-static int c_egl_query_modifiers(struct c_egl *egl, EGLint format, 
+static int c_egl_get_modifiers(struct c_egl *egl, EGLint format, 
                                  EGLuint64KHR **modifiers, EGLBoolean **external_only) {
   EGLint num_modifiers;
   if (egl->proc.eglQueryDmaBufModifiersEXT(egl->display, format, 0, NULL, NULL, &num_modifiers) != EGL_TRUE) {
@@ -110,7 +206,7 @@ static int c_egl_query_modifiers(struct c_egl *egl, EGLint format,
   return num_modifiers;
 }
 
-static int c_egl_query_formats(struct c_egl *egl, EGLint **formats) {
+static int c_egl_get_formats(struct c_egl *egl, EGLint **formats) {
   EGLint num_formats;
   if (egl->proc.eglQueryDmaBufFormatsEXT(egl->display, 0, NULL, &num_formats) != EGL_TRUE) {
     c_log(C_LOG_ERROR, "eglQueryDmaBufFormatsEXT(NULL) failed");
@@ -132,25 +228,11 @@ static int c_egl_query_formats(struct c_egl *egl, EGLint **formats) {
   return num_formats;
 }
 
-int c_egl_get_format_table_fd(struct c_egl *egl) {
-  int fd = memfd_create("format_table", 0);
-  if (!fd) {
-    c_log(C_LOG_ERROR, "memfd_create failed");
-    return -1;
-  }
 
-  for (size_t i = 0; i < egl->format_table.pairs_n; i++) {
-    struct c_format_table_pair pair = egl->format_table.pairs[i];
-    write(fd, &pair, sizeof(pair));
-  }
-
-  return fd;
-}
-
-static int get_format_table(struct c_egl *egl) {
+struct c_format *c_egl_query_formats(struct c_egl *egl, size_t *n_entries) {
   EGLint *formats = NULL;
-  EGLint num_formats = c_egl_query_formats(egl, &formats);
-  if (num_formats == -1) return -1;
+  EGLint num_formats = c_egl_get_formats(egl, &formats);
+  if (num_formats == -1) return NULL;
 
 
   for (int f = 0; f < num_formats; f++) {
@@ -158,18 +240,23 @@ static int get_format_table(struct c_egl *egl) {
     EGLuint64KHR *modifiers = NULL;
     EGLBoolean *external_only = NULL;
 
-    EGLint num_modifiers = c_egl_query_modifiers(egl, format, &modifiers, &external_only);
+    EGLint num_modifiers = c_egl_get_modifiers(egl, format, &modifiers, &external_only);
     if (num_modifiers < 0) continue;
-    for (int m = 0; m < num_modifiers; m++, egl->format_table.pairs_n++);
+
+    if (num_modifiers == 0)
+      (*n_entries)++;
+    else
+      for (int m = 0; m < num_modifiers; m++, (*n_entries)++);
 
     free(modifiers);
     free(external_only);
   }
 
-  egl->format_table.pairs = calloc(egl->format_table.pairs_n, sizeof(struct c_format_table_pair));
-  if (!egl->format_table.pairs) {
+  struct c_format *table = malloc(*n_entries * sizeof(*table));
+  if (!table) {
     c_log(C_LOG_ERROR, "calloc failed");
-    return -1;
+    free(formats);
+    return NULL;
   }
 
   int i = 0;
@@ -179,20 +266,51 @@ static int get_format_table(struct c_egl *egl) {
     EGLuint64KHR *modifiers = NULL;
     EGLBoolean *external_only = NULL;
 
-    c_log(C_LOG_INFO, "format=%s", drmGetFormatName(format));
-    EGLint num_modifiers = c_egl_query_modifiers(egl, format, &modifiers, &external_only);
-    if (num_modifiers < 0) continue;
+    char *format_name = drmGetFormatName(format);
+    c_log(C_LOG_INFO, "format=%s", format_name);
+    free(format_name);
+
+    EGLint num_modifiers = c_egl_get_modifiers(egl, format, &modifiers, &external_only);
+    if (num_modifiers < 0)  continue;
+
+    if (num_modifiers == 0) {
+      struct c_format *entry = &table[i++];
+      entry->drm_format = format;
+      entry->modifier = DRM_FORMAT_MOD_INVALID;
+      entry->n_planes = drm_format_num_planes(format);
+
+      GLint max_tex_size;
+      glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_tex_size);
+
+      entry->max_width = max_tex_size;
+      entry->max_height = max_tex_size;
+
+      char *modifier_name = drmGetFormatModifierName(DRM_FORMAT_MOD_INVALID);
+      c_log(C_LOG_INFO, "   modifier=%s", modifier_name);
+      free(modifier_name);
+
+      continue;
+    }
 
     for (int m = 0; m < num_modifiers; m++) {
-      struct c_format_table_pair *pair = &egl->format_table.pairs[i++];
+      struct c_format *entry = &table[i++];
       EGLuint64KHR modifier = modifiers[m];
-      pair->format = format;
-      pair->modifer = modifier;
+      entry->drm_format = format;
+      entry->modifier = modifier;
+      entry->n_planes = drm_format_num_planes(format);
+
+      GLint max_tex_size;
+      glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_tex_size);
+
+      entry->max_width = max_tex_size;
+      entry->max_height = max_tex_size;
      
+      char *modifier_name = drmGetFormatModifierName(modifier);
       if (external_only[m])
-        c_log(C_LOG_INFO, "   modifier=%s external_only", drmGetFormatModifierName(modifier));
+        c_log(C_LOG_INFO, "   modifier=%s external_only", modifier_name);
       else
-        c_log(C_LOG_INFO, "   modifier=%s", drmGetFormatModifierName(modifier));
+        c_log(C_LOG_INFO, "   modifier=%s", modifier_name);
+      free(modifier_name);
     }
 
     free(modifiers);
@@ -200,11 +318,12 @@ static int get_format_table(struct c_egl *egl) {
   }
 
   free(formats);
-  return 0;
+  return table;
 }
 
-int c_egl_import_dmabuf(struct c_egl *egl, struct c_wl_buffer *buffer) {
-  uint64_t modifier = buffer->dmabuf->modifier;
+int c_egl_import_dmabuf(struct c_egl *egl, struct c_dmabuf_params *params, struct c_dmabuf *buf) {
+  uint64_t modifier = params->modifier;
+  int use_modifier = modifier != DRM_FORMAT_MOD_INVALID && egl->ext_support.EXT_image_dma_buf_import_modifiers;
 
   int image_attribs_size = 0;
   EGLint image_attribs[32];
@@ -213,37 +332,52 @@ int c_egl_import_dmabuf(struct c_egl *egl, struct c_wl_buffer *buffer) {
   image_attribs[image_attribs_size++] = (key); \
   image_attribs[image_attribs_size++] = (value);
 
-  add_attrib(EGL_WIDTH,                          buffer->width);
-  add_attrib(EGL_HEIGHT,                         buffer->height);
-  add_attrib(EGL_LINUX_DRM_FOURCC_EXT,           buffer->dmabuf->format);
-  add_attrib(EGL_DMA_BUF_PLANE0_FD_EXT,          buffer->dmabuf->fd);
-	add_attrib(EGL_DMA_BUF_PLANE0_OFFSET_EXT,      buffer->dmabuf->offset);
-	add_attrib(EGL_DMA_BUF_PLANE0_PITCH_EXT,       buffer->dmabuf->stride);
+  add_attrib(EGL_WIDTH,                          params->width);
+  add_attrib(EGL_HEIGHT,                         params->height);
+  add_attrib(EGL_LINUX_DRM_FOURCC_EXT,           params->drm_format);
 
-
-  if (modifier != DRM_FORMAT_INVALID) {
-    if (egl->ext_support.EXT_image_dma_buf_import_modifiers)
-      modifier = DRM_FORMAT_MOD_LINEAR;
-    
-    add_attrib(EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, modifier >> 32);
-    add_attrib(EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, modifier & 0xFFFFFFFF);
+  for (size_t i = 0; i < params->n_planes; i++) {
+    add_attrib(EGL_DMA_BUF_PLANEX_FD_EXT(i), params->planes[i].fd);
+    add_attrib(EGL_DMA_BUF_PLANEX_OFFSET_EXT(i), params->planes[i].offset);
+    add_attrib(EGL_DMA_BUF_PLANEX_PITCH_EXT(i), params->planes[i].stride);
+    if (use_modifier) {
+      add_attrib(EGL_DMA_BUF_PLANEX_MODIFIER_HI_EXT(i), modifier >> 32);
+      add_attrib(EGL_DMA_BUF_PLANEX_MODIFIER_LO_EXT(i), modifier & 0xFFFFFFFF);
+    }
   }
 
   image_attribs[image_attribs_size] = EGL_NONE;
 
-  EGLImageKHR image = egl->proc.eglCreateImageKHR(egl->display, EGL_NO_CONTEXT, 
+  buf->image = egl->proc.eglCreateImageKHR(egl->display, EGL_NO_CONTEXT, 
                                                   EGL_LINUX_DMA_BUF_EXT, NULL, image_attribs);
-  if (!image) {
+  if (!buf->image) {
     c_log(C_LOG_ERROR, "eglCreateImageKHR failed");
     return -1;
   }
+      
+  for (uint32_t i = 0; i < buf->n_planes; i++) {
+    close(buf->planes[i].fd);
+  } 
 
-  GLuint texture;
-  glGenTextures(1, &texture);
-  glBindTexture(GL_TEXTURE_2D, texture);
-  egl->proc.glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
+  glGenTextures(1, &buf->texture);
+  glBindTexture(GL_TEXTURE_2D, buf->texture);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+  egl->gl->proc.glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, buf->image);
+  glBindTexture(GL_TEXTURE_2D, 0);
 
   return 0;
+}
+
+static void c_gles_free(struct c_gles *gl) {
+
+  if (gl->program)
+    glDeleteProgram(gl->program);
+
+  free(gl);
 }
 
 void c_egl_free(struct c_egl *egl) {
@@ -253,10 +387,89 @@ void c_egl_free(struct c_egl *egl) {
     eglTerminate(egl->display);
   }
 
-  if (egl->format_table.pairs)
-    free(egl->format_table.pairs);
+  if (egl->gl)
+    c_gles_free(egl->gl);
 
   free(egl);
+}
+
+
+static struct c_gles *c_gles_init() {
+  struct c_gles *gl = calloc(1, sizeof(*gl));
+  if (!gl) {
+    c_log(C_LOG_ERROR, "calloc failed");
+    return NULL;
+  }
+
+  if (load_gl_exts(gl) == -1)
+    goto err;
+
+  c_log(C_LOG_INFO, "GL version %s", glGetString(GL_VERSION));
+  c_log(C_LOG_INFO, "GL vendor %s", glGetString(GL_VENDOR));
+  c_log(C_LOG_INFO, "GL display extensions %s", glGetString(GL_EXTENSIONS));
+
+
+  GLuint vertex, fragment;
+  if (!(vertex = compile_shader(GL_VERTEX_SHADER))) goto err;
+  if (!(fragment = compile_shader(GL_FRAGMENT_SHADER))) goto err;
+
+  GLuint prog = glCreateProgram();
+  glAttachShader(prog, vertex);
+  glAttachShader(prog, fragment);
+
+  glLinkProgram(prog);
+
+  GLint success_link = 0;
+  glGetProgramiv(prog, GL_LINK_STATUS, &success_link);
+  if (success_link == GL_FALSE) {
+    GLint err_size = 0;
+    glGetProgramiv(prog, GL_INFO_LOG_LENGTH, &err_size);
+    char err[err_size];
+    glGetProgramInfoLog(prog, err_size, &err_size, err);
+    c_log(C_LOG_ERROR, "glLinkProgram failed: %s", err);
+
+    goto err_link;
+  }
+
+  glDetachShader(prog, vertex);
+  glDetachShader(prog, fragment);
+  glDeleteShader(vertex);
+  glDeleteShader(fragment);
+
+  gl->program = prog;
+
+  int stride = 4 * sizeof(float);
+  glGenVertexArrays(1, &gl->vao);
+  glGenBuffers(1, &gl->vbo);
+
+  glBindVertexArray(gl->vao);
+
+  glBindBuffer(GL_ARRAY_BUFFER, gl->vbo);
+  glBufferData(GL_ARRAY_BUFFER, 4 * 6 * sizeof(float), NULL, GL_DYNAMIC_DRAW);
+
+  glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, stride, (void *)0);
+  glEnableVertexAttribArray(0);
+
+  glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, stride, (void *)(2 * sizeof(float)));
+  glEnableVertexAttribArray(1);
+
+  return gl;
+
+err_link:
+  glDeleteShader(vertex);
+  glDeleteShader(fragment);
+
+err:
+  c_gles_free(gl);
+  return NULL;
+}
+
+int draw_quad() {
+  return 0;
+}
+
+inline void c_egl_swap_buffers(struct c_egl *egl) {
+  eglSwapBuffers(egl->display, egl->surface);
 }
 
 struct c_egl *c_egl_init(struct gbm_device *device, struct gbm_surface *surface) {
@@ -266,9 +479,9 @@ struct c_egl *c_egl_init(struct gbm_device *device, struct gbm_surface *surface)
     return NULL;
   }
 
-  if (has_ext("EGL_EXT_platform_device", eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS))) {
-    load_proc(eglGetPlatformDisplayEXT);
-  }
+  if (has_ext("EGL_EXT_platform_device", eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS)))
+    egl->proc.eglGetPlatformDisplayEXT = (void *)eglGetProcAddress("eglGetPlatformDisplayEXT");
+  
 
   EGLDisplay display;
   if (egl->proc.eglGetPlatformDisplayEXT) {
@@ -303,15 +516,6 @@ struct c_egl *c_egl_init(struct gbm_device *device, struct gbm_surface *surface)
     return NULL;
   }
 
-  c_log(C_LOG_INFO, "GL version %s", glGetString(GL_VERSION));
-  c_log(C_LOG_INFO, "GL vendor %s", glGetString(GL_VENDOR));
-  c_log(C_LOG_INFO, "GL display extensions %s", glGetString(GL_EXTENSIONS));
-
-  if (load_gl_exts(egl) == -1) {
-    c_egl_free(egl);
-    return NULL;
-  }
-
   const EGLint config_attribs[] = {
     EGL_SURFACE_TYPE,    EGL_WINDOW_BIT,
     EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
@@ -319,20 +523,19 @@ struct c_egl *c_egl_init(struct gbm_device *device, struct gbm_surface *surface)
     EGL_NONE,
   };
 
-  EGLint num_config = 0;
-  if (!eglGetConfigs(display, NULL, 0, &num_config)) {
+  
+  EGLint n_configs;
+  if (!eglGetConfigs(display, NULL, 0, &n_configs)) {
     c_log(C_LOG_ERROR, "eglGetConfigs failed");
     c_egl_free(egl);
     return NULL;
   }
 
-  EGLConfig configs[num_config];
+  EGLConfig configs[n_configs];
   EGLint matched;
-  if (!eglChooseConfig(display, config_attribs, configs, num_config, &matched)) {
+  if (!eglChooseConfig(display, config_attribs, configs, n_configs, &matched)) {
     c_log(C_LOG_ERROR, "eglChooseConfig failed");
-    c_egl_free(egl);
-    return NULL;
-
+    goto err;
   }
 
   EGLConfig selected_config = NULL;
@@ -348,8 +551,7 @@ struct c_egl *c_egl_init(struct gbm_device *device, struct gbm_surface *surface)
 
   if (!selected_config) {
     c_log(C_LOG_ERROR, "No config selected");
-    c_egl_free(egl);
-    return NULL;
+    goto err;
   }
 
   const EGLint context_attribs[] = {
@@ -360,28 +562,28 @@ struct c_egl *c_egl_init(struct gbm_device *device, struct gbm_surface *surface)
   egl->context = eglCreateContext(display, selected_config, EGL_NO_CONTEXT, context_attribs);
   if (!egl->context) {
     c_log(C_LOG_ERROR, "eglCreateContext failed: %s", strerror(errno));
-    c_egl_free(egl);
-    return NULL;
+    goto err;
   }
 
   egl->surface = eglCreatePlatformWindowSurface(display, selected_config, surface, NULL);
   if (!egl->surface) {
     c_log(C_LOG_ERROR, "eglCreatePlatformWindowSurface failed");
-    c_egl_free(egl);
-    return NULL;
+    goto err;
   }
 
   if (!eglMakeCurrent(display, egl->surface, egl->surface, egl->context)) {
     c_log(C_LOG_ERROR, "eglMakeCurrent failed");
-    c_egl_free(egl);
-    return NULL;
+    goto err;
   };
 
-  if (get_format_table(egl) == -1) {
-    c_egl_free(egl);
-    return NULL;
-  }
 
-  return egl;
-}
+  egl->gl = c_gles_init();
+  if (!egl->gl)
+    goto err;
   
+  return egl;
+
+err:
+  c_egl_free(egl);
+  return NULL;
+}

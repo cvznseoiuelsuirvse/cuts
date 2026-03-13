@@ -2,9 +2,11 @@
 #define CUTS_UTIL_LOG_H
 
 #include "wayland/server.h"
+#include <stdint.h>
 
 #define C_LOG_ERROR   "ERROR"
 #define C_LOG_INFO    "INFO"
+#define C_LOG_DEBUG   "DEBUG"
 #define C_LOG_WARNING "WARNING"
 
 #ifdef CUTS_LOGS

@@ -2,11 +2,11 @@
 
 #include <signal.h>
 #include <stdlib.h>
-#include <GLES2/gl2.h>
+#include <assert.h>
 
 #include "wayland/server.h"
-#include "wayland/error.h"
 #include "wayland/types/wayland.h"
+#include "wayland/types/xdg-shell.h"
 
 #include "backend/drm.h"
 #include "render/render.h"
@@ -14,75 +14,119 @@
 #include "util/event_loop.h"
 #include "util/log.h"
 
-struct c_compositor {
+struct cuts_window {
+  struct c_wl_surface *surface; // managed by wayland backend
+  uint32_t width, height;
+  uint32_t x, y;
+};
+
+struct cuts {
 	int		               needs_redraw;
-  c_list 	            *surfaces;
+  c_list 	            *windows;
   struct c_wl_display *display;
   struct c_render     *render;
 };
 
-struct c_compositor *__comp = NULL;
+struct cuts *__comp = NULL;
+
+#define CUTS_GL_COLOR 0.8f, 0.1f, 0.2f, 1.0f
+#define clear_color()   \
+  glClearColor(CUTS_GL_COLOR); \
+  glClear(GL_COLOR_BUFFER_BIT)
+
 
 void release_surface(struct c_wl_surface *surface) {
   struct c_wl_connection *conn = surface->conn;
+  c_wl_connection_callback_done(conn, surface->id);
   wl_buffer_release(conn, surface->active->id);
-  c_wl_connection_callback_done(conn, surface->active->id);
 
+  surface->pending = surface->active;
   surface->active = NULL;
-  surface->damage.x = 0;
-  surface->damage.y = 0;
-  surface->damage.width = 0;
-  surface->damage.height = 0;
-  surface->damage.damaged = 0;
 }
 
-static void draw_surfaces() {
-  struct c_wl_surface *surface;
-  c_list *_s = __comp->surfaces;
-  c_list_for_each(_s, surface) {
-    if (surface->active) {
-      release_surface(surface);
+static void draw_window(struct cuts_window *window) {
+  printf("draw_window\n");
+  struct c_rect rect = {
+    .width = window->width,
+    .height = window->height,
+    .x = window->x,
+    .y = window->y,
+    .texture = window->surface->active->dma->dma->texture,
+  };
+  draw(__comp->render, &rect);
+  release_surface(window->surface);
+}
+
+static void draw_windows() {
+  printf("draw_windows\n");
+  struct cuts_window *window;
+  c_list *_w = __comp->windows;
+
+  c_list_for_each(_w, window) {
+    if (window->surface->active) {
+      draw_window(window);
     }
   }
+
+}
+
+static void render_frame() {
+  printf("render_frame\n");
+  if (__comp->render->drm->connector->waiting_for_flip) {
+    __comp->needs_redraw = 1;
+    return;
+  }
+
+  clear_color();
+  draw_windows();
+
+  if (!c_render_new_page_flip(__comp->render)) 
+    __comp->needs_redraw = 0;
+  
 }
 
 static c_event_callback_errno render_callback(struct c_event_loop *loop, int fd, void *data) {
   if (c_render_handle_event(data) == -1) 
     return -C_EVENT_ERROR_FATAL;
 
+  if (__comp->needs_redraw)
+    render_frame();
+
   return C_EVENT_OK;
 }
 
-
-int wl_surface_commit(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
-  c_wl_object_id c_wl_surface_id = args[0].u;
-  struct c_wl_object *c_wl_surface = c_wl_object_get(conn, c_wl_surface_id);
-
-  struct c_wl_surface *surface = c_wl_surface->data;
-
-  surface->active = surface->pending;
-  surface->pending = NULL;
-
-  c_render_new_page_flip(__comp->render);
+int on_surface_new_cb(struct c_wl_surface *surface) {
+  struct cuts_window window = {.surface = surface};
+  printf("%p\n", surface);
+  c_list_push(__comp->windows, &window, sizeof(window));
   return 0;
 }
 
-int wl_compositor_create_surface(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
-  c_wl_object_id wl_surface_id = args[1].o;
-  struct c_wl_object *wl_surface;
-  C_WL_CHECK_IF_NOT_REGISTERED(wl_surface_id, wl_surface);
+int on_window_new_cb(struct c_wl_surface *surface, c_wl_object_id xdg_toplevel_id) {
+  struct cuts_window *window = NULL;
+  c_list *_w = __comp->windows;
+  c_list_for_each(_w, window) {
+    if (window->surface == surface) {
+      uint32_t mon_width = __comp->render->drm->connector->mode->hdisplay;
+      uint32_t mon_height = __comp->render->drm->connector->mode->vdisplay;
+      uint32_t gap = 15;
 
-  struct c_wl_surface *c_wl_surface = calloc(1, sizeof(struct c_wl_surface));
-  if (!c_wl_surface) {
-    c_log(C_LOG_ERROR, "calloc failed");
-    return c_wl_error_set(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed");
+      window->x = gap;
+      window->y = gap;
+
+      window->width = mon_width - gap * 2;
+      window->height = mon_height - gap * 2;
+
+      c_wl_array arr = {0, NULL};
+      xdg_toplevel_configure(surface->conn, xdg_toplevel_id, window->width, window->height, &arr);
+      return 0;
+    }
   }
+  return -1;
+}
 
-  c_wl_surface->id = wl_surface_id;
-  c_wl_surface->conn = conn;
-  void *data = c_list_push(__comp->surfaces, c_wl_surface, 0);
-
-  c_wl_object_add(conn, wl_surface_id, c_wl_interface_get("wl_surface"), data);
+int on_window_update_cb(struct c_wl_surface *surface) {
+  render_frame();
   return 0;
 }
 
@@ -90,6 +134,34 @@ int wl_compositor_create_surface(struct c_wl_connection *conn, union c_wl_arg *a
 static void cleanup(int err) {
   if (__comp->render)  c_render_free(__comp->render);
   if (__comp->display) c_wl_display_free(__comp->display);
+
+
+  struct cuts_window *window;
+  c_list *_w = __comp->windows;
+  c_list_for_each(_w, window) {
+    struct c_wl_surface *surface = window->surface;
+    struct c_wl_buffer *wl_buffer;
+    if (surface->active)
+      wl_buffer = surface->active;
+    else if (surface->pending)
+      wl_buffer = surface->pending;
+    else
+      goto free_surface;
+  
+    if (wl_buffer->type == C_WL_BUFFER_DMA) {
+      free(wl_buffer->dma->dma); 
+      free(wl_buffer->dma); 
+    }
+
+    free(wl_buffer);
+   
+  free_surface:
+    free(surface);
+
+    free(window);
+  }
+
+  c_list_destroy(__comp->windows);
   exit(err);
 }
 
@@ -99,14 +171,18 @@ int main() {
 
   int ret = 0;
 
-  struct c_compositor compositor = {0};
+  struct cuts compositor = {0};
   __comp = &compositor;
   
   struct c_wl_display *display = c_wl_display_init();
   if (!display) 
     goto out;
+
+  display->callbacks.on_surface_new = on_surface_new_cb;
+  display->callbacks.on_window_new = on_window_new_cb;
+  display->callbacks.on_window_update = on_window_update_cb;
   compositor.display = display;
-  compositor.surfaces = c_list_new();
+  compositor.windows = c_list_new();
 
   struct c_drm_backend *drm = c_drm_backend_init();
   if (!drm)
@@ -117,9 +193,9 @@ int main() {
     goto out;
   __comp->render = render;
 
-  // glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
-  // glClear(GL_COLOR_BUFFER_BIT);
-  // c_render_new_page_flip(render);
+
+  clear_color();
+  c_render_new_page_flip(render);
 
   c_event_loop_add(display->loop, drm->fd, render_callback, render);
 

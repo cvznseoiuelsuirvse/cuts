@@ -5,7 +5,7 @@
 
 void _c_wl_print_request(int client_fd, struct c_wl_object *object, struct c_wl_request *request, union c_wl_arg *args) {
   const struct c_wl_interface *iface = object->iface;
-  printf("CLIENT %d -> %s#%lu.%s(", client_fd, iface->name, object->id, request->name);
+  printf("[WAYLAND] #%d -> %s#%lu.%s(", client_fd, iface->name, object->id, request->name);
 
   c_wl_array *arr;
   for (size_t i = 1; i <= request->nargs; i++) {
@@ -64,7 +64,7 @@ void _c_wl_print_event(int client_fd, struct c_wl_object *object, const char *ev
 					   union c_wl_arg *args, size_t nargs, const char *signature) {
 
   const struct c_wl_interface *iface = object->iface;
-  printf("CLIENT %d <- %s#%lu.%s(", client_fd, iface->name, object->id, event_name);
+  printf("[WAYLAND] #%d <- %s#%lu.%s(", client_fd, iface->name, object->id, event_name);
 
   c_wl_array *arr;
   for (size_t i = 0; i < nargs; i++) {

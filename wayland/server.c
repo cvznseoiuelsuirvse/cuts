@@ -14,13 +14,6 @@
 #include "util/log.h"
 #include "util/event_loop.h"
 
-#ifdef CUTS_LOGS
-#define c_wl_printf(fmt, ...) printf(fmt __VA_OPT__(,) __VA_ARGS__)
-#else
-#define c_wl_printf(fmt, ...)
-#endif
-
-
 static struct c_wl_interface *__interface[C_WL_MAX_INTERFACES];
 static size_t __ninterfaces = 0;
 
@@ -132,7 +125,7 @@ static c_event_callback_errno server_epoll_callback(struct c_event_loop *loop, i
     c_log(C_LOG_WARNING, "failed to set client fd to non-blocking");
   }
   
-  struct c_wl_connection *connection = c_wl_connection_init(client_fd);
+  struct c_wl_connection *connection = c_wl_connection_init(client_fd, data);
   if (!connection) {
     c_log(C_LOG_ERROR, "c_wl_connection_init failed");
     return -C_EVENT_ERROR_FATAL;
@@ -181,7 +174,7 @@ void c_wl_display_free(struct c_wl_display *display) {
   free(display);
 }
 
-static int c_wl_connection_read(struct c_wl_connection *conn, char *buffer, size_t buffer_size) {
+static int c_wl_connection_read(struct c_wl_connection *conn, char *buffer, size_t buffer_size, int *req_fd) {
   char cmsg[CMSG_SPACE(sizeof(int))];
 
   struct iovec e[1];
@@ -197,7 +190,7 @@ static int c_wl_connection_read(struct c_wl_connection *conn, char *buffer, size
   ssize_t n = recvmsg(conn->client_fd, &m, 0);
   struct cmsghdr *c = CMSG_FIRSTHDR(&m);
   if (c != NULL){
-    conn->req_fd = *(int *)CMSG_DATA(c);
+    *req_fd = *(int *)CMSG_DATA(c);
   }
 
   return n;
@@ -237,8 +230,8 @@ void c_wl_connection_callback_done(struct c_wl_connection *conn, c_wl_object_id 
 }
 
 
-static int c_wl_connection_write(struct c_wl_connection *conn, char *buffer, size_t buffer_size) {
-  if (conn->event_fd > 0) {
+static int c_wl_connection_write(struct c_wl_connection *conn, char *buffer, size_t buffer_size, int event_fd) {
+  if (event_fd > 0) {
     struct msghdr m;
     char cmsg[CMSG_SPACE(sizeof(int))];
 
@@ -254,8 +247,8 @@ static int c_wl_connection_write(struct c_wl_connection *conn, char *buffer, siz
     struct cmsghdr *c = CMSG_FIRSTHDR(&m);
     c->cmsg_level = SOL_SOCKET;
     c->cmsg_type = SCM_RIGHTS;
-    c->cmsg_len = CMSG_LEN(sizeof(conn->event_fd));
-    *(int *)CMSG_DATA(c) = conn->event_fd;
+    c->cmsg_len = CMSG_LEN(sizeof(event_fd));
+    *(int *)CMSG_DATA(c) = event_fd;
 
     return sendmsg(conn->client_fd, &m, MSG_NOSIGNAL);
   }
@@ -270,7 +263,7 @@ int c_wl_connection_send(struct c_wl_connection *conn, struct c_wl_message *msg,
 
   struct c_wl_object *object = c_wl_object_get(conn, msg->id);
 
-  char buffer[C_WL_CONN_BUFFER_SIZE] = {0};
+  char buffer[C_WL_BUFFER_SIZE] = {0};
   uint32_t offset = 0;
   write_u32(buffer, &offset, msg->id);
   write_u16(buffer, &offset, msg->op);
@@ -278,6 +271,7 @@ int c_wl_connection_send(struct c_wl_connection *conn, struct c_wl_message *msg,
 
   union c_wl_arg wl_args[nargs];
   c_wl_array *arr;
+  int event_fd = 0;
 
   for (size_t i = 0; i < nargs; i++) {
     char c = msg->signature[i];
@@ -325,8 +319,8 @@ int c_wl_connection_send(struct c_wl_connection *conn, struct c_wl_message *msg,
       break;
 
     case 'F':
-      conn->event_fd = va_arg(args, c_wl_fd);
-      wl_args[i].F = conn->event_fd;
+      event_fd = va_arg(args, c_wl_fd);
+      wl_args[i].F = event_fd;
       break;
     }
   }
@@ -334,14 +328,14 @@ int c_wl_connection_send(struct c_wl_connection *conn, struct c_wl_message *msg,
   *(uint16_t *)(buffer + 6) = offset;
 
   c_wl_print_event(conn->client_fd, object, msg->event_name, wl_args, nargs, msg->signature);
-  c_wl_connection_write(conn, buffer, offset);
+  c_wl_connection_write(conn, buffer, offset, event_fd);
 
   return 0;
 }
 
 static int dispatch(struct c_wl_connection *conn, 
                     c_wl_object_id object_id, uint16_t op, uint16_t message_size, 
-                    char *buffer) {
+                    char *buffer, int req_fd) {
 
   struct c_wl_object *object = c_wl_object_get(conn, object_id);
   if (!object) return c_wl_error_set(object_id, WL_DISPLAY_ERROR_INVALID_OBJECT, "object not registered");
@@ -385,7 +379,7 @@ static int dispatch(struct c_wl_connection *conn,
         break;
 
       case 's': 
-        read_string(buffer, &offset, args[i].s, C_WL_MAX_STRING_SIZE);
+        read_string(buffer, &offset, args[i].s, C_WL_STRING_SIZE);
         break;
 
       case 'e': 
@@ -393,7 +387,7 @@ static int dispatch(struct c_wl_connection *conn,
         break;
 
       case 'F':
-        args[i].F = conn->req_fd;
+        args[i].F = req_fd;
         break;
 
       case 'a':
@@ -423,19 +417,19 @@ static int dispatch(struct c_wl_connection *conn,
 
 int c_wl_connection_dispatch(struct c_wl_connection *conn) {
   int ret;
-  char buffer[C_WL_CONN_BUFFER_SIZE];
+  char buffer[C_WL_BUFFER_SIZE];
 
-  int received = c_wl_connection_read(conn, buffer, C_WL_CONN_BUFFER_SIZE);
+  int req_fd = 0;
+  int received = c_wl_connection_read(conn, buffer, C_WL_BUFFER_SIZE, &req_fd);
   if (received <= 0) return 1;
-
-  // print_buffer(buffer, received);
-  // printf("\nreceived %d\n", received);
 
   size_t msg_count = 0;
   struct c_wl_recv_message msgs[1024];
 
   int buffer_offset = 0;
   c_wl_object_id last_object = 0;
+
+  int sync_requested = 0;
 
   while (buffer_offset < received) {
     if ((received - buffer_offset) < C_WL_HEADER_SIZE) return -1;
@@ -452,12 +446,13 @@ int c_wl_connection_dispatch(struct c_wl_connection *conn) {
 
     if (object_id == 1 && op == 0 && message_size == C_WL_HEADER_SIZE + sizeof(uint32_t)) {
       c_wl_object_id c_wl_callback_id = read_u32(buffer+buffer_offset, &tmp);
+      sync_requested = 1;
       if (c_wl_connection_callback_add(conn, c_wl_callback_id, last_object) == -1) {
         c_wl_error_set(1, WL_DISPLAY_ERROR_INVALID_OBJECT, "object %d already registered", c_wl_callback_id);
         return -1;
       }
+      dispatch(conn, object_id, op, message_size, buffer+buffer_offset, 0);
 
-      dispatch(conn, object_id, op, message_size, buffer+buffer_offset);
     } else {
       struct c_wl_recv_message *msg = &msgs[msg_count++];
       msg->object_id = object_id;
@@ -472,12 +467,13 @@ int c_wl_connection_dispatch(struct c_wl_connection *conn) {
 
   for (size_t i = 0; i < msg_count; i++) {
     struct c_wl_recv_message msg = msgs[i];
-    ret = dispatch(conn, msg.object_id, msg.op, msg.message_size, msg.buffer);
+    ret = dispatch(conn, msg.object_id, msg.op, msg.message_size, msg.buffer, req_fd);
     if (ret != 0) 
       break;
   }
 
-  c_wl_connection_callback_done(conn, 0);
+  if (sync_requested)
+    c_wl_connection_callback_done(conn, 0);
 
   return ret;
 }
@@ -523,7 +519,7 @@ int c_wl_object_del(struct c_wl_connection *conn, c_wl_object_id id) {
   return 0;
 }
 
-struct c_wl_connection *c_wl_connection_init(int client_fd) {
+struct c_wl_connection *c_wl_connection_init(int client_fd, struct c_wl_display *display) {
   struct c_wl_connection *conn = calloc(1, sizeof(struct c_wl_connection));
   if (!conn) {
     perror("calloc");
@@ -535,6 +531,7 @@ struct c_wl_connection *c_wl_connection_init(int client_fd) {
   conn->client_id_pool = c_bitmap_new(4096);
   conn->server_id_pool = c_bitmap_new(4096);
   conn->client_fd = client_fd;
+  conn->dpy = display;
 
   c_wl_object_add(conn, 1, (struct c_wl_interface *)c_wl_interface_get("wl_display"), NULL);
 

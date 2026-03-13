@@ -9,7 +9,9 @@
 #include "backend/drm.h"
 #include "util/log.h"
 
-const char *connector_str(uint32_t conn_type) {
+#define c_unused __attribute__((unused))
+
+c_unused static const char *drm_connector_str(uint32_t conn_type) {
 	switch (conn_type) {
 	case DRM_MODE_CONNECTOR_Unknown:     return "Unknown";
 	case DRM_MODE_CONNECTOR_VGA:         return "VGA";
@@ -32,7 +34,56 @@ const char *connector_str(uint32_t conn_type) {
 	}
 }
 
-int calc_refresh_rate(drmModeModeInfo *mode) {
+int drm_format_num_planes(uint32_t format) {
+    switch (format) {
+    case DRM_FORMAT_C8:
+    case DRM_FORMAT_RGB332:
+    case DRM_FORMAT_BGR233:
+    case DRM_FORMAT_XRGB4444:
+    case DRM_FORMAT_ARGB4444:
+    case DRM_FORMAT_XRGB1555:
+    case DRM_FORMAT_ARGB1555:
+    case DRM_FORMAT_RGB565:
+    case DRM_FORMAT_BGR565:
+    case DRM_FORMAT_RGB888:
+    case DRM_FORMAT_BGR888:
+    case DRM_FORMAT_XRGB8888:
+    case DRM_FORMAT_ARGB8888:
+    case DRM_FORMAT_XBGR8888:
+    case DRM_FORMAT_ABGR8888:
+    case DRM_FORMAT_XRGB2101010:
+    case DRM_FORMAT_ARGB2101010:
+        return 1;
+    
+    case DRM_FORMAT_NV12:
+    case DRM_FORMAT_NV21:
+    case DRM_FORMAT_NV16:
+    case DRM_FORMAT_NV61:
+    case DRM_FORMAT_NV24:
+    case DRM_FORMAT_NV42:
+    case DRM_FORMAT_P010:
+    case DRM_FORMAT_P012:
+    case DRM_FORMAT_P016:
+        return 2;
+
+    case DRM_FORMAT_YUV410:
+    case DRM_FORMAT_YVU410:
+    case DRM_FORMAT_YUV411:
+    case DRM_FORMAT_YVU411:
+    case DRM_FORMAT_YUV420:
+    case DRM_FORMAT_YVU420:
+    case DRM_FORMAT_YUV422:
+    case DRM_FORMAT_YVU422:
+    case DRM_FORMAT_YUV444:
+    case DRM_FORMAT_YVU444:
+        return 3;
+
+    default:
+        return 0; 
+    }
+}
+
+c_unused static int drm_calc_refresh_rate(drmModeModeInfo *mode) {
 	int res = (mode->clock * 1000000LL / mode->htotal + mode->vtotal / 2) / mode->vtotal;
 
 	if (mode->flags & DRM_MODE_FLAG_INTERLACE)
@@ -47,7 +98,7 @@ int calc_refresh_rate(drmModeModeInfo *mode) {
 	return res;
 }
 
-drmModeModeInfoPtr get_preferred_mode(drmModeConnector *connector) {
+static drmModeModeInfoPtr get_preferred_mode(drmModeConnector *connector) {
   drmModeModeInfoPtr mode = NULL;
   for (int i = 0; i < connector->count_modes; i++) {
     mode = &connector->modes[i];
@@ -56,7 +107,7 @@ drmModeModeInfoPtr get_preferred_mode(drmModeConnector *connector) {
   return mode;
 }
 
-uint32_t get_crtc_id(int fd, drmModeResPtr res, drmModeConnectorPtr conn, uint32_t *taken_crtcs) {
+static uint32_t get_crtc_id(int fd, drmModeResPtr res, drmModeConnectorPtr conn, uint32_t *taken_crtcs) {
   for (int enc_n = 0; enc_n < conn->count_encoders; enc_n++) {
     drmModeEncoderPtr encoder = drmModeGetEncoder(fd, res->encoders[enc_n]);
     if (!encoder) continue;
@@ -190,6 +241,7 @@ struct c_drm_backend *c_drm_backend_init() {
   if (!resource) goto error;
 
   if (c_drm_backend_get_connector(backend, resource) == -1) goto error;
+
 
   drmModeFreeResources(resource);
   return backend;

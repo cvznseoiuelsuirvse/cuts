@@ -4,20 +4,21 @@
 #include <sys/stat.h>
 
 #include "wayland/types/xdg-shell.h"
+#include "wayland/types/wayland.h"
 #include "wayland/server.h"
 #include "wayland/error.h"
 
 
 int xdg_wm_base_get_xdg_surface(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
   c_wl_new_id xdg_surface_id = args[1].n;
-  struct c_wl_object *xdg_surface_obj;
-  C_WL_CHECK_IF_NOT_REGISTERED(xdg_surface_id, xdg_surface_obj);
+  struct c_wl_object *xdg_surface;
+  C_WL_CHECK_IF_NOT_REGISTERED(xdg_surface_id, xdg_surface);
 
   c_wl_object_id wl_surface_id = args[2].o;
-  struct c_wl_object *c_wl_surface_obj;
-  C_WL_CHECK_IF_REGISTERED(wl_surface_id, c_wl_surface_obj);
+  struct c_wl_object *wl_surface;
+  C_WL_CHECK_IF_REGISTERED(wl_surface_id, wl_surface);
 
-  c_wl_object_add(conn, xdg_surface_id, c_wl_interface_get("xdg_surface"), c_wl_surface_obj->data);
+  c_wl_object_add(conn, xdg_surface_id, c_wl_interface_get("xdg_surface"), (struct c_wl_surface *)wl_surface->data);
 
   return 0;
 }
@@ -73,21 +74,28 @@ int xdg_surface_set_window_geometry(struct c_wl_connection *conn, union c_wl_arg
 
 int xdg_surface_get_toplevel(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
   c_wl_object_id xdg_surface_id = args[0].o;
-  struct c_wl_object *xdg_surface_obj = c_wl_object_get(conn, xdg_surface_id);
+  struct c_wl_object *xdg_surface = c_wl_object_get(conn, xdg_surface_id);
 
   c_wl_new_id xdg_toplevel_id = args[1].n;
   struct c_wl_object *xdg_toplevel;
   C_WL_CHECK_IF_NOT_REGISTERED(xdg_toplevel_id, xdg_toplevel);
 
-  struct c_wl_surface *wl_surface = xdg_surface_obj->data;
-  wl_surface->role = C_WL_SURFACE_TOPLEVEL;
+  struct c_wl_surface *c_wl_surface = xdg_surface->data;
+  c_wl_surface->role = C_WL_SURFACE_TOPLEVEL;
 
-  c_wl_object_add(conn, xdg_toplevel_id, c_wl_interface_get("xdg_toplevel"), wl_surface);
-  c_wl_array arr = {0, NULL};
-  xdg_toplevel_configure(conn, xdg_toplevel_id, 0, 0, &arr);
+  c_wl_object_add(conn, xdg_toplevel_id, c_wl_interface_get("xdg_toplevel"), c_wl_surface);
 
-  wl_surface->serial = C_WL_SERIAL;
-  xdg_surface_configure(conn, xdg_surface_id, wl_surface->serial);
+  struct c_wl_display *dpy = conn->dpy;
+  if (dpy->callbacks.on_window_new) {
+    if (dpy->callbacks.on_window_new(c_wl_surface, xdg_toplevel_id) != 0)
+      return c_wl_error_set(args[0].u, WL_DISPLAY_ERROR_IMPLEMENTATION, "on_window_new callback failed");
+  } else {
+    c_wl_array arr = {0, NULL};
+    xdg_toplevel_configure(conn, xdg_toplevel_id, 0, 0, &arr);
+  }
+
+  c_wl_surface->serial = C_WL_SERIAL;
+  xdg_surface_configure(conn, xdg_surface_id, c_wl_surface->serial);
 
   return 0;
 }

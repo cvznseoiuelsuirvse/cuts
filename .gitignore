@@ -3,10 +3,8 @@
 protocols/
 build/
 ref/
-build-musl/
 .clangd
 Makefile
-.env
-musl-cross.txt
-build.sh
-x86_64-linux-musl-*
+send.sh
+cmd
+runvm.sh

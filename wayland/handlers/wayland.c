@@ -12,11 +12,15 @@
 
 #include "util/helpers.h"
 #include "util/log.h"
+#include "render/render.h"
 
+void draw_surfaces();
 
 static enum wl_shm_format_enum supported_formats[] = {
   WL_SHM_FORMAT_ARGB8888,
   WL_SHM_FORMAT_XRGB8888,
+  // WL_SHM_FORMAT_NV12,
+  // WL_SHM_FORMAT_YUV420,
 };
 
 static void damage_surface(struct c_wl_surface *surface, union c_wl_arg *args) {
@@ -66,7 +70,7 @@ int wl_registry_bind(struct c_wl_connection *conn, union c_wl_arg *args, void *u
 
   c_wl_string interface_name = args[2].s;
   const struct c_wl_interface *interface = c_wl_interface_get(interface_name);
-  if (!interface) return c_wl_error_set(new_id, WL_DISPLAY_ERROR_IMPLEMENTATION, "interface not supported");
+  if (!interface) return c_wl_error_set(new_id, WL_DISPLAY_ERROR_IMPLEMENTATION, "interface is not supported");
 
   c_wl_object_add(conn, new_id, interface, 0);
 
@@ -88,7 +92,17 @@ int wl_shm_create_pool(struct c_wl_connection *conn, union c_wl_arg *args, void 
   c_wl_fd pool_fd = args[2].F;
   c_wl_int buffer_size = args[3].i;
 
-  struct c_wl_shm *shm = calloc(1, sizeof(struct c_wl_shm));
+  struct c_wl_shm *wl_shm = calloc(1, sizeof(*wl_shm));
+  if (!wl_shm) return c_wl_error_set(wl_shm_id, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed (c_wl_shm)");
+
+  struct c_shm *shm = calloc(1, sizeof(*shm));
+  if (!shm) {
+    free(wl_shm);
+    return c_wl_error_set(wl_shm_id, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed (c_shm)");
+  }
+
+  wl_shm->id = wl_shm_id;
+  wl_shm->shm = shm;
   shm->fd = pool_fd;
 
   uint8_t *buffer = mmap(0, buffer_size, PROT_READ | PROT_WRITE, MAP_SHARED, pool_fd, 0);
@@ -114,8 +128,8 @@ int wl_shm_create_pool(struct c_wl_connection *conn, union c_wl_arg *args, void 
     return c_wl_error_set(wl_shm_id, error_code, "failed to mmap");
   }
 
-  shm->buffer = buffer;
-  shm->size = buffer_size;
+  wl_shm->buffer = buffer;
+  wl_shm->size = buffer_size;
 
   c_wl_object_add(conn, c_wl_shm_pool_id, c_wl_interface_get("wl_shm_pool"), shm);
   return 0;
@@ -152,23 +166,24 @@ int wl_shm_pool_create_buffer(struct c_wl_connection *conn, union c_wl_arg *args
   }
 
   struct c_wl_object *c_wl_shm_pool = c_wl_object_get(conn, wl_shm_pool_id);
-  struct c_wl_shm *shm = c_wl_shm_pool->data;
+  struct c_wl_shm *wl_shm = c_wl_shm_pool->data;
+  struct c_shm *shm = wl_shm->shm;
 
   uint32_t region_size = (uint32_t)stride * height;
-  if ((region_size > shm->size) || (offset > shm->size - region_size)) {
-    c_wl_error_set(wl_shm_pool_id, WL_DISPLAY_ERROR_INVALID_OBJECT, "requested region too big");
+  if ((region_size > wl_shm->size) || (offset > wl_shm->size - region_size)) {
+    c_wl_error_set(wl_shm_pool_id, WL_DISPLAY_ERROR_INVALID_OBJECT, "requested region too large");
     return -1;
   }
 
-  struct c_wl_buffer *buffer = calloc(1, sizeof(struct c_wl_buffer));
-  buffer->offset = offset;
-  buffer->width = width;
-  buffer->height = height;
-  buffer->stride = stride;
-  buffer->format = format;
-  buffer->shm = shm;
+  struct c_wl_buffer *wl_buffer = calloc(1, sizeof(struct c_wl_buffer));
+  wl_buffer->width = width;
+  wl_buffer->height = height;
+  wl_buffer->shm = wl_shm;
 
-  c_wl_object_add(conn, c_wl_buffer_id, c_wl_interface_get("wl_buffer"), buffer);
+  shm->stride = stride;
+  shm->format = format;
+
+  c_wl_object_add(conn, c_wl_buffer_id, c_wl_interface_get("wl_buffer"), wl_buffer);
   return 0;
 }
 
@@ -204,13 +219,17 @@ int wl_shm_pool_destroy(struct c_wl_connection *conn, union c_wl_arg *args, void
   return 0;
 }
 
-int wl_buffer_destroy(struct c_wl_connection *conn, union c_wl_arg *args, void *user_data) {
+int wl_buffer_destroy(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
   c_wl_object_id wl_buffer_id = args[0].o;
 
   struct c_wl_object *c_wl_buffer = c_wl_object_get(conn, wl_buffer_id);
   struct c_wl_buffer *buffer = c_wl_buffer->data;
-  if (buffer)
+  if (buffer) {
+    c_render_destroy_dmabuf(userdata, buffer->dma->dma);
+    free(buffer->dma->dma);
+    free(buffer->dma);
     free(buffer);
+  }
   c_wl_object_del(conn, wl_buffer_id);
 
   return 0;
@@ -227,7 +246,6 @@ int wl_compositor_create_region(struct c_wl_connection *conn, union c_wl_arg *ar
     return c_wl_error_set(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed");
   }
 
-  c_wl_region->id = wl_region_id;
   c_wl_object_add(conn, wl_region_id, c_wl_interface_get("wl_region"), c_wl_region);
   return 0;
 }
@@ -249,29 +267,12 @@ int wl_region_add(struct c_wl_connection *conn, union c_wl_arg *args, void *user
 
   return 0;
 }
+
 int wl_region_destroy(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
   c_wl_object_id wl_region_id = args[0].u;
   struct c_wl_object *wl_region = c_wl_object_get(conn, wl_region_id);
   free(wl_region->data);
   c_wl_object_del(conn, wl_region_id);
-  return 0;
-}
-
-
-int _wl_compositor_create_surface(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
-  c_wl_object_id wl_surface_id = args[1].o;
-  struct c_wl_object *wl_surface;
-  C_WL_CHECK_IF_NOT_REGISTERED(wl_surface_id, wl_surface);
-
-  struct c_wl_surface *c_wl_surface = calloc(1, sizeof(struct c_wl_surface));
-  if (!c_wl_surface) {
-    c_log(C_LOG_ERROR, "calloc failed");
-    return c_wl_error_set(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed");
-  }
-
-  c_wl_surface->id = wl_surface_id;
-  c_wl_surface->conn = conn;
-  c_wl_object_add(conn, wl_surface_id, c_wl_interface_get("wl_surface"), c_wl_surface);
   return 0;
 }
 
@@ -291,6 +292,8 @@ int wl_surface_attach(struct c_wl_connection *conn, union c_wl_arg *args, void *
 
   return 0;
 }
+
+
 
 int wl_surface_damage(struct c_wl_connection *conn, union c_wl_arg *args, void *user_data) {
   c_wl_object_id wl_surface_id = args[0].u;
@@ -337,15 +340,64 @@ int wl_surface_set_opaque_region(struct c_wl_connection *conn, union c_wl_arg *a
 
   c_wl_object_id wl_region_id = args[1].o;
   if (wl_region_id == 0) {
-    surface->opaque = NULL;
+    memset(&surface->opaque, 0, sizeof(surface->opaque));
+    // surface->opaque = NULL;
     return 0;
   }
 
   struct c_wl_object *c_wl_region;
   C_WL_CHECK_IF_REGISTERED(wl_region_id, c_wl_region);
 
-  surface->opaque = c_wl_region->data;
+  memcpy(&surface->opaque, c_wl_region->data, sizeof(surface->opaque));
+  // surface->opaque = c_wl_region->data;
 
   return 0;
 }
+
+int wl_surface_commit(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
+  c_wl_object_id c_wl_surface_id = args[0].u;
+  struct c_wl_object *c_wl_surface = c_wl_object_get(conn, c_wl_surface_id);
+
+  struct c_wl_surface *wl_surface = c_wl_surface->data;
+  struct c_wl_buffer *wl_buffer = wl_surface->pending;
+  if (!wl_buffer)
+    return 0;
+
+
+  wl_surface->active = wl_surface->pending;
+  wl_surface->pending = NULL;
+
+  struct c_wl_display *dpy = conn->dpy;
+  if (dpy->callbacks.on_window_update) {
+    if (dpy->callbacks.on_window_update(wl_surface) != 0)
+      return c_wl_error_set(args[0].u, WL_DISPLAY_ERROR_IMPLEMENTATION, "on_window_update() callback failed");
+  }
+
+  return 0;
+}
+
+int wl_compositor_create_surface(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
+  c_wl_object_id wl_surface_id = args[1].o;
+  struct c_wl_object *wl_surface;
+  C_WL_CHECK_IF_NOT_REGISTERED(wl_surface_id, wl_surface);
+
+  struct c_wl_surface *c_wl_surface = calloc(1, sizeof(struct c_wl_surface));
+  if (!c_wl_surface) {
+    c_log(C_LOG_ERROR, "calloc failed");
+    return c_wl_error_set(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed");
+  }
+
+  c_wl_surface->id = wl_surface_id;
+  c_wl_surface->conn = conn;
+  
+  struct c_wl_display *dpy = conn->dpy;
+  if (dpy->callbacks.on_surface_new) {
+    if (dpy->callbacks.on_surface_new(c_wl_surface) != 0)
+      return c_wl_error_set(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "on_surface_new() callback failed");
+  }
+
+  c_wl_object_add(conn, wl_surface_id, c_wl_interface_get("wl_surface"), c_wl_surface);
+  return 0;
+}
+
 

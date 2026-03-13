@@ -222,7 +222,7 @@ def parse(xml_path: str, basename: str) -> None:
         f.write(f'#ifndef {h_guard_name}\n')
         f.write(f'#define {h_guard_name}\n\n')
 
-        f.write('#include "wayland/server.h"\n')
+        f.write('#include "wayland/types.h"\n')
         f.write('#include <stdint.h>\n\n\n')
 
         enums_s = []

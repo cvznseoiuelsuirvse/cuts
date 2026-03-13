@@ -26,13 +26,12 @@ struct c_drm_connector {
 	uint32_t		    crtc_id;
 	drmModeCrtcPtr	    orig_crtc;
 	int 				waiting_for_flip;
-	// struct c_dumb_framebuffer *front;
-	// struct c_dumb_framebuffer *back;
 };
 
 struct c_drm_backend {
 	int 	 fd;
 	uint32_t buf_id;
+	uint32_t buf_id_old;
 	/* single monitor setup for now */
 	struct c_drm_connector *connector; 
 };
@@ -40,7 +39,6 @@ struct c_drm_backend {
 struct c_drm_backend *c_drm_backend_init();
 void c_drm_backend_free(struct c_drm_backend *drm);
 int c_drm_backend_dev_id(struct c_drm_backend *drm, dev_t *dev_id);
-// int  c_drm_backend_page_flip(struct c_drm_backend *backend);
-// void c_drm_backend_page_flip2(struct c_drm_backend *backend, int *needs_redraw);
+int drm_format_num_planes(uint32_t format);
 
 #endif

@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <string.h>
 
 #include "wayland/types/wayland.h"
 #include "wayland/types/linux-dmabuf-v1.h"
@@ -12,10 +13,8 @@
 
 #include "backend/drm.h"
 #include "render/render.h"
-#include "render/egl.h"
 
 #include "util/log.h"
-#include "util/helpers.h"
 
 
 static int send_feedback(struct c_wl_connection *conn, c_wl_object_id id, c_wl_object_id feedback_id, struct c_render *render) {
@@ -31,23 +30,20 @@ static int send_feedback(struct c_wl_connection *conn, c_wl_object_id id, c_wl_o
   };
 
 
-  struct c_egl *egl = render->egl;
   zwp_linux_dmabuf_feedback_v1_main_device(conn, feedback_id, &device);
 
-  int fd = c_egl_get_format_table_fd(egl);
-  if (fd == -1) {
-    c_wl_error_set(feedback_id, WL_DISPLAY_ERROR_IMPLEMENTATION, "failed to get format table id");
-    return -1;
-  }
-
-  zwp_linux_dmabuf_feedback_v1_format_table(conn, feedback_id, fd, egl->format_table.pairs_n * 16);
+  int fd = c_render_get_ft_fd(render);
+  if (fd == -1) 
+    return c_wl_error_set(feedback_id, WL_DISPLAY_ERROR_IMPLEMENTATION, "failed to get format table id");
+  
+  zwp_linux_dmabuf_feedback_v1_format_table(conn, feedback_id, fd, render->formats.n_entries * 16);
   zwp_linux_dmabuf_feedback_v1_tranche_target_device(conn, feedback_id, &device);
   zwp_linux_dmabuf_feedback_v1_tranche_flags(conn, feedback_id, 
                                              ZWP_LINUX_DMABUF_FEEDBACK_V1_TRANCHE_FLAGS_SCANOUT);
 
   c_wl_array indices;
-  indices.size = egl->format_table.pairs_n * 2;
-  indices.data = calloc(egl->format_table.pairs_n, sizeof(uint16_t));
+  indices.size = render->formats.n_entries * 2;
+  indices.data = calloc(render->formats.n_entries, sizeof(uint16_t));
 
   if (!indices.data) {
     c_wl_error_set(id, WL_DISPLAY_ERROR_IMPLEMENTATION, "failed to calloc indicies array");
@@ -55,7 +51,7 @@ static int send_feedback(struct c_wl_connection *conn, c_wl_object_id id, c_wl_o
     goto out;
   }
 
-  for (size_t i = 0; i < egl->format_table.pairs_n; i++) {
+  for (size_t i = 0; i < render->formats.n_entries; i++) {
     ((uint16_t *)indices.data)[i] = i;
   }
 
@@ -103,6 +99,8 @@ int zwp_linux_dmabuf_feedback_v1_destroy(struct c_wl_connection *conn, union c_w
   struct c_wl_object *zwp_linux_buffer_feedback_v1;
   C_WL_CHECK_IF_REGISTERED(zwp_linux_buffer_feedback_v1_id, zwp_linux_buffer_feedback_v1);
   
+  // close(*(int *)zwp_linux_buffer_feedback_v1->data);
+  free(zwp_linux_buffer_feedback_v1->data);
   c_wl_object_del(conn, zwp_linux_buffer_feedback_v1_id);
 
   return 0;
@@ -113,14 +111,22 @@ int zwp_linux_dmabuf_v1_create_params(struct c_wl_connection *conn, union c_wl_a
   struct c_wl_object *zwp_linux_buffer_params_v1;
   C_WL_CHECK_IF_NOT_REGISTERED(zwp_linux_buffer_params_v1_id, zwp_linux_buffer_params_v1);
 
-  struct c_wl_dmabuf *dma = calloc(1, sizeof(struct c_wl_dmabuf));
+  struct c_wl_dmabuf *wl_dma = calloc(1, sizeof(*wl_dma));
+  if (!wl_dma) {
+    c_log(C_LOG_ERROR, "calloc failed");
+    return c_wl_error_set(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed");
+  }
+
+  struct c_dmabuf *dma = calloc(1, sizeof(*dma));
   if (!dma) {
     c_log(C_LOG_ERROR, "calloc failed");
     return c_wl_error_set(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed");
   }
 
-  dma->params_id = zwp_linux_buffer_params_v1_id;
-  c_wl_object_add(conn, zwp_linux_buffer_params_v1_id, c_wl_interface_get("zwp_linux_buffer_params_v1"), dma);
+  wl_dma->id = zwp_linux_buffer_params_v1_id;
+  wl_dma->dma = dma;
+
+  c_wl_object_add(conn, zwp_linux_buffer_params_v1_id, c_wl_interface_get("zwp_linux_buffer_params_v1"), wl_dma);
 
   return 0;
 }
@@ -128,9 +134,9 @@ int zwp_linux_dmabuf_v1_create_params(struct c_wl_connection *conn, union c_wl_a
 int zwp_linux_buffer_params_v1_add(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
   c_wl_object_id zwp_linux_buffer_params_v1_id = args[0].o;
   struct c_wl_object *zwp_linux_buffer_params_v1 = c_wl_object_get(conn, zwp_linux_buffer_params_v1_id);
-  struct c_wl_dmabuf *dma = zwp_linux_buffer_params_v1->data;
+  struct c_wl_dmabuf *wl_dma = zwp_linux_buffer_params_v1->data;
 
-  if (dma->used) 
+  if (wl_dma->used) 
     return c_wl_error_set(args[0].o, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_ALREADY_USED, "already used");
 
   c_wl_fd   fd =          args[1].F;
@@ -140,14 +146,25 @@ int zwp_linux_buffer_params_v1_add(struct c_wl_connection *conn, union c_wl_arg 
   c_wl_uint modifier_hi = args[5].u;
   c_wl_uint modifier_lo = args[6].u;
 
-  if (plane_idx > 0)
-    return c_wl_error_set(args[0].o, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_PLANE_IDX, "plane_idx >0 not supported");
+  if (plane_idx >= C_DMABUF_MAX_PLANES)
+    return c_wl_error_set(args[0].o, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_PLANE_IDX, "only 4 planes are supported");
 
-  dma->fd = fd;
-  dma->plane_idx = plane_idx;
-  dma->offset = offset;
-  dma->stride = stride;
-  dma->modifier = modifier_hi << 32 | modifier_lo;
+
+  struct c_dmabuf *dma = wl_dma->dma;
+  if (plane_idx != dma->n_planes)
+    return c_wl_error_set(args[0].o, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_PLANE_IDX, 
+                          "invalid plane_idx %d (expected %d)", plane_idx, dma->n_planes);
+
+  uint64_t modifier = modifier_hi << 32 | modifier_lo;
+  if (dma->modifier > 0 && modifier != dma->modifier)
+    return c_wl_error_set(args[0].o, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_INVALID_FORMAT, "invalid modifier");
+
+  struct c_dmabuf_plane *plane = &dma->planes[dma->n_planes++];
+  plane->fd = fd;
+  plane->offset = offset;
+  plane->stride = stride;
+
+  dma->modifier = modifier;
 
   return 0;
 }
@@ -155,9 +172,9 @@ int zwp_linux_buffer_params_v1_add(struct c_wl_connection *conn, union c_wl_arg 
 int zwp_linux_buffer_params_v1_create_immed(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
   c_wl_object_id zwp_linux_buffer_params_v1_id = args[0].o;
   struct c_wl_object *zwp_linux_buffer_params_v1 = c_wl_object_get(conn, zwp_linux_buffer_params_v1_id);
-  struct c_wl_dmabuf *dma = zwp_linux_buffer_params_v1->data;
+  struct c_wl_dmabuf *wl_dma = zwp_linux_buffer_params_v1->data;
 
-  if (dma->used) 
+  if (wl_dma->used) 
     return c_wl_error_set(args[0].o, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_ALREADY_USED, "already used");
 
   c_wl_new_id wl_buffer_id = args[1].n;
@@ -166,45 +183,42 @@ int zwp_linux_buffer_params_v1_create_immed(struct c_wl_connection *conn, union 
   c_wl_uint   format =       args[4].u;
   enum zwp_linux_buffer_params_v1_flags_enum flags = args[5].e;
 
-  uint32_t bpp = drm_format_to_bpp(format);
-  if (!bpp)
-    return c_wl_error_set(args[0].o, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_INVALID_FORMAT, "invalid format: %d");
-
-  if (width == 0)
+  if (width <= 0)
     return c_wl_error_set(args[0].o, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_INVALID_DIMENSIONS, "invalid width");
 
-  if (height == 0)
+  if (height <= 0)
     return c_wl_error_set(args[0].o, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_INVALID_DIMENSIONS, "invalid height");
 
-  struct c_egl *egl = userdata;
-  for (size_t i = 0; i < egl->format_table.pairs_n; i++) {
-    struct c_format_table_pair pair = egl->format_table.pairs[i];
-    if (pair.modifer == dma->modifier && pair.format == format) {
-      struct c_wl_buffer *buffer = calloc(1, sizeof(struct c_wl_buffer));
-      if (!buffer)
-            return c_wl_error_set(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed");
+  struct c_wl_buffer *wl_buffer = calloc(1, sizeof(struct c_wl_buffer));
+  if (!wl_buffer)
+        return c_wl_error_set(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed");
 
-      dma->used = 1;
-      dma->format = format;
-      dma->flags = flags;
+  wl_dma->used = 1;
+  wl_dma->dma->drm_format = format;
+  wl_dma->flags = flags;
 
-      buffer->id = wl_buffer_id;
-      buffer->width = width;
-      buffer->height = height;
-      buffer->dmabuf = dma;
+  wl_buffer->id = wl_buffer_id;
+  wl_buffer->width = width;
+  wl_buffer->height = height;
+  wl_buffer->dma = wl_dma;
+  struct c_dmabuf *dma = wl_buffer->dma->dma;
+  struct c_dmabuf_params dmabuf_params = {
+    .width = wl_buffer->width,
+    .height = wl_buffer->height,
+    .modifier = dma->modifier,
+    .drm_format = dma->drm_format,
+    .n_planes = dma->n_planes,
+  };
 
-      if (c_egl_import_dmabuf(egl, buffer) == 1) 
-        return c_wl_error_set(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "failed to import dmabuf");
+  memcpy(dmabuf_params.planes, dma->planes, sizeof(dma->planes));
 
-      close(dma->fd);
-      dma->fd = 0;
-      c_wl_object_add(conn, wl_buffer_id, c_wl_interface_get("wl_buffer"), buffer);
-      return 0;
-    }
+  if (c_render_import_dmabuf(userdata, &dmabuf_params, dma) == -1) {
+    return c_wl_error_set(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "failed to import dmabuf");
   }
-  
-  return c_wl_error_set(args[0].o, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_INVALID_FORMAT, 
-                        "format %d + modifier %lu not found", format, dma->modifier);
+
+
+  c_wl_object_add(conn, wl_buffer_id, c_wl_interface_get("wl_buffer"), wl_buffer);
+  return 0;
 }
 
 int zwp_linux_buffer_params_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
