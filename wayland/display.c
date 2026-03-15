@@ -1,0 +1,181 @@
+#include <stdlib.h>
+#include <fcntl.h>
+#include <string.h>
+#include <unistd.h>
+
+#include "wayland/error.h"
+#include "wayland/display.h"
+#include "util/event_loop.h"
+#include "util/log.h"
+
+
+struct __display_event_listener {
+  void *userdata;
+  struct c_wl_display_listener *listener;
+};
+
+static inline int set_nonblocking(int fd) {
+  int flags;
+
+  flags = fcntl(fd, F_GETFL, 0);
+  if (flags == -1) return flags;
+
+  flags |= O_NONBLOCK;
+  return fcntl(fd, F_SETFL, flags);
+}
+
+static int create_socket(struct c_wl_display *display) {
+  int fd;
+  const char *xdg_runtime_dir = getenv("XDG_RUNTIME_DIR");
+  if (!xdg_runtime_dir) {
+    fprintf(stderr, "XDG_RUNTIME_DIR env not set\n");
+    return -1;
+  }
+
+  fd = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (fd == -1) {
+    perror("socket");
+    return -1;
+  }
+
+  struct sockaddr_un addr;
+  addr.sun_family = AF_UNIX;
+
+  for(size_t i = 0; i < 1000; i++) {
+    snprintf(addr.sun_path, sizeof(addr.sun_path), "%s/wayland-%ld", xdg_runtime_dir, i);
+    if (access(addr.sun_path, F_OK) == -1) break;
+    addr.sun_path[0] = 0;
+  }
+
+  if (!*addr.sun_path) {
+    fprintf(stderr, "all sockets are taken\n");
+    close(fd);
+    return -1;
+  }
+
+  if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
+    perror("c_create_socket");
+    close(fd);
+    return -1;
+  }
+
+  if (listen(fd, 16) == -1) {
+    perror("c_create_socket");
+    close(fd);
+    return -1;
+  }
+
+  snprintf(display->socket_path, sizeof(display->socket_path), "%s", addr.sun_path);
+  c_log(C_LOG_INFO, "created wayland socket at %s", display->socket_path);
+  return fd;
+}
+
+C_EVENT_CALLBACK client_epoll_callback(struct c_event_loop *loop, int fd, void *data) {
+  struct c_wl_connection *connection = data;
+  int ret = c_wl_connection_dispatch(connection);
+  if (ret == 1) {
+    c_wl_connection_free(connection);
+    ret = C_EVENT_ERROR_WL_CLIENT_GONE;
+  } else if (ret == -1) {
+    c_wl_error_send(connection);
+    ret = C_EVENT_ERROR_WL_PROTO;
+  }
+
+  return -ret;
+
+}
+
+C_EVENT_CALLBACK server_epoll_callback(struct c_event_loop *loop, int fd, void *data) {
+  int client_fd = accept(fd, NULL, NULL);
+
+  if (set_nonblocking(client_fd) == -1) {
+    c_log(C_LOG_WARNING, "failed to set client fd to non-blocking");
+  }
+  
+  struct c_wl_connection *connection = c_wl_connection_init(client_fd, data);
+  if (!connection) {
+    c_log(C_LOG_ERROR, "c_wl_connection_init failed");
+    return -C_EVENT_ERROR_FATAL;
+  }
+  
+
+  if (c_event_loop_add(loop, client_fd, client_epoll_callback, connection) == -1) {
+    c_log(C_LOG_ERROR, "c_event_loop_add failed");
+    return -C_EVENT_ERROR_FATAL;
+  }
+
+  return C_EVENT_OK;
+}
+
+void c_wl_display_add_listener(struct c_wl_display *display, struct c_wl_display_listener *listener, void *userdata) {
+  struct __display_event_listener l = {
+    .userdata = userdata,
+    .listener = calloc(1, sizeof(*listener)),
+  };
+  memcpy(l.listener, listener, sizeof(*listener));
+  c_list_push(display->listeners, &l, sizeof(l)); 
+}
+
+void c_wl_display_notify(struct c_wl_display *display, struct c_wl_surface *surface, enum c_wl_display_notifer notifier) {
+  struct __display_event_listener *l;
+
+  #define notify(callback) \
+    c_list_for_each(display->listeners, l) { \
+      if (l->listener->callback) {\
+        l->listener->callback(surface, l->userdata); \
+      } \
+    }
+
+  switch (notifier) {
+    case C_WL_DISPLAY_ON_SURFACE_NEW:     notify(on_surface_new); break;
+    case C_WL_DISPLAY_ON_SURFACE_UPDATE:  notify(on_surface_update); break;
+    case C_WL_DISPLAY_ON_SURFACE_DESTROY: notify(on_surface_destroy); break;
+    case C_WL_DISPLAY_ON_WINDOW_NEW:      notify(on_window_new); break;
+    case C_WL_DISPLAY_ON_WINDOW_CLOSE:    notify(on_window_close); break;
+    default: break;
+  }
+
+}
+
+struct c_wl_display *c_wl_display_init() {
+  struct c_event_loop *loop = c_event_loop_init();
+  if (!loop) {
+    c_log(C_LOG_ERROR, "c_event_loop_init() failed");
+    return NULL;
+  }
+
+  struct c_wl_display *display = calloc(1, sizeof(struct c_wl_display));
+  if (!display) {
+    c_log(C_LOG_ERROR, "failed to calloc");
+    return NULL;
+  }
+
+  int fd = create_socket(display);
+  if (fd == -1) {
+    c_log(C_LOG_ERROR, "failed to set client fd to non-blocking");
+    free(display);
+    return NULL;
+  }
+
+  display->loop = loop;
+  c_event_loop_add(loop, fd, server_epoll_callback, display);
+
+  display->listeners = c_list_new();
+
+  return display;
+
+}
+
+void c_wl_display_free(struct c_wl_display *display) {
+  if (display->loop) c_event_loop_free(display->loop);
+  if (*display->socket_path) unlink(display->socket_path);
+  if (display->listeners) {
+    struct __display_event_listener *l;
+    c_list_for_each(display->listeners, l)
+      free(l->listener);
+    c_list_destroy(display->listeners);
+  }
+  free(display);
+}
+
+

@@ -4,16 +4,11 @@
 #include <string.h>
 
 c_list *c_list_new() {
-  c_list *l = malloc(sizeof(c_list));
+  c_list *l = calloc(1, sizeof(*l));
   if (l == NULL) {
     perror("malloc");
     return NULL;
   }
-
-  l->data = NULL;
-  l->next = NULL;
-  l->prev = NULL;
-
   return l;
 }
 
@@ -40,34 +35,40 @@ void *c_list_push(c_list *l, void *data, size_t data_size) {
       return NULL;
     }
     memcpy(l->data, data, data_size);
+    l->copied = 1;
   } else 
     l->data = data;
 
   return l->data;
 }
 
-void c_list_remove(c_list **head, size_t n) {
+void c_list_remove_ptr(c_list **head, void *ptr) {
   c_list *l = *head;
 
   for (size_t i = 0; l; l = l->next, i++) {
-    if (n == i) {
-      if (l->prev) {
-        l->prev->next = l->next;
-      } else {
+    if (l->data == ptr) {
+      if (!l->prev && l->next) {
         *head = l->next;
+        l->next->prev = NULL;
+      }
+      else if (l->prev && l->next) {
+        l->prev->next = l->next;
+        l->next->prev = l->prev;
+      }
+      else { // l->prev && !l->next
+        l->prev->next = NULL;
       }
 
-      if (l->next)
-        l->next->prev = l->prev;
+      if (l->copied)
+        free(l->data);
 
-      free(l->data);
-      free(l);
       break;
     }
   }
+
 }
 
-void c_list_remove_ptr(c_list **head, void *ptr) {
+void c_list_remove_ptr_(c_list **head, void *ptr) {
   c_list *l = *head;
 
   for (size_t i = 0; l; l = l->next, i++) {
@@ -80,9 +81,12 @@ void c_list_remove_ptr(c_list **head, void *ptr) {
 
       if (l->next)
         l->next->prev = l->prev;
+      
+      if (l->copied)
+        free(l->data);
 
-      free(l->data);
-      free(l);
+      if (i > 0)
+        free(l);
       break;
     }
   }

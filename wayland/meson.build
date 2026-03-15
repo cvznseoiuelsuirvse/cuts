@@ -1,5 +1,6 @@
 server_sources = files(
   'server.c',
+  'display.c',
   'error.c',
   'types/wayland.c',
   'types/xdg-shell.c',

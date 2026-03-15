@@ -28,20 +28,6 @@
   (object) = c_wl_object_get(conn, (id)); \
   if ((object)) return c_wl_error_set(args[0].u, 0, "object %d already registered", (id))
 
-struct c_wl_display {
-	char 	 socket_path[108];
-	struct c_event_resource *resource;
-	struct c_event_loop *loop;
-	
-	struct {
-		int (*on_surface_new)(struct c_wl_surface *surface);
-		int (*on_surface_destroy)(struct c_wl_surface *surface);
-		int (*on_window_new)(struct c_wl_surface *surface, c_wl_object_id xdg_toplevel_id);
-		int (*on_window_update)(struct c_wl_surface *surface);
-		int (*on_window_close)(struct c_wl_surface *surface);
-	} callbacks;
-};
-
 struct c_wl_connection {
 	int 	client_fd;
 
@@ -94,9 +80,6 @@ struct c_wl_interface {
 	size_t 	nrequests;
 	struct c_wl_request requests[];
 };
-
-struct c_wl_display *c_wl_display_init();
-void c_wl_display_free(struct c_wl_display *display);
 
 void c_wl_interface_add(struct c_wl_interface *interface);
 struct c_wl_interface *c_wl_interface_get(const char *interface_name);

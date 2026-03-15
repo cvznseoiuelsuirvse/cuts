@@ -7,6 +7,8 @@
 #include <EGL/eglext.h>
 #include <GL/gl.h>
 
+#include "wayland/display.h"
+
 #define C_DMABUF_MAX_PLANES 4
 
 struct c_format {
@@ -66,7 +68,7 @@ union c_buf_params {
 
 
 struct c_render {
-	struct c_drm_backend  *drm;
+	struct c_drm  *drm;
 	struct gbm_device  *gbm_device;
 	struct gbm_surface *gbm_surface;
 	struct gbm_bo 	   *gbm_bo;
@@ -83,18 +85,22 @@ struct c_render {
 struct c_rect {
 	uint32_t width, height;
 	uint32_t x, y;
-	GLuint texture;
 };
 
-struct c_render *c_render_init(struct c_drm_backend *backend);
+struct c_render_window {
+  struct c_wl_surface *surface; // managed by wayland backend
+  uint32_t width, height;
+  uint32_t x, y;
+  GLuint texture;
+};
+
+struct c_render *c_render_init(struct c_wl_display *dpy, struct c_drm *drm);
 void c_render_free(struct c_render *render);
 int c_render_new_page_flip(struct c_render *render);
 int c_render_handle_event(struct c_render *render);
 int c_render_import_dmabuf(struct c_render *render, struct c_dmabuf_params *params, struct c_dmabuf *buf);
 int c_render_destroy_dmabuf(struct c_render *render, struct c_dmabuf *buf);
 int c_render_get_ft_fd(struct c_render *render);
-int draw(struct c_render *render, struct c_rect *rect);
-
-
+// int draw(struct c_render *render, struct c_rect *rect);
 
 #endif

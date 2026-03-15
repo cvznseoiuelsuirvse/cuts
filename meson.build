@@ -5,7 +5,7 @@ project('cuts', 'c',
     'c_std=c11',
     'optimization=0',
     'debug=true',
-    'b_sanitize=address',
+    # 'b_sanitize=address',
   ],
 )
 
@@ -16,8 +16,6 @@ subdir('render')
 
 c_args = [
   '-Wno-unused-parameter',
-  '-DCUTS_LOGS',
-  '-DCUTS_WL_LOGS'
 ]
 
 sources = [

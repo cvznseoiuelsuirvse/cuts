@@ -2,6 +2,7 @@ backend_sources = files(
   'drm.c',
   'input.c',
   'session.c',
+  'backend.c',
 )
 
 libinput_dep = dependency('libinput')

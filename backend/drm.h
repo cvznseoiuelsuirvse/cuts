@@ -5,7 +5,7 @@
 #include <xf86drmMode.h>
 #include <drm_fourcc.h>
 
-#define c_drm_backend_for_each_connector(backend, conn)  \
+#define c_drm_for_each_connector(backend, conn)  \
   for (size_t i = 0; i < (backend)->connectors_n && (((conn) = &(backend)->connectors[i]), 1); i++) \
 
 struct c_dumb_framebuffer {
@@ -19,26 +19,30 @@ struct c_dumb_framebuffer {
 	uint8_t *buffer;
 };
 
+
 struct c_drm_connector {
 	uint32_t 		    id;
-	drmModeConnectorPtr drmModeConn;
-	drmModeModeInfoPtr  mode;
+	drmModeConnectorPtr conn;
+	struct {
+		drmModeModeInfoPtr  info;
+		uint32_t width;
+		uint32_t height;
+	} mode;
 	uint32_t		    crtc_id;
 	drmModeCrtcPtr	    orig_crtc;
 	int 				waiting_for_flip;
 };
 
-struct c_drm_backend {
+struct c_drm {
 	int 	 fd;
 	uint32_t buf_id;
 	uint32_t buf_id_old;
-	/* single monitor setup for now */
-	struct c_drm_connector *connector; 
+	struct c_drm_connector connector; 
 };
 
-struct c_drm_backend *c_drm_backend_init();
-void c_drm_backend_free(struct c_drm_backend *drm);
-int c_drm_backend_dev_id(struct c_drm_backend *drm, dev_t *dev_id);
+struct c_drm *c_drm_init(int drm_fd);
+void c_drm_free(struct c_drm *drm);
+int c_drm_dev_id(struct c_drm *drm, dev_t *dev_id);
 int drm_format_num_planes(uint32_t format);
 
 #endif

@@ -104,21 +104,21 @@ static int has_ext(const char *ext, const char *exts) {
 }
 
 static void gl_log(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar *message, const void *userParam) {
-  const char *c_log_level;
+  enum c_log_level log_level;
   switch (type) {
-    case GL_DEBUG_TYPE_ERROR_KHR:               c_log_level = C_LOG_ERROR;  break;
-    case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR_KHR: c_log_level = C_LOG_INFO;   break;
-    case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR_KHR:  c_log_level = C_LOG_ERROR;  break;
-    case GL_DEBUG_TYPE_PORTABILITY_KHR:         c_log_level = C_LOG_INFO;   break;
-    case GL_DEBUG_TYPE_PERFORMANCE_KHR:         c_log_level = C_LOG_INFO;   break;
-    case GL_DEBUG_TYPE_OTHER_KHR:               c_log_level = C_LOG_INFO;   break;
-    case GL_DEBUG_TYPE_MARKER_KHR:              c_log_level = C_LOG_INFO;   break;
-    case GL_DEBUG_TYPE_PUSH_GROUP_KHR:          c_log_level = C_LOG_INFO;   break;
-    case GL_DEBUG_TYPE_POP_GROUP_KHR:           c_log_level = C_LOG_INFO;   break;
-    default:                                    c_log_level = C_LOG_INFO;   break;
+    case GL_DEBUG_TYPE_ERROR_KHR:               log_level = C_LOG_ERROR;  break;
+    case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR_KHR: log_level = C_LOG_INFO;   break;
+    case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR_KHR:  log_level = C_LOG_ERROR;  break;
+    case GL_DEBUG_TYPE_PORTABILITY_KHR:         log_level = C_LOG_INFO;   break;
+    case GL_DEBUG_TYPE_PERFORMANCE_KHR:         log_level = C_LOG_INFO;   break;
+    case GL_DEBUG_TYPE_OTHER_KHR:               log_level = C_LOG_INFO;   break;
+    case GL_DEBUG_TYPE_MARKER_KHR:              log_level = C_LOG_INFO;   break;
+    case GL_DEBUG_TYPE_PUSH_GROUP_KHR:          log_level = C_LOG_INFO;   break;
+    case GL_DEBUG_TYPE_POP_GROUP_KHR:           log_level = C_LOG_INFO;   break;
+    default:                                    log_level = C_LOG_INFO;   break;
 	}
 
-  c_log(c_log_level, "[GL] %s", message);
+  c_log(log_level, "[GL] %s", message);
   
 };
 
@@ -186,24 +186,27 @@ static int c_egl_get_modifiers(struct c_egl *egl, EGLint format,
   *modifiers = calloc(num_modifiers, sizeof(**modifiers));
   if (!modifiers) {
     c_log(C_LOG_ERROR, "calloc modifiers failed");
-    return -1;
+    goto error;
   }
   *external_only = calloc(num_modifiers, sizeof(**external_only));
   if (!external_only) {
-    free(modifiers);
     c_log(C_LOG_ERROR, "calloc external_only failed");
-    return -1;
+    goto error;
   }
 
   if (egl->proc.eglQueryDmaBufModifiersEXT(egl->display, format, num_modifiers, 
                                            *modifiers, *external_only, &num_modifiers) != EGL_TRUE) {
-    free(modifiers);
-    free(external_only);
     c_log(C_LOG_ERROR, "eglQueryDmaBufModifiersEXT failed");
-    return -1;
+    goto error;
   }
 
   return num_modifiers;
+
+error:
+  if (modifiers) free(modifiers);
+  if (external_only) free(external_only);
+  return -1;
+
 }
 
 static int c_egl_get_formats(struct c_egl *egl, EGLint **formats) {
@@ -266,35 +269,29 @@ struct c_format *c_egl_query_formats(struct c_egl *egl, size_t *n_entries) {
     EGLuint64KHR *modifiers = NULL;
     EGLBoolean *external_only = NULL;
 
-    char *format_name = drmGetFormatName(format);
-    c_log(C_LOG_INFO, "format=%s", format_name);
-    free(format_name);
 
     EGLint num_modifiers = c_egl_get_modifiers(egl, format, &modifiers, &external_only);
+
+    int no_modifiers_found = 0;
+    if (num_modifiers == 0) {
+      no_modifiers_found = 1;
+      num_modifiers = 1;
+    }
+
     if (num_modifiers < 0)  continue;
 
-    if (num_modifiers == 0) {
-      struct c_format *entry = &table[i++];
-      entry->drm_format = format;
-      entry->modifier = DRM_FORMAT_MOD_INVALID;
-      entry->n_planes = drm_format_num_planes(format);
-
-      GLint max_tex_size;
-      glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_tex_size);
-
-      entry->max_width = max_tex_size;
-      entry->max_height = max_tex_size;
-
-      char *modifier_name = drmGetFormatModifierName(DRM_FORMAT_MOD_INVALID);
-      c_log(C_LOG_INFO, "   modifier=%s", modifier_name);
-      free(modifier_name);
-
-      continue;
-    }
+    char *format_name = drmGetFormatName(format);
+    c_log(C_LOG_WARNING, "format %4s (modifiers found %d)", format_name, num_modifiers);
+    free(format_name);
 
     for (int m = 0; m < num_modifiers; m++) {
       struct c_format *entry = &table[i++];
-      EGLuint64KHR modifier = modifiers[m];
+      EGLuint64KHR modifier;
+      if (no_modifiers_found)
+        modifier = DRM_FORMAT_MOD_INVALID;
+      else
+        modifier = modifiers[m];
+
       entry->drm_format = format;
       entry->modifier = modifier;
       entry->n_planes = drm_format_num_planes(format);
@@ -305,12 +302,12 @@ struct c_format *c_egl_query_formats(struct c_egl *egl, size_t *n_entries) {
       entry->max_width = max_tex_size;
       entry->max_height = max_tex_size;
      
-      char *modifier_name = drmGetFormatModifierName(modifier);
-      if (external_only[m])
-        c_log(C_LOG_INFO, "   modifier=%s external_only", modifier_name);
-      else
-        c_log(C_LOG_INFO, "   modifier=%s", modifier_name);
-      free(modifier_name);
+      // char *modifier_name = drmGetFormatModifierName(modifier);
+      // if (external_only[m])
+      //   c_log(C_LOG_INFO, "   modifier=%s external_only", modifier_name);
+      // else
+      //   c_log(C_LOG_INFO, "   modifier=%s", modifier_name);
+      // free(modifier_name);
     }
 
     free(modifiers);
@@ -373,9 +370,15 @@ int c_egl_import_dmabuf(struct c_egl *egl, struct c_dmabuf_params *params, struc
 }
 
 static void c_gles_free(struct c_gles *gl) {
-
-  if (gl->program)
+  if (gl->program) {
     glDeleteProgram(gl->program);
+  }
+
+  if (gl->vao)
+    glDeleteVertexArrays(1, &gl->vao);
+
+  if (gl->vbo)
+    glDeleteBuffers(1, &gl->vbo);
 
   free(gl);
 }
@@ -500,6 +503,7 @@ struct c_egl *c_egl_init(struct gbm_device *device, struct gbm_surface *surface)
     free(egl);
     return NULL;
   }
+
 
   if (!eglBindAPI(EGL_OPENGL_ES_API)) {
     c_log(C_LOG_ERROR, "Failed to to bind api EGL_OPENGL_ES_API");

@@ -21,7 +21,7 @@ static int send_feedback(struct c_wl_connection *conn, c_wl_object_id id, c_wl_o
   int ret = 0;
   dev_t *dev_id = malloc(sizeof(*dev_id));
 
-  if (c_drm_backend_dev_id(render->drm, dev_id) == -1) 
+  if (c_drm_dev_id(render->drm, dev_id) == -1) 
     return c_wl_error_set(id, WL_DISPLAY_ERROR_IMPLEMENTATION, "failed to get dev id"); 
 
   c_wl_array device = {

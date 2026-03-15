@@ -5,12 +5,13 @@
 
 typedef struct c_list {
   void *data;
+  int copied;
   struct c_list *prev;
   struct c_list *next;
 } c_list;
 
 #define c_list_for_each(pos, member)                             \
-  for (; pos->next && ((member = pos->data), 1); pos = pos->next) 	\
+  for (c_list *__pos = pos; __pos->next && ((member = __pos->data), 1); __pos = __pos->next) 	\
 
 c_list *c_list_new();
 void    c_list_destroy(c_list *l);

@@ -33,9 +33,8 @@ struct c_wl_shm {
 
 struct c_wl_dmabuf {
 	c_wl_object_id id;
-
-	int       used;
-	c_wl_int  flags;
+	int            used;
+	c_wl_int       flags;
 	struct c_dmabuf *dma;
 };
 
@@ -79,11 +78,13 @@ struct c_wl_surface {
 	} damage;
 
 	struct {
+		c_wl_object_id  surface_id;
+		c_wl_object_id  toplevel_id;
 		c_wl_int width,  max_width,  min_width,  x;
 		c_wl_int height, max_height, min_height, y;
 		char title[256];
 		char app_id[256];
-	} xdg;
+	} xdg_state;
 
 	struct c_wl_region opaque;
 	struct c_wl_region input;

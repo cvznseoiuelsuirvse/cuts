@@ -1,11 +1,41 @@
 #include <stdio.h>
+#include <stdarg.h>
 
+#include "util/log.h"
 #include "wayland/server.h"
 #include "util/helpers.h"
 
-void _c_wl_print_request(int client_fd, struct c_wl_object *object, struct c_wl_request *request, union c_wl_arg *args) {
+static int __log_mask = 0;
+
+static const char *log_level_string(enum c_log_level level) {
+	switch (level) {
+		case C_LOG_ERROR: 	return "ERROR";
+		case C_LOG_INFO: 	  return "INFO";
+		case C_LOG_DEBUG: 	return "DEBUG";
+		case C_LOG_WARNING: return "WARNING";
+    default:            return "LOG";
+	}
+}
+
+void _c_log(enum c_log_level level, const char *file, int line, int insert_nl, const char *format, ...) {
+  if (!(level & __log_mask)) return;
+
+  va_list args;
+  va_start(args, format);
+
+  printf("[%s %s:%d] ", log_level_string(level), file, line);
+  vprintf(format, args);
+  if (insert_nl)
+    printf("\n");
+
+  va_end(args);
+}
+
+void c_log_wl_request(int client_fd, struct c_wl_object *object, struct c_wl_request *request, union c_wl_arg *args) {
+  if (!(C_LOG_DEBUG & __log_mask)) return;
+
   const struct c_wl_interface *iface = object->iface;
-  printf("[WAYLAND] #%d -> %s#%lu.%s(", client_fd, iface->name, object->id, request->name);
+  c_log2(C_LOG_DEBUG, "[wayland] client#%d %s#%lu.%s(", client_fd, iface->name, object->id, request->name);
 
   c_wl_array *arr;
   for (size_t i = 1; i <= request->nargs; i++) {
@@ -60,11 +90,11 @@ void _c_wl_print_request(int client_fd, struct c_wl_object *object, struct c_wl_
 }
 
 
-void _c_wl_print_event(int client_fd, struct c_wl_object *object, const char *event_name, 
+void c_log_wl_event(int client_fd, struct c_wl_object *object, const char *event_name, 
 					   union c_wl_arg *args, size_t nargs, const char *signature) {
-
+  if (!(C_LOG_DEBUG & __log_mask)) return;
   const struct c_wl_interface *iface = object->iface;
-  printf("[WAYLAND] #%d <- %s#%lu.%s(", client_fd, iface->name, object->id, event_name);
+  c_log2(C_LOG_DEBUG, "[wayland] server#%d %s#%lu.%s(", client_fd, iface->name, object->id, event_name);
 
   c_wl_array *arr;
   for (size_t i = 0; i < nargs; i++) {
@@ -115,5 +145,9 @@ void _c_wl_print_event(int client_fd, struct c_wl_object *object, const char *ev
 
   printf(")\n");
 
+}
+
+inline void c_log_set_level(enum c_log_level n) {
+  __log_mask |= n;
 }
 

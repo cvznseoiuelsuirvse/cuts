@@ -22,8 +22,8 @@ struct c_event_loop * c_event_loop_init() {
   return loop;
 }
 
-int c_event_loop_add(struct c_event_loop *loop, int fd, c_event_callback callback, void *data) {
-  struct c_event_resource resource = {fd, data, callback};
+int c_event_loop_add(struct c_event_loop *loop, int fd, c_event_callback callback, void *userdata) {
+  struct c_event_resource resource = {fd, callback, userdata};
   struct c_event_resource *resource_cpy = c_list_push(loop->resources, &resource, sizeof(struct c_event_resource));
 
   struct epoll_event ev;
@@ -49,8 +49,7 @@ int c_event_loop_del(struct c_event_loop *loop, struct c_event_resource *resourc
 
 void c_event_loop_free(struct c_event_loop *loop) {
   struct c_event_resource *resource;
-  struct c_list *l = loop->resources;
-  c_list_for_each(l, resource) close(resource->fd);
+  c_list_for_each(loop->resources, resource) close(resource->fd);
   
   c_list_destroy(loop->resources);
   c_list_destroy(loop->connections);
@@ -77,7 +76,7 @@ int c_event_loop_run(struct c_event_loop *loop) {
     for (int i = 0; i < n; i++) {
       struct c_event_resource *resource = events[i].data.ptr;
       if (events[i].events & EPOLLIN) {
-        ret = resource->callback(loop, resource->fd, resource->data);
+        ret = resource->callback(loop, resource->fd, resource->userdata);
         switch (ret) {
           case -C_EVENT_ERROR_FATAL:
             goto out;

@@ -102,4 +102,3 @@ void write_array(char *buffer, uint32_t *offset, const void *array, size_t array
 
     *offset += padded_array_size ? padded_array_size : sizeof(uint32_t);
 }
-

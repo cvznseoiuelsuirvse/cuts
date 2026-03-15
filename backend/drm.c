@@ -1,9 +1,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdlib.h>
-#include <string.h>
 #include <sys/stat.h>
-#include <stdio.h>
 #include <gbm.h>
 
 #include "backend/drm.h"
@@ -131,7 +129,7 @@ static uint32_t get_crtc_id(int fd, drmModeResPtr res, drmModeConnectorPtr conn,
 
 
 
-// int c_drm_backend_page_flip(struct c_drm_backend *backend) {
+// int c_drm_page_flip(struct c_drm *drm) {
 //   struct c_drm_connector *connector = backend->connector;
 //
 //   if (!connector->waiting_for_flip) {
@@ -141,7 +139,7 @@ static uint32_t get_crtc_id(int fd, drmModeResPtr res, drmModeConnectorPtr conn,
 //   return 0;
 // }
 //
-// void c_drm_backend_page_flip2(struct c_drm_backend *backend, int *needs_redraw) {
+// void c_drm_page_flip2(struct c_drm *drm, int *needs_redraw) {
 //   struct c_drm_connector *connector = backend->connector;
 //
 //   if (!connector->waiting_for_flip && *needs_redraw) {
@@ -154,30 +152,31 @@ static uint32_t get_crtc_id(int fd, drmModeResPtr res, drmModeConnectorPtr conn,
 
 
 
-static int c_drm_backend_get_connector(struct c_drm_backend *backend, drmModeResPtr resource) {
+static int c_drm_get_connector(struct c_drm *drm, drmModeResPtr resource) {
   drmModeConnectorPtr connector;
   uint32_t taken_crtcs = 0;
   for (int i = 0; i < resource->count_connectors; i++) {
-    connector = drmModeGetConnector(backend->fd, resource->connectors[i]);
+    connector = drmModeGetConnector(drm->fd, resource->connectors[i]);
     if (!connector) continue;
     if (connector->connection == DRM_MODE_CONNECTED) {
-      struct c_drm_connector *c_connector = calloc(1, sizeof(struct c_drm_connector));
+      struct c_drm_connector *c_connector = &drm->connector;
 
       c_connector->waiting_for_flip = 0;
-      c_connector->drmModeConn = connector;
+      c_connector->conn = connector;
       c_connector->id = connector->connector_id;
 
-      uint32_t crtc_id = get_crtc_id(backend->fd, resource, connector, &taken_crtcs);
+      uint32_t crtc_id = get_crtc_id(drm->fd, resource, connector, &taken_crtcs);
       c_connector->crtc_id = crtc_id;
 
-      c_connector->mode = get_preferred_mode(connector);
-      if (!c_connector->mode) {
-        c_connector->mode = &connector->modes[0];
+      c_connector->mode.info = get_preferred_mode(connector);
+      if (!c_connector->mode.info) {
+        c_connector->mode.info = &connector->modes[0];
       }
 
-      c_connector->orig_crtc = drmModeGetCrtc(backend->fd, crtc_id);
+      c_connector->mode.width = c_connector->mode.info->hdisplay;
+      c_connector->mode.height = c_connector->mode.info->vdisplay;
+      c_connector->orig_crtc = drmModeGetCrtc(drm->fd, crtc_id);
 
-      backend->connector = c_connector;
       return 0;
 
     } else 
@@ -187,24 +186,20 @@ static int c_drm_backend_get_connector(struct c_drm_backend *backend, drmModeRes
   return -1;
 }
 
-void c_drm_backend_free(struct c_drm_backend *drm) {
-  struct c_drm_connector *connector = drm->connector;
-  if (connector) {
-    if (connector->orig_crtc) {
-      drmModeSetCrtc(drm->fd, 
-                     connector->orig_crtc->crtc_id, connector->orig_crtc->buffer_id, 
-                     0, 0, &connector->id, 1, &connector->orig_crtc->mode);
-      drmModeFreeCrtc(connector->orig_crtc);
-    }
-    drmModeFreeConnector(connector->drmModeConn);
-    free(connector);
+void c_drm_free(struct c_drm *drm) {
+  struct c_drm_connector connector = drm->connector;
+  if (connector.orig_crtc) {
+    drmModeSetCrtc(drm->fd, 
+                   connector.orig_crtc->crtc_id, connector.orig_crtc->buffer_id, 
+                   0, 0, &connector.id, 1, &connector.orig_crtc->mode);
+    drmModeFreeCrtc(connector.orig_crtc);
   }
+  drmModeFreeConnector(connector.conn);
 
-  close(drm->fd);
   free(drm);
 }
 
-int c_drm_backend_dev_id(struct c_drm_backend *drm, dev_t *dev_id) {
+int c_drm_dev_id(struct c_drm *drm, dev_t *dev_id) {
 	struct stat stat;
 	if (fstat(drm->fd, &stat) != 0) {
 		c_log(C_LOG_ERROR, "fstat failed");
@@ -215,38 +210,22 @@ int c_drm_backend_dev_id(struct c_drm_backend *drm, dev_t *dev_id) {
   return 0;
 }
 
-struct c_drm_backend *c_drm_backend_init() {
-  struct c_drm_backend *backend = calloc(1, sizeof(struct c_drm_backend));
-  if (!backend) return NULL;
+struct c_drm *c_drm_init(int drm_fd) {
+  struct c_drm *drm = calloc(1, sizeof(struct c_drm));
+  if (!drm) return NULL;
 
-  int fd = -1;
-  char path[128];
-  for (int i = 0; i < 10; i++) {
-    memset(path, 0, sizeof(path));
-    snprintf(path, sizeof(path), "/dev/dri/card%d", i);
+  drm->fd = drm_fd;
 
-    fd = open(path, O_RDWR | O_NONBLOCK);
-    if (fd > 0) break;
-  }
-
-  if (fd < 0) {
-    c_log(C_LOG_ERROR, "No cards found");
-    goto error;
-  }
-
-  backend->fd = fd;
-  c_log(C_LOG_INFO, "Using card %s", path);
-
-  drmModeResPtr resource = drmModeGetResources(fd);
+  drmModeResPtr resource = drmModeGetResources(drm_fd);
   if (!resource) goto error;
 
-  if (c_drm_backend_get_connector(backend, resource) == -1) goto error;
+  if (c_drm_get_connector(drm, resource) == -1) goto error;
 
 
   drmModeFreeResources(resource);
-  return backend;
+  return drm;
 
 error:
-  c_drm_backend_free(backend);
+  c_drm_free(drm);
   return NULL;
 }
