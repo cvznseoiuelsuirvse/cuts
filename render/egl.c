@@ -20,7 +20,7 @@
 #include "render/render.h"
 #include "render/egl.h"
 
-#include "backend/drm.h"
+#include "backend/drm/drm.h"
 #include "util/log.h"
 #include "util/helpers.h"
 
@@ -95,7 +95,7 @@ static int has_ext(const char *ext, const char *exts) {
 
   char *token = strtok(exts_cpy, " ");
   while (token != NULL) {
-    if (STREQ(token, ext)) return 1;
+    if (C_STREQ(token, ext)) return 1;
     token = strtok(NULL, " ");
   }
 
@@ -281,7 +281,7 @@ struct c_format *c_egl_query_formats(struct c_egl *egl, size_t *n_entries) {
     if (num_modifiers < 0)  continue;
 
     char *format_name = drmGetFormatName(format);
-    c_log(C_LOG_WARNING, "format %4s (modifiers found %d)", format_name, num_modifiers);
+    c_log(C_LOG_DEBUG, "format=%4s", format_name, num_modifiers);
     free(format_name);
 
     for (int m = 0; m < num_modifiers; m++) {
@@ -302,12 +302,12 @@ struct c_format *c_egl_query_formats(struct c_egl *egl, size_t *n_entries) {
       entry->max_width = max_tex_size;
       entry->max_height = max_tex_size;
      
-      // char *modifier_name = drmGetFormatModifierName(modifier);
-      // if (external_only[m])
-      //   c_log(C_LOG_INFO, "   modifier=%s external_only", modifier_name);
-      // else
-      //   c_log(C_LOG_INFO, "   modifier=%s", modifier_name);
-      // free(modifier_name);
+      char *modifier_name = drmGetFormatModifierName(modifier);
+      if (external_only[m])
+        c_log(C_LOG_DEBUG, "   modifier=%s external_only", modifier_name);
+      else
+        c_log(C_LOG_DEBUG, "   modifier=%s", modifier_name);
+      free(modifier_name);
     }
 
     free(modifiers);

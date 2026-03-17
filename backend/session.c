@@ -1,6 +1,9 @@
+#define _GNU_SOURCE
+
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include "backend/session.h"
 #include "util/log.h"
@@ -29,6 +32,12 @@ C_EVENT_CALLBACK libseat_dispatch_handler(struct c_event_loop *loop, int fd, voi
   return C_EVENT_OK;
 }
 
+void log_libseat(enum libseat_log_level level, const char *format, va_list args) {
+  vprintf(format, args);
+  printf("\n");
+  // c_log(C_LOG_DEBUG, format, args);
+}
+
 void c_session_free(struct c_session *session) {
   if (session->seat) libseat_close_seat(session->seat);
   free(session);
@@ -41,10 +50,15 @@ struct c_session *c_session_init(struct c_event_loop *loop) {
     return NULL;
   }
 
+  libseat_set_log_handler(log_libseat);
+	libseat_set_log_level(LIBSEAT_LOG_LEVEL_INFO);
+
   struct libseat_seat_listener listener = {
     .enable_seat = enable_seat,
     .disable_seat = disable_seat,
   };
+
+  setenv("XDG_SESSION_TYPE", "wayland", 1);
 
   struct libseat *seat = libseat_open_seat(&listener, session);
   if (!seat) {

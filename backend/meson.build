@@ -1,5 +1,6 @@
 backend_sources = files(
-  'drm.c',
+  'drm/drm.c',
+  'drm/cursor.c',
   'input.c',
   'session.c',
   'backend.c',

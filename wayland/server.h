@@ -13,7 +13,6 @@
 #define C_WL_HEADER_SIZE 8
 #define C_WL_BUFFER_SIZE 4096
 #define C_WL_STRING_SIZE (C_WL_BUFFER_SIZE - C_WL_HEADER_SIZE - 4) // 4 -> string prefix size
-#define C_WL_SERIAL (uint32_t)clock()
   
 #define C_WL_INTERFACE_REGISTER(name, interface, version, nrequests, ...)                       \
   struct c_wl_interface name = {interface, version, nrequests, { __VA_ARGS__ }}; \

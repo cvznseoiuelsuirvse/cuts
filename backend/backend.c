@@ -7,7 +7,7 @@
 #include "backend/backend.h"
 #include "backend/session.h"
 #include "backend/input.h"
-#include "backend/drm.h"
+#include "backend/drm/drm.h"
 #include "util/event_loop.h"
 #include "util/log.h"
 
@@ -112,12 +112,11 @@ struct c_backend *c_backend_init(struct c_event_loop *loop) {
   struct c_backend_device *dev_gpu = open_gpu(backend);
   if (!dev_gpu) goto error;
 
-  backend->drm = c_drm_init(dev_gpu->fd);
-  if (!backend->drm) goto error;
-
-
   backend->input = c_input_init(loop, backend);
   if (!backend->input) goto error;
+
+  backend->drm = c_drm_init(dev_gpu->fd, backend->input);
+  if (!backend->drm) goto error;
 
   return backend;
 

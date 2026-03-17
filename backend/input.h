@@ -9,10 +9,7 @@
 
 struct c_input_mouse_event {
 	int32_t x, y;
-};
-
-struct c_input_keyboard_event {
-		
+	int abs;
 };
 
 struct c_input_listener_mouse {
@@ -20,6 +17,8 @@ struct c_input_listener_mouse {
 	int (*on_mouse_scroll)  (struct c_input_mouse_event *event, void *userdata);
 	int (*on_mouse_button)  (struct c_input_mouse_event *event, void *userdata);
 };
+
+struct c_input_keyboard_event {};
 
 struct c_input_listener_kbd {
 	int (*on_kbd_press)     (struct c_input_keyboard_event *event, void *userdata);

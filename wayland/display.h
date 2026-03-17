@@ -7,16 +7,14 @@ enum c_wl_display_notifer {
 	C_WL_DISPLAY_ON_SURFACE_NEW,
 	C_WL_DISPLAY_ON_SURFACE_DESTROY,
 	C_WL_DISPLAY_ON_SURFACE_UPDATE,
-	C_WL_DISPLAY_ON_WINDOW_NEW,
-	C_WL_DISPLAY_ON_WINDOW_CLOSE,
+	C_WL_DISPLAY_ON_TOPLEVEL_NEW,
 };
 
 struct c_wl_display_listener {
 	int (*on_surface_new)    (struct c_wl_surface *, void *);
 	int (*on_surface_destroy)(struct c_wl_surface *, void *);
 	int (*on_surface_update) (struct c_wl_surface *, void *);
-	int (*on_window_new)	 (struct c_wl_surface *, void *);
-	int (*on_window_close)	 (struct c_wl_surface *, void *);
+	int (*on_toplevel_new) 	 (struct c_wl_surface *, void *);
 };
 
 struct c_wl_display {
@@ -24,7 +22,7 @@ struct c_wl_display {
 	struct c_event_resource *resource;
 	struct c_event_loop *loop;
 	
-	c_list *listeners; // struct c_wl_display_listener;
+	c_list *listeners;
 };
 
 void c_wl_display_free(struct c_wl_display *display);

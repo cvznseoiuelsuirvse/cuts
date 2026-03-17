@@ -14,7 +14,7 @@
 
 #include "render/vulkan.h"
 #include "render/render.h"
-#include "backend/drm.h"
+#include "backend/drm/drm.h"
 #include "util/log.h"
 #include "util/helpers.h"
 
@@ -30,13 +30,13 @@ static const struct {
 
 static int check_ext(const char *ext, VkExtensionProperties *exts, uint32_t n_exts) {
   for (uint32_t i = 0; i < n_exts; i++) {
-    if (STREQ(exts[i].extensionName, ext)) return 1;
+    if (C_STREQ(exts[i].extensionName, ext)) return 1;
   }
   return 0;
 }
 
 static VkFormat get_vk_format(uint32_t drm_format) {
-  for (size_t i = 0; i < LENGTH(fmts); i++) {
+  for (size_t i = 0; i < C_LENGTH(fmts); i++) {
     if (fmts[i].drm == drm_format) return fmts[i].vk;
   }
 
@@ -127,7 +127,7 @@ static int check_dmabuf_support(VkPhysicalDevice phdev, VkFormat format, uint64_
 }
 
 struct c_format *c_vulkan_query_formats(struct c_vulkan *vk, size_t *entries_n) {
-  for (size_t f = 0; f < LENGTH(fmts); f++) {
+  for (size_t f = 0; f < C_LENGTH(fmts); f++) {
     VkDrmFormatModifierPropertiesListEXT mod_prop = {
       .sType = VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT,
     };
@@ -157,7 +157,7 @@ struct c_format *c_vulkan_query_formats(struct c_vulkan *vk, size_t *entries_n) 
   struct c_format *table = malloc(*entries_n * sizeof(*table));
 
   size_t i = 0;
-  for (size_t f = 0; f < LENGTH(fmts); f++) {
+  for (size_t f = 0; f < C_LENGTH(fmts); f++) {
     char *format_name = drmGetFormatName(fmts[f].drm);
     c_log(C_LOG_INFO, "format=%s", format_name);
     free(format_name);

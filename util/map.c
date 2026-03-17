@@ -39,7 +39,7 @@ void c_map_destroy(c_map *m) {
   free(m);
 }
 
-void *c_map_set(c_map *m, size_t key, void *value, size_t value_size) {
+void *c_map_set(c_map *m, uint64_t key, void *value, size_t value_size) {
   size_t n = key % m->size;
 
   struct c_map_pair *new_pair = calloc(1, sizeof(struct c_map_pair));
@@ -69,7 +69,7 @@ void *c_map_set(c_map *m, size_t key, void *value, size_t value_size) {
   return new_pair->value;
 };
 
-void c_map_remove(c_map *m, size_t key) {
+void c_map_remove(c_map *m, uint64_t key) {
   size_t n = key % m->size;
   struct c_map_pair *pair = m->pairs[n];
 
@@ -97,7 +97,7 @@ void c_map_remove(c_map *m, size_t key) {
   }
 }
 
-void *c_map_get(c_map *m, size_t key) {
+void *c_map_get(c_map *m, uint64_t key) {
   size_t n = key % m->size;
   struct c_map_pair *pair = m->pairs[n];
 

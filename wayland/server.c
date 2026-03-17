@@ -34,13 +34,10 @@ inline void c_wl_interface_add(struct c_wl_interface *interface) {
 inline struct c_wl_interface *c_wl_interface_get(const char *interface_name) {
   for (size_t i = 0; i < __ninterfaces; i++) {
     struct c_wl_interface *interface = __interface[i];
-    // printf("%s %s %d\n", interface_name, interface->name, STREQ(interface_name, interface->name));
-    if (STREQ(interface_name, interface->name)) return interface;
+    if (C_STREQ(interface_name, interface->name)) return interface;
   }
   return NULL;
 }
-
-
 
 static int c_wl_connection_read(struct c_wl_connection *conn, char *buffer, size_t buffer_size, int *req_fd) {
   char cmsg[CMSG_SPACE(sizeof(int))];
@@ -89,7 +86,7 @@ void c_wl_connection_callback_done(struct c_wl_connection *conn, c_wl_object_id 
   }
 
   if (callback) {
-    wl_callback_done(conn, callback->callback_id, C_WL_SERIAL);
+    wl_callback_done(conn, callback->callback_id, C_CLOCK);
     c_wl_object_del(conn, callback->callback_id);
     wl_display_delete_id(conn, 1, callback->callback_id);
     c_list_remove_ptr(&conn->callback_queue, callback);
@@ -194,7 +191,7 @@ int c_wl_connection_send(struct c_wl_connection *conn, struct c_wl_message *msg,
 
   *(uint16_t *)(buffer + 6) = offset;
 
-  c_log_wl_event(conn->client_fd, object, msg->event_name, wl_args, nargs, msg->signature);
+  c_log_wl_event(conn, object, msg->event_name, wl_args, nargs, msg->signature);
   c_wl_connection_write(conn, buffer, offset, event_fd);
 
   return 0;
@@ -273,7 +270,7 @@ static int dispatch(struct c_wl_connection *conn,
     return -1;
   }
 
-  c_log_wl_request(conn->client_fd, object, &request, args);
+  c_log_wl_request(conn, object, &request, args);
   int ret = request.handler(conn, args, request.handler_data);
 
   if (arr.data) free(arr.data);
@@ -300,7 +297,7 @@ int c_wl_connection_dispatch(struct c_wl_connection *conn) {
 
   while (buffer_offset < received) {
     if ((received - buffer_offset) < C_WL_HEADER_SIZE) return -1;
-    if (msg_count > LENGTH(msgs))                    return -1;
+    if (msg_count > C_LENGTH(msgs))                    return -1;
 
     uint32_t tmp = 0;
     uint32_t object_id = 

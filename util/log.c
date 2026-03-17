@@ -31,11 +31,11 @@ void _c_log(enum c_log_level level, const char *file, int line, int insert_nl, c
   va_end(args);
 }
 
-void c_log_wl_request(int client_fd, struct c_wl_object *object, struct c_wl_request *request, union c_wl_arg *args) {
+void c_log_wl_request(struct c_wl_connection *conn, struct c_wl_object *object, struct c_wl_request *request, union c_wl_arg *args) {
   if (!(C_LOG_DEBUG & __log_mask)) return;
 
   const struct c_wl_interface *iface = object->iface;
-  c_log2(C_LOG_DEBUG, "[wayland] client#%d %s#%lu.%s(", client_fd, iface->name, object->id, request->name);
+  c_log2(C_LOG_DEBUG, "[wayland] client (%p) %s#%lu.%s(", conn, iface->name, object->id, request->name);
 
   c_wl_array *arr;
   for (size_t i = 1; i <= request->nargs; i++) {
@@ -90,11 +90,11 @@ void c_log_wl_request(int client_fd, struct c_wl_object *object, struct c_wl_req
 }
 
 
-void c_log_wl_event(int client_fd, struct c_wl_object *object, const char *event_name, 
+void c_log_wl_event(struct c_wl_connection *conn, struct c_wl_object *object, const char *event_name, 
 					   union c_wl_arg *args, size_t nargs, const char *signature) {
   if (!(C_LOG_DEBUG & __log_mask)) return;
   const struct c_wl_interface *iface = object->iface;
-  c_log2(C_LOG_DEBUG, "[wayland] server#%d %s#%lu.%s(", client_fd, iface->name, object->id, event_name);
+  c_log2(C_LOG_DEBUG, "[wayland] server (%p) %s#%lu.%s(", conn, iface->name, object->id, event_name);
 
   c_wl_array *arr;
   for (size_t i = 0; i < nargs; i++) {

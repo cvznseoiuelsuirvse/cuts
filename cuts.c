@@ -14,20 +14,51 @@
 #include "util/event_loop.h"
 #include "util/log.h"
 
+struct window {
+  uint32_t width, height;
+  uint32_t x, y;
+};
+
 struct cuts {
-	int		               needs_redraw;
-  c_list 	            *windows;
   struct c_wl_display *display;
   struct c_backend    *backend;
   struct c_render     *render;
+
+  size_t               n_windows;
+  c_list 	            *windows;
 };
 
 struct cuts *__comp = NULL;
 
-static int on_mouse_movement_cb(struct c_input_mouse_event *event, void *userdata) {
-  c_log(C_LOG_DEBUG, "mouse movement x=%d y=%d", event->x, event->y);
+
+static int on_window_new_cb(struct c_window *window, void *userdata) {
+  struct c_render *render = __comp->render;
+  uint32_t mon_width = render->drm->output->width;
+  uint32_t mon_height = render->drm->output->height;
+  uint32_t gap = 15;
+
+  __comp->n_windows += 1;
+  c_list_push(__comp->windows, window, 0);
+
+  mon_width -= (__comp->n_windows + 1) * gap;
+  uint32_t one_window_width = mon_width / __comp->n_windows;
+
+  int i = 0;
+  struct c_window *_w;
+  c_list_for_each(__comp->windows, _w) {
+    _w->x = i++ * one_window_width;
+    _w->x += i * gap;
+    _w->y = gap;
+
+    _w->width = one_window_width;
+    _w->height = mon_height - gap * 2;
+    c_render_window_resize(render, _w);
+  }
+
   return 0;
 }
+
+
 
 static void cleanup(int err) {
   c_log(C_LOG_DEBUG, "running cleanup");
@@ -35,28 +66,6 @@ static void cleanup(int err) {
   if (__comp->render)  c_render_free(__comp->render);
   if (__comp->display) c_wl_display_free(__comp->display);
   if (__comp->backend) c_backend_free(__comp->backend);
-
-  struct c_render_window *window;
-  c_list_for_each(__comp->windows, window) {
-    struct c_wl_surface *surface = window->surface;
-    struct c_wl_buffer *wl_buffer;
-    if (surface->active)
-      wl_buffer = surface->active;
-    else if (surface->pending)
-      wl_buffer = surface->pending;
-    else
-      goto free_surface;
-  
-    if (wl_buffer->type == C_WL_BUFFER_DMA) {
-      free(wl_buffer->dma->dma); 
-      free(wl_buffer->dma); 
-    }
-
-    free(wl_buffer);
-   
-  free_surface:
-    free(surface);
-  }
 
   c_list_destroy(__comp->windows);
   exit(err);
@@ -83,16 +92,16 @@ int main() {
   struct c_backend *backend = c_backend_init(display->loop);
   if (!backend) goto out;
 
-  struct c_input_listener_mouse input_listener_mouse = {
-    .on_mouse_movement = on_mouse_movement_cb,
-  };
-  c_input_add_listener_mouse(backend->input, &input_listener_mouse, NULL);
-
   __comp->backend = backend;
 
   struct c_render *render = c_render_init(display, backend->drm);
-  if (!render)
-    goto out;
+  if (!render) goto out;
+
+  struct c_render_listener render_listener = {
+    .on_window_new = on_window_new_cb,
+  };
+  c_render_add_listener(render, &render_listener, NULL);
+
   __comp->render = render;
 
   ret = c_event_loop_run(display->loop);

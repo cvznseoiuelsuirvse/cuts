@@ -8,6 +8,7 @@
 #include <GL/gl.h>
 
 #include "wayland/display.h"
+#include "backend/drm/drm.h"
 
 #define C_DMABUF_MAX_PLANES 4
 
@@ -27,6 +28,7 @@ struct c_dmabuf_plane {
 };
 
 struct c_dmabuf {
+	int flags;
     uint32_t drm_format;   // DRM_FORMAT_*
     uint64_t modifier;
 
@@ -48,9 +50,10 @@ struct c_dmabuf_params {
 
 struct c_shm {
     int fd;
-    uint32_t format;
-    int      stride;
-    int      offset;
+    uint32_t   format;
+    int        stride;
+    int        offset;
+
 };
 
 struct c_shm_params {
@@ -67,9 +70,21 @@ union c_buf_params {
 };
 
 
+struct c_window {
+  uint32_t width, height;
+  uint32_t x, y;
+
+  char title[256];
+  char app_id[256];
+};
+
+struct c_render_listener {
+	int (*on_window_new)	 (struct c_window *, void *);
+	int (*on_window_close)	 (struct c_window *, void *);
+};
+
 struct c_render {
 	struct c_drm  *drm;
-	struct gbm_device  *gbm_device;
 	struct gbm_surface *gbm_surface;
 	struct gbm_bo 	   *gbm_bo;
 	struct gbm_bo 	   *gbm_bo_next;
@@ -80,27 +95,21 @@ struct c_render {
 		size_t n_entries;
 		struct c_format *entries;
 	} formats;
-};
 
-struct c_rect {
-	uint32_t width, height;
-	uint32_t x, y;
-};
+	c_list *listeners;
+	c_map  *surfaces;
 
-struct c_render_window {
-  struct c_wl_surface *surface; // managed by wayland backend
-  uint32_t width, height;
-  uint32_t x, y;
-  GLuint texture;
 };
 
 struct c_render *c_render_init(struct c_wl_display *dpy, struct c_drm *drm);
 void c_render_free(struct c_render *render);
-int c_render_new_page_flip(struct c_render *render);
-int c_render_handle_event(struct c_render *render);
+void c_render_add_listener(struct c_render *render, struct c_render_listener *listener, void *userdata);
+
 int c_render_import_dmabuf(struct c_render *render, struct c_dmabuf_params *params, struct c_dmabuf *buf);
 int c_render_destroy_dmabuf(struct c_render *render, struct c_dmabuf *buf);
 int c_render_get_ft_fd(struct c_render *render);
-// int draw(struct c_render *render, struct c_rect *rect);
+
+void c_render_redraw(struct c_render *render);
+void c_render_window_resize(struct c_render *render, struct c_window *window);
 
 #endif

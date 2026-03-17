@@ -24,18 +24,10 @@ typedef struct c_wl_array {
 } c_wl_array;
 
 
-struct c_wl_shm {
-	c_wl_object_id id;
-	uint8_t		  *buffer;
-	c_wl_int	   size;
-	struct c_shm  *shm;
-};
-
-struct c_wl_dmabuf {
-	c_wl_object_id id;
-	int            used;
-	c_wl_int       flags;
-	struct c_dmabuf *dma;
+struct c_wl_shm_pool {
+	int 	   fd;
+	uint8_t	  *ptr;
+	uint32_t   size;
 };
 
 enum c_wl_buffer_type {
@@ -51,8 +43,8 @@ struct c_wl_buffer {
 
 	enum c_wl_buffer_type type;	
 	union {
-		struct c_wl_dmabuf *dma;
-		struct c_wl_shm *shm;
+		struct c_dmabuf *dma;
+		struct c_shm *shm;
 	};
 };
 
@@ -68,7 +60,6 @@ enum c_wl_surface_roles {
 
 struct c_wl_surface {
 	c_wl_object_id  id;
-	c_wl_uint 		serial;
 	enum c_wl_surface_roles role;
 
 	struct {
@@ -78,10 +69,9 @@ struct c_wl_surface {
 	} damage;
 
 	struct {
+		c_wl_uint 		serial;
 		c_wl_object_id  surface_id;
 		c_wl_object_id  toplevel_id;
-		c_wl_int width,  max_width,  min_width,  x;
-		c_wl_int height, max_height, min_height, y;
 		char title[256];
 		char app_id[256];
 	} xdg_state;

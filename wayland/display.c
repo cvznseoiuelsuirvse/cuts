@@ -1,13 +1,16 @@
+#define _GNU_SOURCE
+
 #include <stdlib.h>
 #include <fcntl.h>
 #include <string.h>
+#include <errno.h>
 #include <unistd.h>
 
 #include "wayland/error.h"
 #include "wayland/display.h"
 #include "util/event_loop.h"
-#include "util/log.h"
 
+#include "util/log.h"
 
 struct __display_event_listener {
   void *userdata;
@@ -27,14 +30,12 @@ static inline int set_nonblocking(int fd) {
 static int create_socket(struct c_wl_display *display) {
   int fd;
   const char *xdg_runtime_dir = getenv("XDG_RUNTIME_DIR");
-  if (!xdg_runtime_dir) {
-    fprintf(stderr, "XDG_RUNTIME_DIR env not set\n");
-    return -1;
-  }
+  if (!xdg_runtime_dir)
+    xdg_runtime_dir = "/tmp";
 
   fd = socket(AF_UNIX, SOCK_STREAM, 0);
   if (fd == -1) {
-    perror("socket");
+    c_log(C_LOG_ERROR, "socket failed: %s", strerror(errno));
     return -1;
   }
 
@@ -48,32 +49,35 @@ static int create_socket(struct c_wl_display *display) {
   }
 
   if (!*addr.sun_path) {
-    fprintf(stderr, "all sockets are taken\n");
-    close(fd);
-    return -1;
+    c_log(C_LOG_ERROR, "all sockets are taken\n");
+    goto error;
   }
 
   if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
-    perror("c_create_socket");
-    close(fd);
-    return -1;
+    c_log(C_LOG_ERROR, "bind failed: %s", strerror(errno));
+    goto error;
   }
 
   if (listen(fd, 16) == -1) {
-    perror("c_create_socket");
-    close(fd);
-    return -1;
+    c_log(C_LOG_ERROR, "listen failed: %s", strerror(errno));
+    goto error;
   }
 
   snprintf(display->socket_path, sizeof(display->socket_path), "%s", addr.sun_path);
   c_log(C_LOG_INFO, "created wayland socket at %s", display->socket_path);
   return fd;
+
+error:
+  // unsetenv("WAYLAND-DISPLAY");
+  close(fd);
+  return -1;
 }
 
 C_EVENT_CALLBACK client_epoll_callback(struct c_event_loop *loop, int fd, void *data) {
   struct c_wl_connection *connection = data;
   int ret = c_wl_connection_dispatch(connection);
   if (ret == 1) {
+    c_log(C_LOG_DEBUG, "client %d gone (conn %p)", connection->client_fd, connection);
     c_wl_connection_free(connection);
     ret = C_EVENT_ERROR_WL_CLIENT_GONE;
   } else if (ret == -1) {
@@ -130,8 +134,7 @@ void c_wl_display_notify(struct c_wl_display *display, struct c_wl_surface *surf
     case C_WL_DISPLAY_ON_SURFACE_NEW:     notify(on_surface_new); break;
     case C_WL_DISPLAY_ON_SURFACE_UPDATE:  notify(on_surface_update); break;
     case C_WL_DISPLAY_ON_SURFACE_DESTROY: notify(on_surface_destroy); break;
-    case C_WL_DISPLAY_ON_WINDOW_NEW:      notify(on_window_new); break;
-    case C_WL_DISPLAY_ON_WINDOW_CLOSE:    notify(on_window_close); break;
+    case C_WL_DISPLAY_ON_TOPLEVEL_NEW:    notify(on_toplevel_new); break;
     default: break;
   }
 

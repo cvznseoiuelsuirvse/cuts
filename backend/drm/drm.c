@@ -2,14 +2,17 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <string.h>
+#include <errno.h>
 #include <gbm.h>
 
-#include "backend/drm.h"
+#include "backend/drm/drm.h"
+#include "backend/drm/cursor.h"
+#include "backend/input.h"
+
 #include "util/log.h"
 
-#define c_unused __attribute__((unused))
-
-c_unused static const char *drm_connector_str(uint32_t conn_type) {
+static const char *drm_connector_str(uint32_t conn_type) {
 	switch (conn_type) {
 	case DRM_MODE_CONNECTOR_Unknown:     return "Unknown";
 	case DRM_MODE_CONNECTOR_VGA:         return "VGA";
@@ -81,7 +84,7 @@ int drm_format_num_planes(uint32_t format) {
     }
 }
 
-c_unused static int drm_calc_refresh_rate(drmModeModeInfo *mode) {
+__attribute__((unused))static int drm_calc_refresh_rate(drmModeModeInfo *mode) {
 	int res = (mode->clock * 1000000LL / mode->htotal + mode->vtotal / 2) / mode->vtotal;
 
 	if (mode->flags & DRM_MODE_FLAG_INTERLACE)
@@ -127,31 +130,6 @@ static uint32_t get_crtc_id(int fd, drmModeResPtr res, drmModeConnectorPtr conn,
   return 0;
 }
 
-
-
-// int c_drm_page_flip(struct c_drm *drm) {
-//   struct c_drm_connector *connector = backend->connector;
-//
-//   if (!connector->waiting_for_flip) {
-//     if (!drmModePageFlip(backend->fd, connector->crtc_id, backend->fb_id, DRM_MODE_PAGE_FLIP_EVENT, connector))
-//       connector->waiting_for_flip = 1;
-//   }
-//   return 0;
-// }
-//
-// void c_drm_page_flip2(struct c_drm *drm, int *needs_redraw) {
-//   struct c_drm_connector *connector = backend->connector;
-//
-//   if (!connector->waiting_for_flip && *needs_redraw) {
-//     if (!drmModePageFlip(backend->fd, connector->crtc_id, backend->fb_id, DRM_MODE_PAGE_FLIP_EVENT, connector))
-//       connector->waiting_for_flip = 1;
-//   }
-//
-//   *needs_redraw = 0;
-// }
-
-
-
 static int c_drm_get_connector(struct c_drm *drm, drmModeResPtr resource) {
   drmModeConnectorPtr connector;
   uint32_t taken_crtcs = 0;
@@ -168,13 +146,15 @@ static int c_drm_get_connector(struct c_drm *drm, drmModeResPtr resource) {
       uint32_t crtc_id = get_crtc_id(drm->fd, resource, connector, &taken_crtcs);
       c_connector->crtc_id = crtc_id;
 
-      c_connector->mode.info = get_preferred_mode(connector);
-      if (!c_connector->mode.info) {
-        c_connector->mode.info = &connector->modes[0];
+      c_connector->info = get_preferred_mode(connector);
+      if (!c_connector->info) {
+        c_connector->info = &connector->modes[0];
       }
 
-      c_connector->mode.width = c_connector->mode.info->hdisplay;
-      c_connector->mode.height = c_connector->mode.info->vdisplay;
+      drm->output->width = c_connector->info->hdisplay;
+      drm->output->height = c_connector->info->vdisplay;
+      snprintf(drm->output->name, sizeof(drm->output->name), "%s-%d", 
+               drm_connector_str(connector->connector_type), connector->connector_type_id);
       c_connector->orig_crtc = drmModeGetCrtc(drm->fd, crtc_id);
 
       return 0;
@@ -184,19 +164,6 @@ static int c_drm_get_connector(struct c_drm *drm, drmModeResPtr resource) {
   }
 
   return -1;
-}
-
-void c_drm_free(struct c_drm *drm) {
-  struct c_drm_connector connector = drm->connector;
-  if (connector.orig_crtc) {
-    drmModeSetCrtc(drm->fd, 
-                   connector.orig_crtc->crtc_id, connector.orig_crtc->buffer_id, 
-                   0, 0, &connector.id, 1, &connector.orig_crtc->mode);
-    drmModeFreeCrtc(connector.orig_crtc);
-  }
-  drmModeFreeConnector(connector.conn);
-
-  free(drm);
 }
 
 int c_drm_dev_id(struct c_drm *drm, dev_t *dev_id) {
@@ -210,20 +177,72 @@ int c_drm_dev_id(struct c_drm *drm, dev_t *dev_id) {
   return 0;
 }
 
-struct c_drm *c_drm_init(int drm_fd) {
-  struct c_drm *drm = calloc(1, sizeof(struct c_drm));
-  if (!drm) return NULL;
+void c_drm_free(struct c_drm *drm) {
+  struct c_drm_connector connector = drm->connector;
+  if (drm->gbm_device)       gbm_device_destroy(drm->gbm_device);
+  if (drm->output) {
+    if (drm->output->cursor)
+      c_drm_cursor_free(drm->output->cursor);
+    free(drm->output);
+  }
+
+  if (connector.orig_crtc) {
+    drmModeSetCrtc(drm->fd, 
+                   connector.orig_crtc->crtc_id, connector.orig_crtc->buffer_id, 
+                   0, 0, &connector.id, 1, &connector.orig_crtc->mode);
+    drmModeFreeCrtc(connector.orig_crtc);
+  }
+  drmModeFreeConnector(connector.conn);
+
+  free(drm);
+}
+
+struct c_drm *c_drm_init(int drm_fd, struct c_input *input) {
+  struct c_drm *drm = calloc(1, sizeof(*drm));
+  if (!drm) {
+    c_log(C_LOG_ERROR, "calloc failed");
+    return NULL;
+  }
 
   drm->fd = drm_fd;
 
   drmModeResPtr resource = drmModeGetResources(drm_fd);
   if (!resource) goto error;
 
-  if (c_drm_get_connector(drm, resource) == -1) goto error;
+  drm->output = calloc(1, sizeof(*drm->output));
+  if (!drm->output) {
+    c_log(C_LOG_ERROR, "calloc failed");
+    goto error_resources;
+  }
 
+  if (c_drm_get_connector(drm, resource) == -1) goto error_resources;
+
+  drm->gbm_device = gbm_create_device(drm->fd);
+  if (!drm->gbm_device) {
+    c_log(C_LOG_ERROR, "gbm_create_device failed: %s", strerror(errno));
+    goto error_resources;
+  }
+
+  struct c_drm_cursor *cursor = c_drm_cursor_init(drm, input);
+  if (!cursor) goto error_resources;
+  drm->output->cursor = cursor;
+
+  uint32_t cursor_img[10*10];
+  memset(cursor_img, 0, sizeof(cursor_img));
+
+  for (int y = 0; y < 10; y++) {
+    for (int x = 0; x < 10; x++) {
+      cursor_img[10 * y + x] = 0xFFFFFFFF;
+    }
+  }
+  c_drm_cursor_write(drm, cursor, cursor_img, sizeof(cursor_img));
 
   drmModeFreeResources(resource);
+
   return drm;
+
+error_resources:
+  drmModeFreeResources(resource);
 
 error:
   c_drm_free(drm);

@@ -83,9 +83,17 @@ static void handle_event_mouse(struct c_input *input, struct libinput_event_poin
   struct c_input_mouse_event mouse_event = {0};
 
   switch (type) {
+    case LIBINPUT_EVENT_POINTER_MOTION:
+      mouse_event.x = libinput_event_pointer_get_dx(event);
+      mouse_event.y = libinput_event_pointer_get_dy(event);
+
+      c_input_notify_mouse(input, &mouse_event, C_INPUT_NOTIFY_ON_MOUSE_MOVEMENT);
+      break;
+
     case LIBINPUT_EVENT_POINTER_MOTION_ABSOLUTE:
       mouse_event.x = libinput_event_pointer_get_absolute_x(event);
       mouse_event.y = libinput_event_pointer_get_absolute_y(event);
+      mouse_event.abs = 1;
 
       c_input_notify_mouse(input, &mouse_event, C_INPUT_NOTIFY_ON_MOUSE_MOVEMENT);
       break;
@@ -154,7 +162,7 @@ static void handle_event(struct c_input *input, struct libinput_event *event) {
       handle_event_keyboard(input, libinput_event_get_keyboard_event(event));
       break;
 
-    // case LIBINPUT_EVENT_POINTER_MOTION:
+    case LIBINPUT_EVENT_POINTER_MOTION:
     case LIBINPUT_EVENT_POINTER_MOTION_ABSOLUTE:
     case LIBINPUT_EVENT_POINTER_BUTTON:
     case LIBINPUT_EVENT_POINTER_AXIS:

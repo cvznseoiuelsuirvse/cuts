@@ -15,7 +15,8 @@ c_list *c_list_new() {
 void c_list_destroy(c_list *l) {
   while (l) {
     c_list *next = l->next;
-    free(l->data);
+    if (l->copied)
+      free(l->data);
     free(l);
     l = next;
   }

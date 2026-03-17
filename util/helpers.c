@@ -5,7 +5,6 @@
 #include <assert.h>
 #include <string.h>
 #include <drm/drm_fourcc.h>
-
 #define PADDED4(n) ((n + 3) & ~3)
 
 void print_buffer(char *buffer, size_t buffer_len) {

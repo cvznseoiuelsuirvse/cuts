@@ -11,7 +11,7 @@
 #include "wayland/server.h"
 #include "wayland/error.h"
 
-#include "backend/drm.h"
+#include "backend/drm/drm.h"
 #include "render/render.h"
 
 #include "util/log.h"
@@ -111,22 +111,13 @@ int zwp_linux_dmabuf_v1_create_params(struct c_wl_connection *conn, union c_wl_a
   struct c_wl_object *zwp_linux_buffer_params_v1;
   C_WL_CHECK_IF_NOT_REGISTERED(zwp_linux_buffer_params_v1_id, zwp_linux_buffer_params_v1);
 
-  struct c_wl_dmabuf *wl_dma = calloc(1, sizeof(*wl_dma));
-  if (!wl_dma) {
-    c_log(C_LOG_ERROR, "calloc failed");
-    return c_wl_error_set(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed");
-  }
-
   struct c_dmabuf *dma = calloc(1, sizeof(*dma));
   if (!dma) {
     c_log(C_LOG_ERROR, "calloc failed");
     return c_wl_error_set(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed");
   }
 
-  wl_dma->id = zwp_linux_buffer_params_v1_id;
-  wl_dma->dma = dma;
-
-  c_wl_object_add(conn, zwp_linux_buffer_params_v1_id, c_wl_interface_get("zwp_linux_buffer_params_v1"), wl_dma);
+  c_wl_object_add(conn, zwp_linux_buffer_params_v1_id, c_wl_interface_get("zwp_linux_buffer_params_v1"), dma);
 
   return 0;
 }
@@ -134,10 +125,7 @@ int zwp_linux_dmabuf_v1_create_params(struct c_wl_connection *conn, union c_wl_a
 int zwp_linux_buffer_params_v1_add(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
   c_wl_object_id zwp_linux_buffer_params_v1_id = args[0].o;
   struct c_wl_object *zwp_linux_buffer_params_v1 = c_wl_object_get(conn, zwp_linux_buffer_params_v1_id);
-  struct c_wl_dmabuf *wl_dma = zwp_linux_buffer_params_v1->data;
-
-  if (wl_dma->used) 
-    return c_wl_error_set(args[0].o, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_ALREADY_USED, "already used");
+  struct c_dmabuf *dma = zwp_linux_buffer_params_v1->data;
 
   c_wl_fd   fd =          args[1].F;
   c_wl_uint plane_idx =   args[2].u;
@@ -149,8 +137,6 @@ int zwp_linux_buffer_params_v1_add(struct c_wl_connection *conn, union c_wl_arg 
   if (plane_idx >= C_DMABUF_MAX_PLANES)
     return c_wl_error_set(args[0].o, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_PLANE_IDX, "only 4 planes are supported");
 
-
-  struct c_dmabuf *dma = wl_dma->dma;
   if (plane_idx != dma->n_planes)
     return c_wl_error_set(args[0].o, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_PLANE_IDX, 
                           "invalid plane_idx %d (expected %d)", plane_idx, dma->n_planes);
@@ -172,10 +158,7 @@ int zwp_linux_buffer_params_v1_add(struct c_wl_connection *conn, union c_wl_arg 
 int zwp_linux_buffer_params_v1_create_immed(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
   c_wl_object_id zwp_linux_buffer_params_v1_id = args[0].o;
   struct c_wl_object *zwp_linux_buffer_params_v1 = c_wl_object_get(conn, zwp_linux_buffer_params_v1_id);
-  struct c_wl_dmabuf *wl_dma = zwp_linux_buffer_params_v1->data;
-
-  if (wl_dma->used) 
-    return c_wl_error_set(args[0].o, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_ALREADY_USED, "already used");
+  struct c_dmabuf *dma = zwp_linux_buffer_params_v1->data;
 
   c_wl_new_id wl_buffer_id = args[1].n;
   c_wl_int    width =        args[2].i;
@@ -189,35 +172,32 @@ int zwp_linux_buffer_params_v1_create_immed(struct c_wl_connection *conn, union 
   if (height <= 0)
     return c_wl_error_set(args[0].o, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_INVALID_DIMENSIONS, "invalid height");
 
-  struct c_wl_buffer *wl_buffer = calloc(1, sizeof(struct c_wl_buffer));
-  if (!wl_buffer)
+  struct c_wl_buffer *c_wl_buffer = calloc(1, sizeof(struct c_wl_buffer));
+  if (!c_wl_buffer)
         return c_wl_error_set(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed");
 
-  wl_dma->used = 1;
-  wl_dma->dma->drm_format = format;
-  wl_dma->flags = flags;
+  dma->drm_format = format;
+  dma->flags = flags;
 
-  wl_buffer->id = wl_buffer_id;
-  wl_buffer->width = width;
-  wl_buffer->height = height;
-  wl_buffer->dma = wl_dma;
-  struct c_dmabuf *dma = wl_buffer->dma->dma;
+  c_wl_buffer->id = wl_buffer_id;
+  c_wl_buffer->width = width;
+  c_wl_buffer->height = height;
+  c_wl_buffer->dma = dma;
+
   struct c_dmabuf_params dmabuf_params = {
-    .width = wl_buffer->width,
-    .height = wl_buffer->height,
+    .width = c_wl_buffer->width,
+    .height = c_wl_buffer->height,
     .modifier = dma->modifier,
     .drm_format = dma->drm_format,
     .n_planes = dma->n_planes,
   };
-
   memcpy(dmabuf_params.planes, dma->planes, sizeof(dma->planes));
 
   if (c_render_import_dmabuf(userdata, &dmabuf_params, dma) == -1) {
     return c_wl_error_set(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "failed to import dmabuf");
   }
 
-
-  c_wl_object_add(conn, wl_buffer_id, c_wl_interface_get("wl_buffer"), wl_buffer);
+  c_wl_object_add(conn, wl_buffer_id, c_wl_interface_get("wl_buffer"), c_wl_buffer);
   return 0;
 }
 
