@@ -2,6 +2,7 @@
 #define CUTS_BACKEND_H
 
 #include "util/event_loop.h"
+#include "backend/seat/seat.h"
 #include "util/list.h"
 
 enum C_BACKEND_DEV_TYPES {
@@ -18,7 +19,7 @@ struct c_backend_device {
 struct c_backend {
   struct c_drm      *drm;
   struct c_input    *input;
-  struct c_session  *session;
+  struct c_seat 	*seat;
 	
   c_list *devices; // struct c_backend_device
 };

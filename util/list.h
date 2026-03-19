@@ -8,6 +8,9 @@ typedef struct c_list {
   int copied;
   struct c_list *prev;
   struct c_list *next;
+
+  int *size;
+  int __size;
 } c_list;
 
 #define c_list_for_each(pos, member)                             \
@@ -16,7 +19,6 @@ typedef struct c_list {
 c_list *c_list_new();
 void    c_list_destroy(c_list *l);
 void   *c_list_push(c_list *l, void *data, size_t data_size);
-void    c_list_remove(c_list **head, size_t n);
 void 	c_list_remove_ptr(c_list **head, void *ptr);
 void   *c_list_get(c_list *l, size_t n);
 void   *c_list_get_last(c_list *l);

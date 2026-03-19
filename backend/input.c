@@ -3,12 +3,10 @@
 #include <assert.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <errno.h>
 #include <string.h>
 
 #include "backend/backend.h"
 #include "backend/input.h"
-#include "backend/session.h"
 #include "util/log.h"
 
 
@@ -180,7 +178,7 @@ static void handle_event(struct c_input *input, struct libinput_event *event) {
 C_EVENT_CALLBACK libinput_dispatch_handler(struct c_event_loop *loop, int fd, void *userdata) {
   struct c_input *input = userdata;
   if (libinput_dispatch(input->input) < 0) {
-    c_log(C_LOG_ERROR, "libinput_dispatch failed: %s", strerror(errno));
+    c_log_errno(C_LOG_ERROR, "libinput_dispatch failed");
     return C_EVENT_ERROR_FATAL;
   }
 
@@ -224,8 +222,6 @@ void c_input_free(struct c_input *input) {
 }
 
 struct c_input *c_input_init(struct c_event_loop *loop, struct c_backend *backend) {
-  struct c_session *session = backend->session;
-
   struct c_input *input = calloc(1, sizeof(*input));
   if (!input) {
     c_log(C_LOG_ERROR, "calloc failed");
@@ -244,15 +240,15 @@ struct c_input *c_input_init(struct c_event_loop *loop, struct c_backend *backen
     goto error;
   }
 
-  if (libinput_udev_assign_seat(libinput, session->seat_name) < 0) {
-    c_log(C_LOG_ERROR, "libinput_udev_assign_seat('%s') failed: %s", session->seat_name, strerror(errno));
+  if (libinput_udev_assign_seat(libinput, "seat0") < 0) {
+    c_log_errno(C_LOG_ERROR, "libinput_udev_assign_seat failed");
     goto error;
   }
 
   input->input = libinput;
   
   if (libinput_dispatch(input->input) < 0) {
-    c_log(C_LOG_ERROR, "libinput_dispatch failed: %s", strerror(errno));
+    c_log_errno(C_LOG_ERROR, "libinput_dispatch failed");
     goto error;
   }
 

@@ -9,33 +9,30 @@ project('cuts', 'c',
   ],
 )
 
+c_args = [
+  '-Wno-unused-parameter',
+  '-D_GNU_SOURCE',
+]
+
+libdrm_dep = dependency('libdrm')
+
 subdir('util')
 subdir('backend')
 subdir('wayland')
 subdir('render')
 
-c_args = [
-  '-Wno-unused-parameter',
-]
-
 sources = [
   'cuts.c',
-  util_sources,
-  backend_sources,
-  server_sources,
-  render_sources,
 ]
+
 executable('main',
   sources,
   c_args: c_args,
   dependencies: [
-    libdrm_dep, 
-    egl_dep, 
-    gbm_dep, 
-    gles_dep, 
-    libinput_dep, 
-    libseat_dep,
-    libudev_dep,
+    backend_dep,
+    util_dep,
+    wayland_dep,
+    render_dep,
   ],
   install: true,
 )

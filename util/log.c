@@ -23,8 +23,20 @@ void _c_log(enum c_log_level level, const char *file, int line, int insert_nl, c
   va_list args;
   va_start(args, format);
 
-  printf("[%s %s:%d] ", log_level_string(level), file, line);
+  switch (level) {
+    case C_LOG_ERROR:
+      printf("\033[31m[%s %s:%d] ", log_level_string(level), file, line);
+      break;
+    case C_LOG_WARNING:
+      printf("\033[33m[%s %s:%d] ", log_level_string(level), file, line);
+      break;
+    default:
+      printf("[%s %s:%d] ", log_level_string(level), file, line);
+      break;
+  }
+
   vprintf(format, args);
+  printf("\033[0m");
   if (insert_nl)
     printf("\n");
 

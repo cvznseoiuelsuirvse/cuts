@@ -1,9 +1,9 @@
-#define _GNU_SOURCE
 #include <stdlib.h>
 #include <unistd.h>
 
 #include "util/event_loop.h"
-#include "../util/list.h"
+#include "util/list.h"
+#include "util/log.h"
 
 #define CUTS_MAX_EPOLL_EVENTS 512
 
@@ -12,7 +12,7 @@ struct c_event_loop * c_event_loop_init() {
 
   loop->epfd = epoll_create1(0);
   if (loop->epfd == -1) {
-    perror("epoll_create1");
+    c_log_errno(C_LOG_ERROR, "epoll_create1 failed");
     free(loop);
     return NULL;
   }
@@ -30,7 +30,7 @@ int c_event_loop_add(struct c_event_loop *loop, int fd, c_event_callback callbac
   ev.events = EPOLLIN | EPOLLHUP | EPOLLERR;
   ev.data.ptr = resource_cpy;
   if (epoll_ctl(loop->epfd, EPOLL_CTL_ADD, resource.fd, &ev) == -1) {
-    fprintf(stderr, "failed to add event %d\n", resource.fd);
+    c_log_errno(C_LOG_ERROR, "epoll_ctl(EPOLL_CTL_ADD) failed");
     return -1;
   }
   return 0;
@@ -72,7 +72,7 @@ int c_event_loop_run(struct c_event_loop *loop) {
   while (1) {
     n = epoll_wait(loop->epfd, loop->events, CUTS_MAX_EPOLL_EVENTS, -1);
     if (n == -1) {
-      perror("epoll_wait");
+      c_log_errno(C_LOG_ERROR, "epoll_wait failed");
       return -1;
     }
   
@@ -81,11 +81,11 @@ int c_event_loop_run(struct c_event_loop *loop) {
       if (events[i].events & EPOLLIN) {
         ret = resource->callback(loop, resource->fd, resource->userdata);
         switch (ret) {
-          case -C_EVENT_ERROR_FATAL:
+          case C_EVENT_ERROR_FATAL:
             goto out;
 
-          case -C_EVENT_ERROR_WL_PROTO:
-          case -C_EVENT_ERROR_WL_CLIENT_GONE:
+          case C_EVENT_ERROR_FD_GONE:
+          case C_EVENT_ERROR_WL_PROTO:
             c_event_loop_del(loop, resource);
             break;
         }

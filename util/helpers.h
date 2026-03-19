@@ -25,5 +25,7 @@ void write_string(char *buffer, uint32_t *offset, const char *val);
 void write_array(char *buffer, uint32_t *offset, const uint8_t *array, size_t array_size);
 
 uint32_t drm_format_to_bpp(uint32_t format);
+int set_nonblocking(int fd);
+int starts_with(const char *string, const char *prefix);
 
 #endif

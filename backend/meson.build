@@ -1,11 +1,19 @@
+subdir('seat')
+
+libinput_dep = dependency('libinput')
+libudev_dep = dependency('libudev')
+
 backend_sources = files(
   'drm/drm.c',
   'drm/cursor.c',
   'input.c',
-  'session.c',
   'backend.c',
-)
+) + seat_sources
 
-libinput_dep = dependency('libinput')
-libseat_dep = dependency('libseat')
-libudev_dep = dependency('libudev')
+backend_dep = declare_dependency(
+  sources: backend_sources,
+  dependencies: [
+    libinput_dep, 
+    libudev_dep
+  ],
+)

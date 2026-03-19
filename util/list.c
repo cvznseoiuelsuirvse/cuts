@@ -9,6 +9,7 @@ c_list *c_list_new() {
     perror("malloc");
     return NULL;
   }
+  l->size = &l->__size;
   return l;
 }
 
@@ -40,6 +41,7 @@ void *c_list_push(c_list *l, void *data, size_t data_size) {
   } else 
     l->data = data;
 
+  (*l->size)++;
   return l->data;
 }
 
@@ -63,34 +65,11 @@ void c_list_remove_ptr(c_list **head, void *ptr) {
       if (l->copied)
         free(l->data);
 
+      (*l->size)--;
       break;
     }
   }
 
-}
-
-void c_list_remove_ptr_(c_list **head, void *ptr) {
-  c_list *l = *head;
-
-  for (size_t i = 0; l; l = l->next, i++) {
-    if (l->data == ptr) {
-      if (l->prev) {
-        l->prev->next = l->next;
-      } else {
-        *head = l->next;
-      }
-
-      if (l->next)
-        l->next->prev = l->prev;
-      
-      if (l->copied)
-        free(l->data);
-
-      if (i > 0)
-        free(l);
-      break;
-    }
-  }
 }
 
 void *c_list_get(c_list *l, size_t n) {

@@ -3,7 +3,6 @@
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #include <string.h>
-#include <errno.h>
 
 #include "backend/drm/drm.h"
 #include "backend/drm/cursor.h"
@@ -36,14 +35,14 @@ static int on_mouse_movement_cb(struct c_input_mouse_event *event, void *userdat
 
 int c_drm_cursor_write(struct c_drm *drm, struct c_drm_cursor *cursor, uint32_t *buffer, size_t buffer_size) {
   if (gbm_bo_write(cursor->gbm_bo, buffer, buffer_size) != 0) {
-    c_log(C_LOG_ERROR, "gbm_bo_write failed: %s", strerror(errno));
+    c_log_errno(C_LOG_ERROR, "gbm_bo_write failed");
     return -1;
   }
 
   size_t cursor_size = buffer_size / sizeof(uint32_t) / 2;
   uint32_t bo_handle = gbm_bo_get_handle(cursor->gbm_bo).u32;
   if (drmModeSetCursor(drm->fd, drm->connector.crtc_id, bo_handle, cursor_size, cursor_size) != 0) {
-    c_log(C_LOG_ERROR, "drmModeSetCursor failed: %s", strerror(errno));
+    c_log_errno(C_LOG_ERROR, "drmModeSetCursor failed");
     return -1;
   }
 
@@ -72,7 +71,7 @@ struct c_drm_cursor *c_drm_cursor_init(struct c_drm *drm, struct c_input *input)
 
   cursor->gbm_bo = gbm_bo_create(drm->gbm_device, w, h, GBM_FORMAT_ARGB8888, GBM_BO_USE_CURSOR | GBM_BO_USE_WRITE);
   if (!cursor->gbm_bo) {
-    c_log(C_LOG_ERROR, "gbm_bo_create failed: %s", strerror(errno));
+    c_log_errno(C_LOG_ERROR, "gbm_bo_create failed");
     goto error;
   }
 

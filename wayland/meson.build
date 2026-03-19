@@ -1,4 +1,4 @@
-server_sources = files(
+wayland_sources = files(
   'server.c',
   'display.c',
   'error.c',
@@ -8,4 +8,8 @@ server_sources = files(
   'handlers/wayland.c',
   'handlers/xdg-shell.c',
   'handlers/linux-dmabuf-v1.c',
+)
+
+wayland_dep = declare_dependency(
+  sources: wayland_sources,
 )

@@ -1,5 +1,3 @@
-#define _GNU_SOURCE
-
 #include <signal.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -7,7 +5,6 @@
 #include "wayland/display.h"
 
 #include "backend/backend.h"
-#include "backend/input.h"
 
 #include "render/render.h"
 

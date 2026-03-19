@@ -6,3 +6,8 @@ util_sources = files(
   'bitmap.c',
   'log.c',
 )
+util_include = include_directories('..')
+util_dep = declare_dependency(
+  include_directories: util_include,
+  sources: util_sources
+)

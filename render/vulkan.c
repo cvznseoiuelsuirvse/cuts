@@ -1,10 +1,6 @@
-#define _GNU_SOURCE
-#define CUTS_USE_VULKAN
-
 #include <stdlib.h>
 #include <assert.h>
 #include <sys/sysmacros.h>
-#include <errno.h>
 #include <sys/stat.h>
 #include <drm/drm_fourcc.h>
 #include <xf86drm.h>
@@ -313,7 +309,7 @@ static int c_vulkan_device_create(struct c_vulkan *vk, int drm_fd) {
 
   struct stat st;
   if (fstat(drm_fd, &st) != 0) {
-    c_log(C_LOG_ERROR, "fstat failed: %s", strerror(errno));
+    c_log_errno(C_LOG_ERROR, "fstat failed");
     return -1;
   }
 
@@ -577,7 +573,7 @@ VkImage c_vulkan_import_dmabuf(struct c_vulkan *vk, struct c_dmabuf_params *para
 
     int dup_fd = fcntl(params->planes[i].fd, F_DUPFD_CLOEXEC, 0);
     if (dup_fd == -1) {
-      c_log(C_LOG_ERROR, "failed to fcntl(F_DUPFD_CLOEXEC): %s", strerror(errno));
+      c_log_errno(C_LOG_ERROR, "failed to fcntl(F_DUPFD_CLOEXEC");
       goto err_img;
     }
 

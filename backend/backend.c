@@ -2,28 +2,54 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <string.h>
-#include <errno.h>
 
 #include "backend/backend.h"
-#include "backend/session.h"
 #include "backend/input.h"
 #include "backend/drm/drm.h"
 #include "util/event_loop.h"
 #include "util/log.h"
 
+static struct c_backend_device *open_gpu(struct c_backend *backend) {
+  char gpu_path[128];
+  int gpu_found = 0;
+  for (int i = 0; i < 10; i++) {
+    memset(gpu_path, 0, sizeof(gpu_path));
+    snprintf(gpu_path, sizeof(gpu_path), "/dev/dri/card%d", i);
+    int fd = open(gpu_path, O_RDWR | O_NONBLOCK);
+    if (fd > 0) {
+      gpu_found = 1;
+      close(fd);
+      break;
+    }
+  }
+
+  if (!gpu_found) {
+    c_log(C_LOG_ERROR, "no GPUs found");
+    return NULL;
+  }
+
+  struct c_backend_device *dev = c_backend_device_open(backend, gpu_path, C_BACKEND_DEV_DRM);
+  if (!dev) return NULL;
+
+  return dev;
+}
 
 void c_backend_device_close(struct c_backend *backend, struct c_backend_device *device) {
-  libseat_close_device(backend->session->seat, device->id);
-  c_log(C_LOG_DEBUG, "closed device: %s", device->path);
-  c_list_remove_ptr(&backend->devices, device);
-  free(device);
+  if (c_seat_close_device(backend->seat, device->id) < 0) {
+    c_log(C_LOG_WARNING, "failed to close device: %s", device->path);
+
+  } else {
+    c_log(C_LOG_DEBUG, "closed device: %s", device->path);
+    c_list_remove_ptr(&backend->devices, device);
+    free(device);
+  }
 }
 
 struct c_backend_device *c_backend_device_open(struct c_backend *backend, const char *path, enum C_BACKEND_DEV_TYPES type) {
   int fd;
   int id;
-  if ((id = libseat_open_device(backend->session->seat, path, &fd)) < 0) {
-    c_log(C_LOG_ERROR, "failed to open %s: %s", path, strerror(errno));
+  if ((id = c_seat_open_device(backend->seat, path, &fd)) < 0) {
+    c_log_errno(C_LOG_ERROR, "failed to open %s", path);
     return NULL;
   }
 
@@ -58,32 +84,6 @@ struct c_backend_device *c_backend_device_open(struct c_backend *backend, const 
   return dev;
 }
 
-
-static struct c_backend_device *open_gpu(struct c_backend *backend) {
-  char gpu_path[128];
-  int gpu_found = 0;
-  for (int i = 0; i < 10; i++) {
-    memset(gpu_path, 0, sizeof(gpu_path));
-    snprintf(gpu_path, sizeof(gpu_path), "/dev/dri/card%d", i);
-    int fd = open(gpu_path, O_RDWR | O_NONBLOCK);
-    if (fd > 0) {
-      gpu_found = 1;
-      close(fd);
-      break;
-    }
-  }
-
-  if (!gpu_found) {
-    c_log(C_LOG_ERROR, "no GPUs found");
-    return NULL;
-  }
-
-  struct c_backend_device *dev = c_backend_device_open(backend, gpu_path, C_BACKEND_DEV_DRM);
-  if (!dev) return NULL;
-
-  return dev;
-}
-
 void c_backend_free(struct c_backend *backend) {
   struct c_backend_device *dev;
   c_list_for_each(backend->devices, dev) {
@@ -91,7 +91,7 @@ void c_backend_free(struct c_backend *backend) {
   }
   c_list_destroy(backend->devices);
 
-  if (backend->session) c_session_free(backend->session);
+  // if (backend->session) c_session_free(backend->session);
   if (backend->input)   c_input_free(backend->input);
   if (backend->drm)     c_drm_free(backend->drm);
 
@@ -106,8 +106,8 @@ struct c_backend *c_backend_init(struct c_event_loop *loop) {
   }
 
   backend->devices = c_list_new();
-  backend->session = c_session_init(loop);
-  if (!backend->session) goto error;
+  backend->seat = c_seat_open();
+  if (!backend->seat) goto error;
 
   struct c_backend_device *dev_gpu = open_gpu(backend);
   if (!dev_gpu) goto error;

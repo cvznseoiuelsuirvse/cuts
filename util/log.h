@@ -1,8 +1,11 @@
 #ifndef CUTS_UTIL_LOG_H
 #define CUTS_UTIL_LOG_H
 
-#include "wayland/server.h"
 #include <stdint.h>
+#include <string.h>
+#include <errno.h>
+
+#include "wayland/server.h"
 
 enum c_log_level {
 	C_LOG_ERROR   = 1,
@@ -12,6 +15,7 @@ enum c_log_level {
 };
 
 
+#define c_log_errno(level, format, ...) _c_log((level), (const char *)__FILE__ + 3, __LINE__, 1, format ": %s" __VA_OPT__(,) __VA_ARGS__, strerror(errno))
 #define c_log(level, format, ...) _c_log((level), (const char *)__FILE__ + 3, __LINE__, 1, format __VA_OPT__(,) __VA_ARGS__)
 #define c_log2(level, format, ...) _c_log((level), (const char *)__FILE__ + 3, __LINE__, 0, format __VA_OPT__(,) __VA_ARGS__)
 

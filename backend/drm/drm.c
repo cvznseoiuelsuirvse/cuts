@@ -3,7 +3,6 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <string.h>
-#include <errno.h>
 #include <gbm.h>
 
 #include "backend/drm/drm.h"
@@ -219,7 +218,7 @@ struct c_drm *c_drm_init(int drm_fd, struct c_input *input) {
 
   drm->gbm_device = gbm_create_device(drm->fd);
   if (!drm->gbm_device) {
-    c_log(C_LOG_ERROR, "gbm_create_device failed: %s", strerror(errno));
+    c_log_errno(C_LOG_ERROR, "gbm_create_device failed");
     goto error_resources;
   }
 

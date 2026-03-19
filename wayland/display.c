@@ -1,31 +1,19 @@
-#define _GNU_SOURCE
-
 #include <stdlib.h>
 #include <fcntl.h>
 #include <string.h>
-#include <errno.h>
 #include <unistd.h>
 
 #include "wayland/error.h"
 #include "wayland/display.h"
-#include "util/event_loop.h"
 
+#include "util/event_loop.h"
+#include "util/helpers.h"
 #include "util/log.h"
 
 struct __display_event_listener {
   void *userdata;
   struct c_wl_display_listener *listener;
 };
-
-static inline int set_nonblocking(int fd) {
-  int flags;
-
-  flags = fcntl(fd, F_GETFL, 0);
-  if (flags == -1) return flags;
-
-  flags |= O_NONBLOCK;
-  return fcntl(fd, F_SETFL, flags);
-}
 
 static int create_socket(struct c_wl_display *display) {
   int fd;
@@ -35,7 +23,7 @@ static int create_socket(struct c_wl_display *display) {
 
   fd = socket(AF_UNIX, SOCK_STREAM, 0);
   if (fd == -1) {
-    c_log(C_LOG_ERROR, "socket failed: %s", strerror(errno));
+    c_log_errno(C_LOG_ERROR, "socket failed");
     return -1;
   }
 
@@ -54,12 +42,12 @@ static int create_socket(struct c_wl_display *display) {
   }
 
   if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
-    c_log(C_LOG_ERROR, "bind failed: %s", strerror(errno));
+    c_log_errno(C_LOG_ERROR, "bind failed");
     goto error;
   }
 
   if (listen(fd, 16) == -1) {
-    c_log(C_LOG_ERROR, "listen failed: %s", strerror(errno));
+    c_log_errno(C_LOG_ERROR, "listen failed");
     goto error;
   }
 
@@ -79,13 +67,13 @@ C_EVENT_CALLBACK client_epoll_callback(struct c_event_loop *loop, int fd, void *
   if (ret == 1) {
     c_log(C_LOG_DEBUG, "client %d gone (conn %p)", connection->client_fd, connection);
     c_wl_connection_free(connection);
-    ret = C_EVENT_ERROR_WL_CLIENT_GONE;
+    ret = C_EVENT_ERROR_FD_GONE;
   } else if (ret == -1) {
     c_wl_error_send(connection);
     ret = C_EVENT_ERROR_WL_PROTO;
   }
 
-  return -ret;
+  return ret;
 
 }
 
@@ -99,13 +87,13 @@ C_EVENT_CALLBACK server_epoll_callback(struct c_event_loop *loop, int fd, void *
   struct c_wl_connection *connection = c_wl_connection_init(client_fd, data);
   if (!connection) {
     c_log(C_LOG_ERROR, "c_wl_connection_init failed");
-    return -C_EVENT_ERROR_FATAL;
+    return C_EVENT_ERROR_FATAL;
   }
   
 
   if (c_event_loop_add(loop, client_fd, client_epoll_callback, connection) == -1) {
     c_log(C_LOG_ERROR, "c_event_loop_add failed");
-    return -C_EVENT_ERROR_FATAL;
+    return C_EVENT_ERROR_FATAL;
   }
 
   return C_EVENT_OK;

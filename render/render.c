@@ -1,5 +1,3 @@
-#define _GNU_SOURCE
-#include <errno.h>
 #include <string.h>
 #include <assert.h>
 #include <sys/mman.h>
@@ -68,7 +66,7 @@ static void notify(struct c_render *render, struct c_window *window, enum c_rend
 static int add_fb(struct c_render *render) {
   struct gbm_bo *bo = gbm_surface_lock_front_buffer(render->gbm_surface);
   if (!bo) { 
-    c_log(C_LOG_ERROR, "gbm_surface_lock_front_buffer failed: %s", strerror(errno));
+    c_log_errno(C_LOG_ERROR, "gbm_surface_lock_front_buffer failed");
     return -1; 
   }
   render->gbm_bo_next = bo;
@@ -84,7 +82,7 @@ static int add_fb(struct c_render *render) {
   if (drmModeAddFB2(render->drm->fd, 
                     width, height, format, 
                     handles, pitches, offsets, &render->drm->buf_id, 0) != 0) {
-    c_log(C_LOG_ERROR, "drmModeAddFB2 failed: %s", strerror(errno));
+    c_log_errno(C_LOG_ERROR, "drmModeAddFB2 failed");
     return -1;
   }
 
@@ -136,7 +134,7 @@ int c_render_new_page_flip(struct c_render *render) {
     if (add_fb(render) != 0) return -1;
     if (drmModePageFlip(render->drm->fd, render->drm->connector.crtc_id, 
                         render->drm->buf_id, DRM_MODE_PAGE_FLIP_EVENT, render) != 0) {
-      c_log(C_LOG_ERROR, "drmModePageFlip failed: %s", strerror(errno));
+      c_log_errno(C_LOG_ERROR, "drmModePageFlip failed");
       return -1;
     }
 
@@ -361,7 +359,7 @@ static int _on_toplevel_new(struct c_wl_surface *surface, void *userdata) {
 
 C_EVENT_CALLBACK render_callback(struct c_event_loop *loop, int fd, void *userdata) {
   if (c_render_handle_event((struct c_render *)userdata) == -1) 
-    return -C_EVENT_ERROR_FATAL;
+    return C_EVENT_ERROR_FATAL;
 
   if (__needs_redraw)
     c_render_redraw((struct c_render *)userdata);
@@ -442,7 +440,7 @@ struct c_render *c_render_init(struct c_wl_display *display, struct c_drm *drm) 
   if (add_fb(render) != 0) goto error;
   if (drmModeSetCrtc(drm->fd, drm->connector.crtc_id, drm->buf_id,
                   0, 0, &drm->connector.id, 1, drm->connector.info) != 0) { 
-    c_log(C_LOG_ERROR, "drmModeSetCrtc failed: %s", strerror(errno));
+    c_log_errno(C_LOG_ERROR, "drmModeSetCrtc failed");
     goto error;
   }
 

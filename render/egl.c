@@ -1,10 +1,7 @@
-#define _GNU_SOURCE
-
 #include <stdlib.h>
 #include <drm_fourcc.h>
 #include <assert.h>
 #include <stdio.h>
-#include <errno.h>
 #include <unistd.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -565,7 +562,7 @@ struct c_egl *c_egl_init(struct gbm_device *device, struct gbm_surface *surface)
 
   egl->context = eglCreateContext(display, selected_config, EGL_NO_CONTEXT, context_attribs);
   if (!egl->context) {
-    c_log(C_LOG_ERROR, "eglCreateContext failed: %s", strerror(errno));
+    c_log_errno(C_LOG_ERROR, "eglCreateContext failed");
     goto err;
   }
 

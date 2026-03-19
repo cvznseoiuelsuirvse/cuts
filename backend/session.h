@@ -1,14 +1,11 @@
 #ifndef CUTS_BACKEND_SESSION_H
 #define CUTS_BACKEND_SESSION_H
 
-#include <libseat.h>
 #include "util/event_loop.h"
+#include "backend/seat/seat.h"
 
 struct c_session {
-	struct libseat *seat;
-	char 			seat_name[128];
-	int 			seat_fd;
-
+	struct c_seat  *seat;
 	int active;
 };
 
