@@ -7,11 +7,12 @@
 
 #include "util/log.h"
 #include "util/helpers.h"
+#include "util/signal.h"
 #include "util/event_loop.h"
 #include "util/list.h"
 
 #include "backend/seat/sock.h"
-#include "backend/seat/util.h"
+#include "backend/seat/vt.h"
 
 #define MAX_DEVICES 256
 static uint32_t __dev_id = 1;
@@ -25,14 +26,17 @@ struct seat_device {
 struct seat_client {
   int fd;
   int vt;
+  int vt_fd;
+  size_t n_devices;
   c_list *devices;
 };
 
 struct {
   int fd;
-  int vt_fd;
+  int cur_vt;
   struct c_event_loop *event_loop;
   c_list *clients;
+  c_list *signals;
 } serv = {0};
 
 static void cleanup(int code) {
@@ -48,21 +52,55 @@ static void cleanup(int code) {
 
 static void send_ack(int client_fd) {
   struct c_seat_msg_params params = {0};
-  params.header.type = C_SEAT_MSG_ACK;
+  params.header.op = C_SEAT_MSG_ACK;
   assert(seat_send(client_fd, &params) >= 0);
 }
 
-static int drm_set_master(int vt, int *err_vt) {
+static void seat_enable(int client_fd, int vt) {
+  struct c_seat_msg_params send_params = {0};
+  send_params.header.op = C_SEAT_MSG_ENABLE_SEAT;
+
+  serv.cur_vt = vt;
+  seat_send(client_fd, &send_params);
+
+}
+
+static void seat_disable(int client_fd) {
+  struct c_seat_msg_params send_params = {0};
+  send_params.header.op = C_SEAT_MSG_DISABLE_SEAT;
+
+  seat_send(client_fd, &send_params);
+
+}
+
+
+#define __DRM_SET_MASTER  0x641e
+#define __DRM_DROP_MASTER 0x641f
+
+static int drm_ioctl(int fd, int req) {
+  int ret;
+  do {
+      ret = ioctl(fd, req, NULL);
+  } while (ret == -1 && (errno == EINTR || errno == EAGAIN));
+  return ret;
+}
+
+static inline int drm_set_master(int fd) {
+  return drm_ioctl(fd, __DRM_SET_MASTER);
+}
+
+static inline int drm_drop_master(int fd) {
+  return drm_ioctl(fd, __DRM_DROP_MASTER);
+}
+
+static int drm_activate_master(int vt) {
   struct seat_client *c;
   c_list_for_each(serv.clients, c) {
     struct seat_device *d;
     c_list_for_each(c->devices, d) {
       if (d->is_drm) {
-        int req = c->vt == vt ? __DRM_SET_MASTER : __DRM_DROP_MASTER;
-        if (drm_ioctl(d->fd, req) != 0) {
-          *err_vt = c->vt;
-          return -1;
-        }
+        int req = c->vt == vt ? drm_set_master(d->fd) : drm_drop_master(d->fd);
+        if (req < 0) return -1;
       }
     }
   }
@@ -89,6 +127,7 @@ static void seat_close_device(int client_fd, struct c_seat_msg_params *params) {
   c_list_for_each(client->devices, d) {
     if (d->id == id) {
       close(d->fd);
+      client->n_devices--;
       c_list_remove_ptr(&client->devices, d);
       send_ack(client_fd);
       return;
@@ -106,7 +145,7 @@ static void seat_open_device(int client_fd, struct c_seat_msg_params *params) {
     return;
   }
 
-  if (*client->devices->size > MAX_DEVICES) {
+  if (client->n_devices > MAX_DEVICES) {
     seat_send_error(client_fd, "can't open more than %d devices", MAX_DEVICES);
     return;
   }
@@ -126,15 +165,14 @@ static void seat_open_device(int client_fd, struct c_seat_msg_params *params) {
     return;
   }
 
-  int err_vt;
-  if (drm_set_master(client->vt, &err_vt) < 0) {
-    seat_send_error(client_fd, "failed to set/drop drm master on vt %d: %s", err_vt, strerror(errno));
+  if (drm_activate_master(client->vt) < 0) {
+    seat_send_error(client_fd, "drm_activate_master(%d) failed: %s", client->vt, strerror(errno));
     return;
   }
 
   struct c_seat_msg_params send_params = {0};
   send_params.fd = fd;
-  send_params.header.type = C_SEAT_MSG_ACK;
+  send_params.header.op = C_SEAT_MSG_ACK;
   *(uint32_t *)send_params.body = __dev_id;
   send_params.header.body_size = sizeof(__dev_id);
 
@@ -145,11 +183,67 @@ static void seat_open_device(int client_fd, struct c_seat_msg_params *params) {
   };
 
   c_list_push(client->devices, &d, sizeof(d));
+  client->n_devices++;
   seat_send(client_fd, &send_params);
 }
 
+static void vt_ack(struct seat_client *client, int acquire) {
+  if (acquire) {
+    seat_enable(client->fd, client->vt);
+    drm_activate_master(client->vt);
+  } else 
+    seat_disable(client->fd); 
+
+  int ret = acquire ? vt_acquire(client->vt_fd) : vt_release(client->vt_fd);
+  if (ret < 0) {
+    c_log_errno(C_LOG_ERROR, "failed to %s vt %d", acquire ? "acquire" : "release", client->vt);
+    seat_send_error(client->fd, "failed to %s vt %d", acquire ? "acquire" : "release", client->vt);
+    return;
+  }
+
+}
+
+static void on_vt_release(int sig, void *userdata) {
+  int cur_vt = vt_get_current_num();
+  c_log(C_LOG_DEBUG, "on_vt_release(%d)", cur_vt);
+
+  struct seat_client *client;
+  c_list_for_each(serv.clients, client) {
+    if (client->vt == cur_vt) {
+      seat_disable(client->fd);
+
+      if (vt_release(client->vt_fd) < 0) {
+        c_log_errno(C_LOG_ERROR, "failed to release vt %d",  client->vt);
+        seat_send_error(client->fd, "failed to release vt %d", client->vt);
+      }
+
+    }
+  }
+}
+
+static void on_vt_activate(int sig, void *userdata) {
+  int cur_vt = vt_get_current_num();
+  c_log(C_LOG_DEBUG, "on_vt_activate(%d)", cur_vt);
+
+  struct seat_client *client;
+  c_list_for_each(serv.clients, client) {
+    if (client->vt == cur_vt) {
+      seat_enable(client->fd, client->vt);
+      drm_activate_master(client->vt);
+
+      if (vt_acquire(client->vt_fd) < 0) {
+        c_log_errno(C_LOG_ERROR, "failed to acquire vt %d",  client->vt);
+        seat_send_error(client->fd, "failed to acquire vt %d", client->vt);
+      }
+
+    }
+  }
+}
+
 static void seat_open_seat(int client_fd, struct c_seat_msg_params *params) {
-  uint16_t vt = *(uint16_t *)params->body;
+  int vt = vt_get_current_num();
+  c_log(C_LOG_DEBUG, "current vt number: %d", vt);
+
   struct seat_client *c;
   c_list_for_each(serv.clients, c) {
     if (c->vt == vt) {
@@ -158,22 +252,45 @@ static void seat_open_seat(int client_fd, struct c_seat_msg_params *params) {
     }
   }
 
+
+  int vt_fd = vt_open(vt);
+  if (!vt_fd) {
+    seat_send_error(client_fd, "failed to open vt%d", vt);
+    return;
+  }
+
+  if (vt_disable(vt_fd) < 0) {
+    seat_send_error(client_fd, "failed to disable vt%d", vt);
+    return;
+  }
+
   struct seat_client new_client = {
     .fd = client_fd,
     .vt = vt,
+    .vt_fd = vt_fd,
     .devices = c_list_new(),
   };
 
+  // close(vt_fd);
+
   c_list_push(serv.clients, &new_client, sizeof(new_client));
-  send_ack(client_fd);
+
+  seat_enable(client_fd, vt);
 };
 
-static void seat_close_seat(int client_fd, struct c_seat_msg_params *params) {
+static void seat_close_seat(int client_fd) {
   struct seat_client *client = get_client_from_fd(client_fd);
   if (!client) {
     seat_send_error(client_fd, "no clients registered with fd %d", client_fd);
     return;
   }
+
+  vt_enable(client->vt_fd);
+  close(client->vt_fd);
+
+  struct seat_device *d;
+  c_list_for_each(client->devices, d)
+    if (d->is_drm) drm_drop_master(d->fd);
 
   c_list_destroy(client->devices);
   c_list_remove_ptr(&serv.clients, client);
@@ -184,10 +301,11 @@ C_EVENT_CALLBACK seat_client_callback(struct c_event_loop *loop, int fd, void *u
   struct c_seat_msg_params params;
   int n = seat_recv(fd, &params);
   if (n <= 0) {
+    seat_close_seat(fd);
     return C_EVENT_ERROR_FD_GONE;
   }
 
-  switch (params.header.type) {
+  switch (params.header.op) {
     case C_SEAT_MSG_OPEN_SEAT:
       c_log(C_LOG_DEBUG, "client#%d seat.open_seat", fd);
       seat_open_seat(fd, &params);
@@ -195,7 +313,7 @@ C_EVENT_CALLBACK seat_client_callback(struct c_event_loop *loop, int fd, void *u
 
     case C_SEAT_MSG_CLOSE_SEAT:
       c_log(C_LOG_DEBUG, "client#%d seat.close_seat", fd);
-      seat_close_seat(fd, &params);
+      seat_close_seat(fd);
       break;
 
     case C_SEAT_MSG_OPEN_DEVICE:
@@ -250,7 +368,6 @@ int main() {
     c_log_errno(C_LOG_ERROR, "bind failed");
     goto error;
   }
-
   
   if (listen(serv.fd, 16) == -1) {
     c_log_errno(C_LOG_ERROR, "listen failed");
@@ -278,8 +395,8 @@ int main() {
     goto error_unlink;
   }
 
-  serv.vt_fd = terminal_open();
-  if (serv.vt_fd < 0) goto error_unlink;
+  c_signal_handler_add(SIGUSR1, on_vt_release, NULL);
+  c_signal_handler_add(SIGUSR2, on_vt_activate, NULL);
 
   c_event_loop_add(serv.event_loop, serv.fd, seat_server_callback, NULL);
   c_event_loop_run(serv.event_loop);

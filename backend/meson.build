@@ -1,5 +1,6 @@
 subdir('seat')
 
+libdrm_dep = dependency('libdrm')
 libinput_dep = dependency('libinput')
 libudev_dep = dependency('libudev')
 
@@ -13,6 +14,7 @@ backend_sources = files(
 backend_dep = declare_dependency(
   sources: backend_sources,
   dependencies: [
+    libdrm_dep,
     libinput_dep, 
     libudev_dep
   ],

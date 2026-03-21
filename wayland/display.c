@@ -2,6 +2,7 @@
 #include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
+#include <assert.h>
 
 #include "wayland/error.h"
 #include "wayland/display.h"
@@ -14,6 +15,7 @@ struct __display_event_listener {
   void *userdata;
   struct c_wl_display_listener *listener;
 };
+
 
 static int create_socket(struct c_wl_display *display) {
   int fd;
@@ -152,9 +154,21 @@ struct c_wl_display *c_wl_display_init() {
   c_event_loop_add(loop, fd, server_epoll_callback, display);
 
   display->listeners = c_list_new();
+  display->supported_ifaces = c_list_new();
 
   return display;
 
+}
+
+void c_wl_display_add_supported_interface(struct c_wl_display *display, const char *name, c_wl_display_on_bind on_bind, void *userdata) {
+  struct c_wl_interface *iface = c_wl_interface_get(name);
+  assert(iface);
+  struct c_wl_display_supported_iface i = {
+    .iface = iface,
+    .on_bind = on_bind,
+    .userdata = userdata,
+  };
+  c_list_push(display->supported_ifaces, &i, sizeof(i));
 }
 
 void c_wl_display_free(struct c_wl_display *display) {
@@ -166,6 +180,10 @@ void c_wl_display_free(struct c_wl_display *display) {
       free(l->listener);
     c_list_destroy(display->listeners);
   }
+
+  if (display->supported_ifaces)
+    c_list_destroy(display->supported_ifaces);
+  
   free(display);
 }
 

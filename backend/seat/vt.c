@@ -8,38 +8,33 @@
 
 #include "util/log.h"
 
-
-int terminal_set_keyboard(int fd, int enable) {
+int vt_set_keyboard(int fd, int enable) {
   if (ioctl(fd, KDSKBMODE, enable ? K_UNICODE : K_OFF) < 0) 
     return -1;
   
   return 0;
 }
 
-int terminal_set_graphics(int fd, int enable) {
+int vt_set_graphics(int fd, int enable) {
   if (ioctl(fd, KDSETMODE, enable ? KD_GRAPHICS : KD_TEXT) < 0) 
     return -1;
   
   return 0;
 }
 
-int terminal_open(int vt) {
+int vt_open(int vt) {
   char path[16];
   snprintf(path, sizeof(path), "/dev/tty%d", vt);
   int fd = open(path, O_RDWR | O_NOCTTY);
   if (fd < 0) {
     c_log_errno(C_LOG_ERROR, "failed to open %s", path);
-    goto error;
+    return -1;
   }
 
   return fd;
-
-error:
-  close(fd);
-  return -1;
 }
 
-int terminal_disable(int fd) {
+int vt_disable(int fd) {
   struct vt_mode mode = {0};
   mode.mode = VT_PROCESS;
   mode.relsig = SIGUSR1;
@@ -50,12 +45,12 @@ int terminal_disable(int fd) {
     return -1;
   }
 
-  if (terminal_set_graphics(fd, 1) < 0) {
+  if (vt_set_graphics(fd, 1) < 0) {
     c_log_errno(C_LOG_ERROR, "failed to enable graphics");
     return -1;
   }
 
-  if (terminal_set_keyboard(fd, 0) < 0) {
+  if (vt_set_keyboard(fd, 0) < 0) {
     c_log_errno(C_LOG_ERROR, "failed to disable keyboard");
     return -1;
   }
@@ -63,13 +58,13 @@ int terminal_disable(int fd) {
   return 0;
 }
 
-int terminal_enable(int fd) {
-  if (terminal_set_graphics(fd, 0) < 0) {
+int vt_enable(int fd) {
+  if (vt_set_graphics(fd, 0) < 0) {
     c_log_errno(C_LOG_ERROR, "failed to disable graphics");
     return -1;
   }
 
-  if (terminal_set_keyboard(fd, 1) < 0) {
+  if (vt_set_keyboard(fd, 1) < 0) {
     c_log_errno(C_LOG_ERROR, "failed to enable keyboard");
     return -1;
   }
@@ -77,11 +72,31 @@ int terminal_enable(int fd) {
   return 0;
 }
 
+int vt_get_current_num() {
+  int fd = vt_open(0);
+  if (fd < 0) return -1;
 
-int drm_ioctl(int fd, int req) {
-  int ret;
-  do {
-      ret = ioctl(fd, req, NULL);
-  } while (ret == -1 && (errno == EINTR || errno == EAGAIN));
-  return ret;
+  struct vt_stat st;
+  if (ioctl(fd, VT_GETSTATE, &st) < 0) {
+    c_log_errno(C_LOG_ERROR, "ioctl(VT_GETSTATE) failed");
+    close(fd);
+    return -1;
+  }
+
+  close(fd);
+  return st.v_active;
+}
+
+int vt_release(int fd) {
+  if (ioctl(fd, VT_RELDISP, 1) < 0) {
+    return -1;      
+  }
+  return 0;
+}
+
+int vt_acquire(int fd) {
+  if (ioctl(fd, VT_RELDISP, VT_ACKACQ) < 0) {
+    return -1;      
+  }
+  return 0;
 }

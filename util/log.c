@@ -36,7 +36,8 @@ void _c_log(enum c_log_level level, const char *file, int line, int insert_nl, c
   }
 
   vprintf(format, args);
-  printf("\033[0m");
+  if (level == C_LOG_ERROR || level == C_LOG_WARNING)
+    printf("\033[0m");
   if (insert_nl)
     printf("\n");
 
@@ -55,11 +56,11 @@ void c_log_wl_request(struct c_wl_connection *conn, struct c_wl_object *object, 
 
     switch (c) {
       case 'u': 
-        printf("%lu", args[i].u);
+        printf("%u", args[i].u);
         break;
 
       case 'i': 
-        printf("%li", args[i].i);
+        printf("%i", args[i].i);
         break;
 
       case 'f': 
@@ -67,11 +68,11 @@ void c_log_wl_request(struct c_wl_connection *conn, struct c_wl_object *object, 
         break;
 
       case 'o': 
-        printf("%lu", args[i].o);
+        printf("%u", args[i].o);
         break;
 
       case 'n': 
-        printf("%lu", args[i].n);
+        printf("%u", args[i].n);
         break;
 
       case 's': 
@@ -88,7 +89,7 @@ void c_log_wl_request(struct c_wl_connection *conn, struct c_wl_object *object, 
 
       case 'a':
       arr = args[i].a;
-      printf("[%lu]", arr->size);
+      printf("[%u]", arr->size);
       print_buffer(arr->data, arr->size);
       break;
 
@@ -114,11 +115,11 @@ void c_log_wl_event(struct c_wl_connection *conn, struct c_wl_object *object, co
 
     switch (c) {
       case 'u': 
-        printf("%lu", args[i].u);
+        printf("%u", args[i].u);
         break;
 
       case 'i': 
-        printf("%li", args[i].i);
+        printf("%i", args[i].i);
         break;
 
       case 'f': 
@@ -126,11 +127,11 @@ void c_log_wl_event(struct c_wl_connection *conn, struct c_wl_object *object, co
         break;
 
       case 'o': 
-        printf("%lu", args[i].o);
+        printf("%u", args[i].o);
         break;
 
       case 'n': 
-        printf("%lu", args[i].n);
+        printf("%u", args[i].n);
         break;
 
       case 's': 
@@ -147,7 +148,7 @@ void c_log_wl_event(struct c_wl_connection *conn, struct c_wl_object *object, co
 
       case 'a':
         arr = args[i].a;
-        printf("[%lu]", arr->size);
+        printf("[%u]", arr->size);
         print_buffer(arr->data, arr->size);
         break;
     }

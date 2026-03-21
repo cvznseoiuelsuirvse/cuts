@@ -6,13 +6,14 @@
 
 struct c_drm_cursor {
 	uint32_t width, height;
-	uint32_t x, y;
+	double x, y;
+	uint32_t *image;
+	size_t 	  image_size;
 	struct gbm_bo 	   *gbm_bo;
-	struct gbm_bo 	   *gbm_bo_next;
 };
 
 struct c_drm_cursor *c_drm_cursor_init(struct c_drm *drm, struct c_input *input);
 void c_drm_cursor_free(struct c_drm_cursor *cursor);
-int c_drm_cursor_write(struct c_drm *drm, struct c_drm_cursor *cursor, uint32_t *buffer, size_t buffer_size);
+int c_drm_cursor_update(struct c_drm *drm, struct c_drm_cursor *cursor);
 
 #endif

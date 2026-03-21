@@ -72,8 +72,10 @@ int c_event_loop_run(struct c_event_loop *loop) {
   while (1) {
     n = epoll_wait(loop->epfd, loop->events, CUTS_MAX_EPOLL_EVENTS, -1);
     if (n == -1) {
-      c_log_errno(C_LOG_ERROR, "epoll_wait failed");
-      return -1;
+      if (errno != EINTR) {
+        c_log_errno(C_LOG_ERROR, "epoll_wait failed");
+        return -1;
+      }
     }
   
     for (int i = 0; i < n; i++) {

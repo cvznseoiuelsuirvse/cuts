@@ -14,8 +14,6 @@ c_args = [
   '-D_GNU_SOURCE',
 ]
 
-libdrm_dep = dependency('libdrm')
-
 subdir('util')
 subdir('backend')
 subdir('wayland')

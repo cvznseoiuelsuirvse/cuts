@@ -14,11 +14,8 @@
 
 #include "backend/drm/drm.h"
 
-#include "wayland/types/xdg-shell.h"
-
 #include "util/log.h"
 #include "util/event_loop.h"
-#include "util/helpers.h"
 
 #define CUTS_GL_COLOR 0.8f, 0.1f, 0.2f, 1.0f
 #define clear_color()   \
@@ -333,6 +330,7 @@ void c_render_redraw(struct c_render *render) {
 static int _on_surface_new_cb(struct c_wl_surface *surface, void *userdata) {
   struct c_render *render = userdata;
   struct c_window window = {0};
+  window.wl_surface = surface;
   c_map_set(render->surfaces, (uint64_t)surface, &window, sizeof(window));
   return 0;
 }
@@ -366,37 +364,6 @@ C_EVENT_CALLBACK render_callback(struct c_event_loop *loop, int fd, void *userda
 
   return C_EVENT_OK;
 }
-
-void c_render_window_resize(struct c_render *render, struct c_window *window) {
-  c_log(C_LOG_DEBUG, "%p", window);
-  uint64_t key;
-  struct c_window *_window;
-  c_map_for_each(render->surfaces, key, _window) {
-    struct c_wl_surface *surface = (struct c_wl_surface *)key;
-    if (window == _window) {
-      c_wl_array arr = {0, NULL};
-      xdg_toplevel_configure(surface->conn, surface->xdg_state.toplevel_id, window->width, window->height, &arr);
-      
-      surface->xdg_state.serial = C_CLOCK;
-      xdg_surface_configure(surface->conn, surface->xdg_state.surface_id, surface->xdg_state.serial);
-      return;
-    }
-  }
-};
-
-
-void c_render_window_move(struct c_render *render, struct c_window *window) {
-  
-};
-
-void c_render_window_hide(struct c_render *render, struct c_window *window) {
-  
-};
-
-void c_render_window_focus(struct c_render *render, struct c_window *window) {
-  
-};
-
 
 void c_render_add_listener(struct c_render *render, struct c_render_listener *listener, void *userdata) {
   struct __render_event_listener l = {

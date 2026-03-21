@@ -9,8 +9,8 @@ typedef struct c_list {
   struct c_list *prev;
   struct c_list *next;
 
-  int *size;
-  int __size;
+  // int *size;
+  // int __size;
 } c_list;
 
 #define c_list_for_each(pos, member)                             \

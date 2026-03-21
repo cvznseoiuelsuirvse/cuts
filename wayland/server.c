@@ -34,7 +34,7 @@ inline void c_wl_interface_add(struct c_wl_interface *interface) {
 inline struct c_wl_interface *c_wl_interface_get(const char *interface_name) {
   for (size_t i = 0; i < __ninterfaces; i++) {
     struct c_wl_interface *interface = __interface[i];
-    if (C_STREQ(interface_name, interface->name)) return interface;
+    if (STREQ(interface_name, interface->name)) return interface;
   }
   return NULL;
 }
@@ -86,7 +86,7 @@ void c_wl_connection_callback_done(struct c_wl_connection *conn, c_wl_object_id 
   }
 
   if (callback) {
-    wl_callback_done(conn, callback->callback_id, C_CLOCK);
+    wl_callback_done(conn, callback->callback_id, CLOCK);
     c_wl_object_del(conn, callback->callback_id);
     wl_display_delete_id(conn, 1, callback->callback_id);
     c_list_remove_ptr(&conn->callback_queue, callback);
@@ -152,7 +152,7 @@ int c_wl_connection_send(struct c_wl_connection *conn, struct c_wl_message *msg,
       break;
 
     case 'f':
-      wl_args[i].f = va_arg(args, uint32_t);
+      wl_args[i].f = (float)va_arg(args, double);
       write_i32(buffer, &offset, wl_args[i].f);
       break;
 
@@ -297,7 +297,7 @@ int c_wl_connection_dispatch(struct c_wl_connection *conn) {
 
   while (buffer_offset < received) {
     if ((received - buffer_offset) < C_WL_HEADER_SIZE) return -1;
-    if (msg_count > C_LENGTH(msgs))                    return -1;
+    if (msg_count > LENGTH(msgs))                    return -1;
 
     uint32_t tmp = 0;
     uint32_t object_id = 

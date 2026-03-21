@@ -80,7 +80,7 @@ int seat_send_error(int fd, const char *fmt, ...) {
   va_start(args, fmt);
 
   struct c_seat_msg_params params = {0};
-  params.header.type = C_SEAT_MSG_ERROR;
+  params.header.op = C_SEAT_MSG_ERROR;
   vsnprintf(params.body, sizeof(params.body), fmt, args);
   params.header.body_size = strlen(params.body);
 

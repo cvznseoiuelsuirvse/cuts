@@ -18,16 +18,15 @@
 
 static int send_feedback(struct c_wl_connection *conn, c_wl_object_id id, c_wl_object_id feedback_id, struct c_render *render) {
   int ret = 0;
-  dev_t *dev_id = malloc(sizeof(*dev_id));
+  dev_t dev_id;
 
-  if (c_drm_dev_id(render->drm, dev_id) == -1) 
+  if (c_drm_dev_id(render->drm, &dev_id) == -1) 
     return c_wl_error_set(id, WL_DISPLAY_ERROR_IMPLEMENTATION, "failed to get dev id"); 
 
   c_wl_array device = {
     sizeof(dev_t), 
-    dev_id,
+    &dev_id,
   };
-
 
   zwp_linux_dmabuf_feedback_v1_main_device(conn, feedback_id, &device);
 
@@ -37,30 +36,23 @@ static int send_feedback(struct c_wl_connection *conn, c_wl_object_id id, c_wl_o
   
   zwp_linux_dmabuf_feedback_v1_format_table(conn, feedback_id, fd, render->formats.n_entries * 16);
   zwp_linux_dmabuf_feedback_v1_tranche_target_device(conn, feedback_id, &device);
-  zwp_linux_dmabuf_feedback_v1_tranche_flags(conn, feedback_id, 
-                                             ZWP_LINUX_DMABUF_FEEDBACK_V1_TRANCHE_FLAGS_SCANOUT);
+  zwp_linux_dmabuf_feedback_v1_tranche_flags(conn, feedback_id, ZWP_LINUX_DMABUF_FEEDBACK_V1_TRANCHE_FLAGS_SCANOUT);
 
-  c_wl_array indices;
-  indices.size = render->formats.n_entries * 2;
-  indices.data = calloc(render->formats.n_entries, sizeof(uint16_t));
-
-  if (!indices.data) {
-    c_wl_error_set(id, WL_DISPLAY_ERROR_IMPLEMENTATION, "failed to calloc indicies array");
-    ret = -1;
-    goto out;
-  }
+  uint16_t data[render->formats.n_entries];
+  c_wl_array arr = {
+    .size = render->formats.n_entries * 2,
+  };
 
   for (size_t i = 0; i < render->formats.n_entries; i++) {
-    ((uint16_t *)indices.data)[i] = i;
+    data[i] = i;
   }
 
-  zwp_linux_dmabuf_feedback_v1_tranche_formats(conn, feedback_id, &indices);
-  free(indices.data);
+  arr.data = data;
+
+  zwp_linux_dmabuf_feedback_v1_tranche_formats(conn, feedback_id, &arr);
 
   zwp_linux_dmabuf_feedback_v1_done(conn, feedback_id);
 
-out:
-  free(dev_id);
   return ret;
 }
 
@@ -140,7 +132,7 @@ int zwp_linux_buffer_params_v1_add(struct c_wl_connection *conn, union c_wl_arg 
     return c_wl_error_set(args[0].o, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_PLANE_IDX, 
                           "invalid plane_idx %d (expected %d)", plane_idx, dma->n_planes);
 
-  uint64_t modifier = modifier_hi << 32 | modifier_lo;
+  uint64_t modifier = (uint64_t)modifier_hi << 32 | modifier_lo;
   if (dma->modifier > 0 && modifier != dma->modifier)
     return c_wl_error_set(args[0].o, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_INVALID_FORMAT, "invalid modifier");
 

@@ -2,21 +2,19 @@
 #define CUTS_WAYLAND_TYPES_H
 
 #include <stdint.h>
+#include "util/list.h"
 
 #define C_WL_REQUEST __attribute__((weak)) int
 #define C_WL_EVENT int
 
-typedef long 		  		c_wl_int;
-typedef unsigned long 		c_wl_uint;
+typedef int32_t 	  		c_wl_int;
+typedef uint32_t	 		c_wl_uint;
 typedef float 				c_wl_fixed;
-typedef unsigned long		c_wl_object_id;
-typedef unsigned long		c_wl_new_id;
+typedef uint32_t			c_wl_object_id;
+typedef uint32_t			c_wl_new_id;
 typedef const char	   	   *c_wl_string;
 typedef int     	    	c_wl_fd;
-typedef int 				c_wl_enum;
-typedef unsigned short      c_wl_u16;
-typedef unsigned long       c_wl_u32;
-typedef unsigned long long  c_wl_u64;
+typedef uint32_t 			c_wl_enum;
 
 typedef struct c_wl_array {
 	c_wl_uint  size;
@@ -28,6 +26,7 @@ struct c_wl_shm_pool {
 	int 	   fd;
 	uint8_t	  *ptr;
 	uint32_t   size;
+	c_list 	  *supported_formats;
 };
 
 enum c_wl_buffer_type {

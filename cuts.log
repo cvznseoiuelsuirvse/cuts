@@ -1,0 +1,377 @@
+ninja: Entering directory `build'
+ninja: no work to do.
+[INFO wayland/display.c:57] created wayland socket at /tmp/wayland-0
+[DEBUG backend/backend.c:50] seat enabled
+[INFO backend/backend.c:111] opened new DRM device: /dev/dri/card1
+[INFO backend/backend.c:111] opened new INPUT device: /dev/input/event0
+[INFO backend/backend.c:111] opened new INPUT device: /dev/input/event2
+[INFO backend/backend.c:111] opened new INPUT device: /dev/input/event1
+[INFO backend/backend.c:111] opened new INPUT device: /dev/input/event5
+[INFO backend/backend.c:111] opened new INPUT device: /dev/input/event3
+[INFO backend/backend.c:111] opened new INPUT device: /dev/input/event4
+[DEBUG backend/backend.c:72] closed device: /dev/input/event4
+[INFO render/egl.c:511] EGL version 1.5
+[INFO render/egl.c:512] EGL vendor Mesa Project
+[INFO render/egl.c:513] EGL display extensions EGL_ANDROID_blob_cache EGL_ANDROID_native_fence_sync EGL_EXT_buffer_age EGL_EXT_config_select_group EGL_EXT_image_dma_buf_import EGL_EXT_image_dma_buf_import_modifiers EGL_EXT_surface_compression EGL_KHR_cl_event2 EGL_KHR_config_attribs EGL_KHR_context_flush_control EGL_KHR_create_context EGL_KHR_create_context_no_error EGL_KHR_fence_sync EGL_KHR_get_all_proc_addresses EGL_KHR_gl_colorspace EGL_KHR_gl_renderbuffer_image EGL_KHR_gl_texture_2D_image EGL_KHR_gl_texture_3D_image EGL_KHR_gl_texture_cubemap_image EGL_KHR_image EGL_KHR_image_base EGL_KHR_image_pixmap EGL_KHR_no_config_context EGL_KHR_reusable_sync EGL_KHR_surfaceless_context EGL_EXT_pixel_format_float EGL_KHR_wait_sync EGL_MESA_configless_context EGL_MESA_gl_interop EGL_MESA_image_dma_buf_export EGL_MESA_query_driver EGL_MESA_x11_native_visual_id 
+[INFO render/egl.c:407] GL version OpenGL ES 3.2 Mesa 26.0.1-arch1.1
+[INFO render/egl.c:408] GL vendor Mesa
+[INFO render/egl.c:409] GL display extensions GL_EXT_blend_minmax GL_EXT_multi_draw_arrays GL_EXT_texture_filter_anisotropic GL_EXT_texture_compression_s3tc GL_EXT_texture_compression_dxt1 GL_EXT_texture_compression_rgtc GL_EXT_texture_format_BGRA8888 GL_OES_compressed_ETC1_RGB8_texture GL_OES_depth24 GL_OES_element_index_uint GL_OES_fbo_render_mipmap GL_OES_mapbuffer GL_OES_rgb8_rgba8 GL_OES_standard_derivatives GL_OES_stencil8 GL_OES_texture_3D GL_OES_texture_float GL_OES_texture_float_linear GL_OES_texture_half_float GL_OES_texture_half_float_linear GL_OES_texture_npot GL_OES_vertex_half_float GL_EXT_draw_instanced GL_EXT_texture_sRGB_decode GL_OES_EGL_image GL_OES_depth_texture GL_OES_packed_depth_stencil GL_EXT_texture_type_2_10_10_10_REV GL_NV_conditional_render GL_OES_get_program_binary GL_APPLE_texture_max_level GL_EXT_discard_framebuffer GL_EXT_read_format_bgra GL_EXT_texture_storage GL_NV_pack_subimage GL_NV_texture_barrier GL_EXT_frag_depth GL_NV_fbo_color_attachments GL_OES_EGL_image_external GL_OES_EGL_sync GL_OES_vertex_array_object GL_OES_viewport_array GL_ANGLE_pack_reverse_row_order GL_ANGLE_texture_compression_dxt3 GL_ANGLE_texture_compression_dxt5 GL_EXT_occlusion_query_boolean GL_EXT_robustness GL_EXT_sRGB GL_EXT_texture_rg GL_EXT_unpack_subimage GL_NV_draw_buffers GL_NV_read_buffer GL_NV_read_depth GL_NV_read_depth_stencil GL_NV_read_stencil GL_APPLE_sync GL_EXT_draw_buffers GL_EXT_instanced_arrays GL_EXT_map_buffer_range GL_EXT_shadow_samplers GL_KHR_debug GL_KHR_robustness GL_KHR_texture_compression_astc_ldr GL_NV_generate_mipmap_sRGB GL_NV_pixel_buffer_object GL_OES_depth_texture_cube_map GL_OES_required_internalformat GL_OES_surfaceless_context GL_EXT_color_buffer_float GL_EXT_debug_label GL_EXT_sRGB_write_control GL_EXT_separate_shader_objects GL_EXT_shader_group_vote GL_EXT_shader_implicit_conversions GL_EXT_shader_integer_mix GL_EXT_tessellation_point_size GL_EXT_tessellation_shader GL_ANDROID_extension_pack_es31a GL_EXT_base_instance GL_EXT_compressed_ETC1_RGB8_sub_texture GL_EXT_copy_image GL_EXT_draw_buffers_indexed GL_EXT_draw_elements_base_vertex GL_EXT_gpu_shader5 GL_EXT_multi_draw_indirect GL_EXT_polygon_offset_clamp GL_EXT_primitive_bounding_box GL_EXT_render_snorm GL_EXT_shader_io_blocks GL_EXT_texture_border_clamp GL_EXT_texture_buffer GL_EXT_texture_cube_map_array GL_EXT_texture_norm16 GL_EXT_texture_view GL_KHR_blend_equation_advanced GL_KHR_context_flush_control GL_KHR_robust_buffer_access_behavior GL_NV_image_formats GL_NV_shader_noperspective_interpolation GL_OES_copy_image GL_OES_draw_buffers_indexed GL_OES_draw_elements_base_vertex GL_OES_gpu_shader5 GL_OES_primitive_bounding_box GL_OES_sample_shading GL_OES_sample_variables GL_OES_shader_io_blocks GL_OES_shader_multisample_interpolation GL_OES_tessellation_point_size GL_OES_tessellation_shader GL_OES_texture_border_clamp GL_OES_texture_buffer GL_OES_texture_cube_map_array GL_OES_texture_stencil8 GL_OES_texture_storage_multisample_2d_array GL_OES_texture_view GL_EXT_blend_func_extended GL_EXT_float_blend GL_EXT_geometry_point_size GL_EXT_geometry_shader GL_EXT_texture_sRGB_R8 GL_KHR_no_error GL_KHR_texture_compression_astc_sliced_3d GL_OES_EGL_image_external_essl3 GL_OES_geometry_point_size GL_OES_geometry_shader GL_OES_shader_image_atomic GL_EXT_clear_texture GL_EXT_clip_cull_distance GL_EXT_conservative_depth GL_EXT_disjoint_timer_query GL_EXT_texture_compression_s3tc_srgb GL_MESA_shader_integer_functions GL_EXT_clip_control GL_EXT_color_buffer_half_float GL_EXT_texture_compression_bptc GL_EXT_texture_mirror_clamp_to_edge GL_KHR_parallel_shader_compile GL_EXT_EGL_image_storage GL_EXT_texture_shadow_lod GL_MESA_framebuffer_flip_y GL_EXT_depth_clamp GL_EXT_texture_query_lod GL_MESA_sampler_objects GL_EXT_EGL_image_storage_compression GL_EXT_texture_storage_compression GL_MESA_bgra GL_EXT_shader_clock 
+[DEBUG render/egl.c:281] format=AB4H
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=XB4H
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=AB48
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=XB48
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=AR30
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=XR30
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=AB30
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=XB30
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=AR24
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=AB24
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=XR24
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=XB24
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=AR15
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=AR12
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=RG16
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=  R8
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format= R16
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=GR88
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=GR32
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=R  H
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=R  F
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=GR H
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=GR F
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=AB8F
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=YUV9
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=YU11
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=YU12
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=YU16
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=YU24
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=YVU9
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=YV11
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=YV12
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=YV16
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=YV24
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=S010
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=S210
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=S410
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=S012
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=S212
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=S412
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=S016
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=S216
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=S416
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=NV12
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=NV21
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=P010
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=P012
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=P016
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=P030
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=NV16
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=NV61
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=NV24
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=NV42
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=AYUV
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=XYUV
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=Y410
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=Y412
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=Y416
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=YUYV
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=YVYU
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=UYVY
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=VYUY
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=Y210
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=Y212
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG render/egl.c:281] format=Y216
+[DEBUG render/egl.c:306]    modifier=INVALID
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_display#1.sync(3)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_display#1.get_registry(2)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_registry#2.global(1, "wl_compositor", 6)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_registry#2.global(2, "wl_shm", 2)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_registry#2.global(3, "wl_seat", 10)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_registry#2.global(4, "xdg_wm_base", 7)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_registry#2.global(5, "zwp_linux_dmabuf_v1", 5)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_callback#3.done(51294)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_display#1.delete_id(3)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_display#1.sync(8)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_registry#2.bind(1, "wl_compositor", 6, 3)
+[DEBUG wayland/handlers/wayland.c:59] iface: 1 wl_compositor
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_registry#2.bind(3, "wl_seat", 7, 4)
+[DEBUG wayland/handlers/wayland.c:59] iface: 3 wl_seat
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_seat#4.name("seat0")
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_seat#4.capabilities(3)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_registry#2.bind(2, "wl_shm", 1, 5)
+[DEBUG wayland/handlers/wayland.c:59] iface: 2 wl_shm
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_shm#5.format(0)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_shm#5.format(1)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_shm#5.create_pool(6, 21, 2)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_registry#2.bind(4, "xdg_wm_base", 6, 7)
+[DEBUG wayland/handlers/wayland.c:59] iface: 4 xdg_wm_base
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_callback#8.done(51470)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_display#1.delete_id(8)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_seat#4.get_keyboard(9)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_compositor#3.create_surface(10)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_seat#4.get_pointer(11)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_display#1.sync(12)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_display#1.sync(14)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_display#1.get_registry(8)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_registry#8.global(1, "wl_compositor", 6)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_registry#8.global(2, "wl_shm", 2)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_registry#8.global(3, "wl_seat", 10)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_registry#8.global(4, "xdg_wm_base", 7)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_registry#8.global(5, "zwp_linux_dmabuf_v1", 5)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_display#1.get_registry(13)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_registry#13.global(1, "wl_compositor", 6)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_registry#13.global(2, "wl_shm", 2)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_registry#13.global(3, "wl_seat", 10)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_registry#13.global(4, "xdg_wm_base", 7)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_registry#13.global(5, "zwp_linux_dmabuf_v1", 5)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_callback#14.done(51576)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_display#1.delete_id(14)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_display#1.sync(16)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_registry#13.bind(5, "zwp_linux_dmabuf_v1", 4, 15)
+[DEBUG wayland/handlers/wayland.c:59] iface: 5 zwp_linux_dmabuf_v1
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) zwp_linux_dmabuf_v1#15.get_default_feedback(14)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) zwp_linux_dmabuf_feedback_v1#14.main_device([8]01 e2 00 00 00 00 00 00)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) zwp_linux_dmabuf_feedback_v1#14.format_table(22, 1040)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) zwp_linux_dmabuf_feedback_v1#14.tranche_target_device([8]01 e2 00 00 00 00 00 00)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) zwp_linux_dmabuf_feedback_v1#14.tranche_flags(1)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) zwp_linux_dmabuf_feedback_v1#14.tranche_formats([130]00 00 01 00 02 00 03 00 04 00 05 00 06 00 07 00 08 00 09 00 0a 00 0b 00 0c 00 0d 00 0e 00 0f 00 10 00 11 00 12 00 13 00 14 00 15 00 16 00 17 00 18 00 19 00 1a 00 1b 00 1c 00 1d 00 1e 00 1f 00   00 ! 00 " 00 # 00 $ 00 % 00 & 00 ' 00 ( 00 ) 00 * 00 + 00 , 00 - 00 . 00 / 00 0 00 1 00 2 00 3 00 4 00 5 00 6 00 7 00 8 00 9 00 : 00 ; 00 < 00 = 00 > 00 ? 00 @ 00)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) zwp_linux_dmabuf_feedback_v1#14.done()
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_callback#16.done(51689)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_display#1.delete_id(16)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_display#1.sync(19)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) zwp_linux_dmabuf_feedback_v1#14.destroy()
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_compositor#3.create_surface(16)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) xdg_wm_base#7.get_xdg_surface(17, 16)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) xdg_surface#17.get_toplevel(18)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) xdg_toplevel#18.configure(2528, 1520, [4]03 00 00 00)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) xdg_surface#17.configure(51738)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.set_opaque_region(0)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) xdg_toplevel#18.set_app_id("Alacritty")
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) xdg_toplevel#18.set_title("Alacritty")
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) xdg_toplevel#18.set_min_size(2, 1)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) xdg_toplevel#18.set_max_size(0, 0)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.commit()
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_callback#19.done(51746)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_display#1.delete_id(19)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_display#1.sync(21)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) xdg_surface#17.ack_configure(51738)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.set_opaque_region(0)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) xdg_surface#17.set_window_geometry(0, 0, 2528, 1520)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_compositor#3.create_region(19)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_region#19.add(0, 0, 2147483647, 2147483647)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.set_opaque_region(19)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_region#19.destroy()
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) zwp_linux_dmabuf_v1#15.get_surface_feedback(20, 16)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) zwp_linux_dmabuf_feedback_v1#20.main_device([8]01 e2 00 00 00 00 00 00)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) zwp_linux_dmabuf_feedback_v1#20.format_table(23, 1040)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) zwp_linux_dmabuf_feedback_v1#20.tranche_target_device([8]01 e2 00 00 00 00 00 00)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) zwp_linux_dmabuf_feedback_v1#20.tranche_flags(1)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) zwp_linux_dmabuf_feedback_v1#20.tranche_formats([130]00 00 01 00 02 00 03 00 04 00 05 00 06 00 07 00 08 00 09 00 0a 00 0b 00 0c 00 0d 00 0e 00 0f 00 10 00 11 00 12 00 13 00 14 00 15 00 16 00 17 00 18 00 19 00 1a 00 1b 00 1c 00 1d 00 1e 00 1f 00   00 ! 00 " 00 # 00 $ 00 % 00 & 00 ' 00 ( 00 ) 00 * 00 + 00 , 00 - 00 . 00 / 00 0 00 1 00 2 00 3 00 4 00 5 00 6 00 7 00 8 00 9 00 : 00 ; 00 < 00 = 00 > 00 ? 00 @ 00)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) zwp_linux_dmabuf_feedback_v1#20.done()
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_callback#21.done(51854)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_display#1.delete_id(21)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_display#1.sync(24)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.frame(21)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) zwp_linux_dmabuf_v1#15.create_params(22)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) zwp_linux_buffer_params_v1#22.add(24, 0, 0, 10112, 16777215, 4294967295)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) zwp_linux_buffer_params_v1#22.create_immed(23, 2528, 1520, 875713089, 0)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) zwp_linux_buffer_params_v1#22.destroy()
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.attach(23, 0, 0)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.damage_buffer(0, 0, 2528, 1520)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.commit()
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_callback#21.done(58650)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_display#1.delete_id(21)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.frame(21)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_callback#24.done(58797)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_display#1.delete_id(24)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_display#1.sync(26)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) zwp_linux_dmabuf_v1#15.create_params(24)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) zwp_linux_buffer_params_v1#24.add(20, 0, 0, 10112, 16777215, 4294967295)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) zwp_linux_buffer_params_v1#24.create_immed(25, 2528, 1520, 875713089, 0)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) zwp_linux_buffer_params_v1#24.destroy()
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.attach(25, 0, 0)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.damage_buffer(0, 0, 2528, 1520)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.commit()
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_buffer#23.release()
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_callback#26.done(59464)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_display#1.delete_id(26)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_callback#21.done(59529)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_display#1.delete_id(21)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_pointer#11.enter(59818, 16, 228.949890, 346.956787)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) xdg_toplevel#18.configure(2528, 1520, [4]04 00 00 00)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) xdg_surface#17.configure(59894)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) xdg_surface#17.ack_configure(59894)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_compositor#3.create_region(21)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_region#21.add(0, 0, 2147483647, 2147483647)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.set_opaque_region(21)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_region#21.destroy()
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) xdg_surface#17.set_window_geometry(0, 0, 2528, 1520)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_display#1.sync(29)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_buffer#23.destroy()
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.frame(26)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) zwp_linux_dmabuf_v1#15.create_params(27)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) zwp_linux_buffer_params_v1#27.add(24, 0, 0, 10112, 16777215, 4294967295)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) zwp_linux_buffer_params_v1#27.create_immed(28, 2528, 1520, 875713089, 0)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) zwp_linux_buffer_params_v1#27.destroy()
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.attach(28, 0, 0)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.damage_buffer(99, 33, 27, 44)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.commit()
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_buffer#25.release()
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_callback#26.done(60811)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_display#1.delete_id(26)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_callback#29.done(64281)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_display#1.delete_id(29)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_pointer#11.leave(77923, 16)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) xdg_toplevel#18.configure(2528, 1520, [0])
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) xdg_surface#17.configure(78035)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) xdg_surface#17.ack_configure(78035)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_display#1.sync(26)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.frame(29)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.attach(25, 0, 0)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.damage_buffer(99, 33, 27, 44)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.commit()
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_buffer#28.release()
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_callback#29.done(79001)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_display#1.delete_id(29)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_callback#26.done(81760)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_display#1.delete_id(26)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_pointer#11.enter(85769, 16, 0.925049, 423.964844)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) xdg_toplevel#18.configure(2528, 1520, [4]04 00 00 00)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) xdg_surface#17.configure(85863)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) xdg_surface#17.ack_configure(85863)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_display#1.sync(29)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.frame(26)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.attach(28, 0, 0)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.damage_buffer(99, 33, 27, 44)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.commit()
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_buffer#25.release()
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_callback#26.done(86756)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_display#1.delete_id(26)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_callback#29.done(97932)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_display#1.delete_id(29)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_pointer#11.leave(99740, 16)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) xdg_toplevel#18.configure(2528, 1520, [0])
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) xdg_surface#17.configure(99793)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) xdg_surface#17.ack_configure(99793)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_display#1.sync(26)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.frame(29)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.attach(25, 0, 0)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.damage_buffer(99, 33, 27, 44)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.commit()
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_buffer#28.release()
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_callback#29.done(100558)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_display#1.delete_id(29)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_callback#26.done(111900)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_display#1.delete_id(26)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_pointer#11.enter(114576, 16, 1.939880, 426.944885)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) xdg_toplevel#18.configure(2528, 1520, [4]04 00 00 00)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) xdg_surface#17.configure(114667)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) xdg_surface#17.ack_configure(114667)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_display#1.sync(29)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.frame(26)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.attach(28, 0, 0)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.damage_buffer(99, 33, 27, 44)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.commit()
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_buffer#25.release()
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_callback#26.done(115378)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_display#1.delete_id(26)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_callback#29.done(115548)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_display#1.delete_id(29)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_pointer#11.leave(117186, 16)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) xdg_toplevel#18.configure(2528, 1520, [0])
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) xdg_surface#17.configure(117239)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) xdg_surface#17.ack_configure(117239)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_display#1.sync(26)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.frame(29)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.attach(25, 0, 0)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.damage_buffer(99, 33, 27, 44)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.commit()
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_buffer#28.release()
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_callback#29.done(118089)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_display#1.delete_id(29)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_callback#26.done(121794)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_display#1.delete_id(26)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_pointer#11.enter(123911, 16, 2.954712, 429.972229)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) xdg_toplevel#18.configure(2528, 1520, [4]04 00 00 00)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) xdg_surface#17.configure(124006)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) xdg_surface#17.ack_configure(124006)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_display#1.sync(29)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.frame(26)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.attach(28, 0, 0)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.damage_buffer(99, 33, 27, 44)
+[DEBUG util/log.c:51] [wayland] client (0x55885b2e46a0) wl_surface#16.commit()
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_buffer#25.release()
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_callback#26.done(125013)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_display#1.delete_id(26)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_callback#29.done(125258)
+[DEBUG util/log.c:110] [wayland] server (0x55885b2e46a0) wl_display#1.delete_id(29)
+[DEBUG backend/backend.c:72] closed device: /dev/dri/card1
+[DEBUG backend/backend.c:72] closed device: /dev/input/event0
+[DEBUG backend/backend.c:72] closed device: /dev/input/event2
+[DEBUG backend/backend.c:72] closed device: /dev/input/event1
+[DEBUG backend/backend.c:72] closed device: /dev/input/event5
+[DEBUG backend/backend.c:72] closed device: /dev/input/event3

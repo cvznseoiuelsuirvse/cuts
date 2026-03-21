@@ -2,23 +2,14 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <sys/stat.h>
-#include <time.h>
 
 #include "wayland/types/wayland.h"
 
 #include "wayland/display.h"
 #include "wayland/error.h"
 
-#include "util/helpers.h"
 #include "util/log.h"
 #include "render/render.h"
-
-void draw_surfaces();
-
-static enum wl_shm_format_enum supported_formats[] = {
-  WL_SHM_FORMAT_ARGB8888,
-  WL_SHM_FORMAT_XRGB8888,
-};
 
 static void damage_surface(struct c_wl_surface *surface, union c_wl_arg *args) {
   c_wl_int x =      args[1].i;
@@ -34,7 +25,6 @@ static void damage_surface(struct c_wl_surface *surface, union c_wl_arg *args) {
 
 }
 
-
 int wl_display_get_registry(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
   c_wl_new_id object_id = args[1].n;
   struct c_wl_object *c_wl_registry;
@@ -42,16 +32,10 @@ int wl_display_get_registry(struct c_wl_connection *conn, union c_wl_arg *args, 
 
   c_wl_object_add(conn, object_id, (struct c_wl_interface *)c_wl_interface_get("wl_registry"), 0);
 
-  const struct c_wl_interface *ifaces[] = {
-    c_wl_interface_get("wl_compositor"),
-    c_wl_interface_get("wl_shm"),
-    c_wl_interface_get("wl_seat"),
-    c_wl_interface_get("xdg_wm_base"),
-    c_wl_interface_get("zwp_linux_dmabuf_v1"),
-  };
-
-  for (size_t i = 0; i < C_LENGTH(ifaces); i++) {
-    wl_registry_global(conn, object_id, i+1, ifaces[i]->name, ifaces[i]->version);
+  int i = 1;
+  struct c_wl_display_supported_iface *iface;
+  c_list_for_each(conn->dpy->supported_ifaces, iface) {
+    wl_registry_global(conn, object_id, i++, iface->iface->name, iface->iface->version);
   }
 
   return 0;
@@ -63,31 +47,31 @@ int wl_display_sync(struct c_wl_connection *conn, union c_wl_arg *args, void *us
 }
 
 int wl_registry_bind(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
+  c_wl_new_id name = args[1].u;
   c_wl_new_id new_id = args[4].n;
   struct c_wl_object *c_wl_object;
   C_WL_CHECK_IF_NOT_REGISTERED(new_id, c_wl_object);
 
-  c_wl_string interface_name = args[2].s;
-  const struct c_wl_interface *interface = c_wl_interface_get(interface_name);
+  const struct c_wl_display_supported_iface *interface = c_list_get(conn->dpy->supported_ifaces, name - 1);
   if (!interface) return c_wl_error_set(new_id, WL_DISPLAY_ERROR_IMPLEMENTATION, "interface is not supported");
 
-  c_wl_object_add(conn, new_id, interface, 0);
+  c_wl_object_add(conn, new_id, interface->iface, NULL);
 
-  if (C_STREQ(interface_name, "wl_shm")) {
-    for (size_t i = 0; i < C_LENGTH(supported_formats); i++) {
-      wl_shm_format(conn, new_id, supported_formats[i]);
-    }
-  } else if (C_STREQ(interface_name, "wl_seat")) {
+  void *bind_data = NULL;
+  if (interface->on_bind) {
+    bind_data = interface->on_bind(conn, new_id, interface->userdata);
   }
+
+  c_wl_object_get(conn, new_id)->data = bind_data;
 
   return 0;
 }
 
 int wl_shm_create_pool(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
   c_wl_object_id wl_shm_id = args[0].o;
-  c_wl_new_id c_wl_shm_pool_id = args[1].n;
-  struct c_wl_object *c_wl_shm_pool;
-  C_WL_CHECK_IF_NOT_REGISTERED(c_wl_shm_pool_id, c_wl_shm_pool);
+  c_wl_new_id wl_shm_pool_id = args[1].n;
+  struct c_wl_object *wl_shm_pool;
+  C_WL_CHECK_IF_NOT_REGISTERED(wl_shm_pool_id, wl_shm_pool);
 
   c_wl_fd pool_fd = args[2].F;
   c_wl_int buffer_size = args[3].i;
@@ -122,13 +106,17 @@ int wl_shm_create_pool(struct c_wl_connection *conn, union c_wl_arg *args, void 
 
   pool->ptr = buffer;
   pool->size = buffer_size;
+  pool->supported_formats = c_wl_object_get(conn, wl_shm_id)->data;
 
-  c_wl_object_add(conn, c_wl_shm_pool_id, c_wl_interface_get("wl_shm_pool"), pool);
+  c_wl_object_add(conn, wl_shm_pool_id, c_wl_interface_get("wl_shm_pool"), pool);
   return 0;
 }
 
 int wl_shm_pool_create_buffer(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
   c_wl_object_id wl_shm_pool_id = args[0].o;
+  struct c_wl_object *wl_shm_pool = c_wl_object_get(conn, wl_shm_pool_id);
+  struct c_wl_shm_pool *pool = wl_shm_pool->data;
+
   c_wl_new_id wl_buffer_id = args[1].n;
   struct c_wl_object *wl_buffer;
   C_WL_CHECK_IF_NOT_REGISTERED(wl_buffer_id, wl_buffer);
@@ -140,8 +128,9 @@ int wl_shm_pool_create_buffer(struct c_wl_connection *conn, union c_wl_arg *args
   enum wl_shm_format_enum format = args[6].e;
 
   int format_supported = 0;
-  for (size_t i = 0; i < C_LENGTH(supported_formats); i++) {
-    if (supported_formats[i] == format) {
+  int *fmt;
+  c_list_for_each(pool->supported_formats, fmt) {
+    if ((uint64_t)fmt == format) {
       format_supported = 1;
       break;
     }
@@ -157,8 +146,6 @@ int wl_shm_pool_create_buffer(struct c_wl_connection *conn, union c_wl_arg *args
     return -1;
   }
 
-  struct c_wl_object *wl_shm_pool = c_wl_object_get(conn, wl_shm_pool_id);
-  struct c_wl_shm_pool *pool = wl_shm_pool->data;
 
   uint32_t region_size = (uint32_t)stride * height;
   if ((region_size > pool->size) || (offset > pool->size - region_size)) {
@@ -392,5 +379,3 @@ int wl_compositor_create_surface(struct c_wl_connection *conn, union c_wl_arg *a
   c_wl_object_add(conn, wl_surface_id, c_wl_interface_get("wl_surface"), c_wl_surface);
   return 0;
 }
-
-

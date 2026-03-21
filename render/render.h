@@ -8,7 +8,11 @@
 #include <GL/gl.h>
 
 #include "wayland/display.h"
+#include "wayland/server.h"
+
 #include "backend/drm/drm.h"
+
+#include "render/window.h"
 
 #define C_DMABUF_MAX_PLANES 4
 
@@ -69,15 +73,6 @@ union c_buf_params {
 	struct c_dmabuf_params *dma;
 };
 
-
-struct c_window {
-  uint32_t width, height;
-  uint32_t x, y;
-
-  char title[256];
-  char app_id[256];
-};
-
 struct c_render_listener {
 	int (*on_window_new)	 (struct c_window *, void *);
 	int (*on_window_close)	 (struct c_window *, void *);
@@ -110,6 +105,4 @@ int c_render_destroy_dmabuf(struct c_render *render, struct c_dmabuf *buf);
 int c_render_get_ft_fd(struct c_render *render);
 
 void c_render_redraw(struct c_render *render);
-void c_render_window_resize(struct c_render *render, struct c_window *window);
-
 #endif

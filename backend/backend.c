@@ -9,6 +9,7 @@
 #include "util/event_loop.h"
 #include "util/log.h"
 
+
 static struct c_backend_device *open_gpu(struct c_backend *backend) {
   char gpu_path[128];
   int gpu_found = 0;
@@ -32,6 +33,25 @@ static struct c_backend_device *open_gpu(struct c_backend *backend) {
   if (!dev) return NULL;
 
   return dev;
+}
+
+static void seat_enable_cb(struct c_seat *seat, void *userdata) {
+  ((struct c_backend *)userdata)->active = 1;
+  c_log(C_LOG_DEBUG, "seat enabled");
+}
+
+static void seat_disable_cb(struct c_seat *seat, void *userdata) {
+  ((struct c_backend *)userdata)->active = 0;
+  c_log(C_LOG_DEBUG, "seat disabled");
+}
+
+C_EVENT_CALLBACK seat_event_cb(struct c_event_loop *loop, int fd, void *userdata) {
+  struct c_seat *seat = userdata;
+  if (c_seat_dispatch(seat) < 0)
+    return C_EVENT_ERROR_FATAL;
+
+  return C_EVENT_OK;
+  
 }
 
 void c_backend_device_close(struct c_backend *backend, struct c_backend_device *device) {
@@ -86,14 +106,15 @@ struct c_backend_device *c_backend_device_open(struct c_backend *backend, const 
 
 void c_backend_free(struct c_backend *backend) {
   struct c_backend_device *dev;
-  c_list_for_each(backend->devices, dev) {
+  c_list_for_each(backend->devices, dev)
     c_backend_device_close(backend, dev);
-  }
+  
   c_list_destroy(backend->devices);
 
-  // if (backend->session) c_session_free(backend->session);
   if (backend->input)   c_input_free(backend->input);
   if (backend->drm)     c_drm_free(backend->drm);
+      
+  if (backend->seat)    c_seat_close(backend->seat);
 
   free(backend);
 }
@@ -105,15 +126,26 @@ struct c_backend *c_backend_init(struct c_event_loop *loop) {
     return NULL;
   }
 
+  struct c_seat_listener seat_listener = {
+    .seat_enable = seat_enable_cb,
+    .seat_disable = seat_disable_cb,
+  };
+
   backend->devices = c_list_new();
-  backend->seat = c_seat_open();
+
+  backend->seat = c_seat_open(&seat_listener, backend);
   if (!backend->seat) goto error;
+
+  if (c_seat_dispatch(backend->seat) == -1) goto error;
+
+  c_event_loop_add(loop, backend->seat->fd, seat_event_cb, backend->seat);
 
   struct c_backend_device *dev_gpu = open_gpu(backend);
   if (!dev_gpu) goto error;
 
   backend->input = c_input_init(loop, backend);
   if (!backend->input) goto error;
+
 
   backend->drm = c_drm_init(dev_gpu->fd, backend->input);
   if (!backend->drm) goto error;

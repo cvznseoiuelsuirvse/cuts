@@ -11,7 +11,6 @@ render_sources = files(
 render_dep = declare_dependency(
   sources: render_sources,
   dependencies: [
-    libdrm_dep,
     egl_dep,
     gles_dep,
     gbm_dep,

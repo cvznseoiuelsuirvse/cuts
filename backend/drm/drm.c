@@ -180,8 +180,11 @@ void c_drm_free(struct c_drm *drm) {
   struct c_drm_connector connector = drm->connector;
   if (drm->gbm_device)       gbm_device_destroy(drm->gbm_device);
   if (drm->output) {
-    if (drm->output->cursor)
+    if (drm->output->cursor) {
+      memset(drm->output->cursor->image, 0, drm->output->cursor->image_size);
+      c_drm_cursor_update(drm, drm->output->cursor);
       c_drm_cursor_free(drm->output->cursor);
+    }
     free(drm->output);
   }
 
@@ -226,15 +229,14 @@ struct c_drm *c_drm_init(int drm_fd, struct c_input *input) {
   if (!cursor) goto error_resources;
   drm->output->cursor = cursor;
 
-  uint32_t cursor_img[10*10];
-  memset(cursor_img, 0, sizeof(cursor_img));
+  memset(cursor->image, 0, cursor->image_size);
 
   for (int y = 0; y < 10; y++) {
     for (int x = 0; x < 10; x++) {
-      cursor_img[10 * y + x] = 0xFFFFFFFF;
+      cursor->image[y * cursor->height + x] = 0xFFFFFFFF;
     }
   }
-  c_drm_cursor_write(drm, cursor, cursor_img, sizeof(cursor_img));
+  c_drm_cursor_update(drm, cursor);
 
   drmModeFreeResources(resource);
 

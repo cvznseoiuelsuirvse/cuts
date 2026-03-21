@@ -21,6 +21,7 @@ struct c_backend {
   struct c_input    *input;
   struct c_seat 	*seat;
 	
+  int active;
   c_list *devices; // struct c_backend_device
 };
 

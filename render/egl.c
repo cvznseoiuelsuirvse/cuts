@@ -92,7 +92,7 @@ static int has_ext(const char *ext, const char *exts) {
 
   char *token = strtok(exts_cpy, " ");
   while (token != NULL) {
-    if (C_STREQ(token, ext)) return 1;
+    if (STREQ(token, ext)) return 1;
     token = strtok(NULL, " ");
   }
 

@@ -5,9 +5,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#define C_STREQ(s1, s2) (strcmp((s1), (s2)) == 0)
-#define C_LENGTH(s) (sizeof((s)) /  sizeof(*(s)))
-#define C_CLOCK (uint32_t)clock()
+#define STREQ(s1, s2) (strcmp((s1), (s2)) == 0)
+#define LENGTH(s) (sizeof((s)) /  sizeof(*(s)))
+#define CLOCK (uint32_t)clock()
 
 void print_buffer(char *buffer, size_t buffer_len);
 float read_f32(char *buffer, uint32_t *offset);

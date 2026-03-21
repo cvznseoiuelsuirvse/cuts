@@ -59,7 +59,7 @@ union c_wl_arg {
 
 struct c_wl_message {
 	c_wl_object_id id;
-	c_wl_u32 	   op;
+	uint32_t 	   op;
 	const char 	   signature[16];
 	const char 	   event_name[128];
 };

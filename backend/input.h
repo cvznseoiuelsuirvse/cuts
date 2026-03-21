@@ -8,8 +8,9 @@
 
 
 struct c_input_mouse_event {
-	int32_t x, y;
-	int abs;
+	struct libinput_event_pointer *libinput_event;
+	double x, y;
+	int     abs;
 };
 
 struct c_input_listener_mouse {
@@ -18,15 +19,20 @@ struct c_input_listener_mouse {
 	int (*on_mouse_button)  (struct c_input_mouse_event *event, void *userdata);
 };
 
-struct c_input_keyboard_event {};
+struct c_input_keyboard_event {
+	struct libinput_event_keyboard *libinput_event;
+	int32_t  key;
+	int 	 pressed;
+	uint64_t pressed_time;
+};
 
 struct c_input_listener_kbd {
-	int (*on_kbd_press)     (struct c_input_keyboard_event *event, void *userdata);
-	int (*on_kbd_release)     (struct c_input_keyboard_event *event, void *userdata);
+	int (*on_kbd_key)     (struct c_input_keyboard_event *event, void *userdata);
 };
 
 struct c_input {
-	struct libinput *input;
+	struct libinput *libinput;
+
 	uint8_t capabilities;
 	c_list *listeners;
 };
