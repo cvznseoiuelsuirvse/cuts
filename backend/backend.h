@@ -1,7 +1,7 @@
 #ifndef CUTS_BACKEND_H
 #define CUTS_BACKEND_H
 
-#include "util/event_loop.h"
+#include "wayland/display.h"
 #include "backend/seat/seat.h"
 #include "util/list.h"
 
@@ -25,7 +25,7 @@ struct c_backend {
   c_list *devices; // struct c_backend_device
 };
 
-struct c_backend *c_backend_init(struct c_event_loop *loop);
+struct c_backend *c_backend_init(struct c_wl_display *display);
 void c_backend_free(struct c_backend *backend);
 struct c_backend_device *c_backend_device_open(struct c_backend *backend, const char *path, enum C_BACKEND_DEV_TYPES type);
 void c_backend_device_close(struct c_backend *backend, struct c_backend_device *device);

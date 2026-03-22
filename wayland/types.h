@@ -2,6 +2,8 @@
 #define CUTS_WAYLAND_TYPES_H
 
 #include <stdint.h>
+#include <sys/types.h>
+
 #include "util/list.h"
 
 #define C_WL_REQUEST __attribute__((weak)) int
@@ -82,6 +84,12 @@ struct c_wl_surface {
 	struct c_wl_buffer 	*active;
 
 	struct c_wl_connection *conn;
+};
+
+struct c_wl_linux_dmabuf_ctx {
+	dev_t  drm_dev_id;	
+	int    ft_fd;
+	size_t n_ft_entries;
 };
 
 #endif

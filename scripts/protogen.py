@@ -111,7 +111,7 @@ def parse_request(interface_name: str, request: ET.Element, file_type: Literal["
     signature_list = [SIGNATURE[arg.attrib['type']] for arg in args]
     signature = f'"{"".join(signature_list)}"'
 
-    struct +=  f'    {{{f"\"{request_name}\",":<25} {f"{interface_name}_{request_name},":<30}NULL, {f"{nargs},":<3} {signature if nargs > 0 else '{0}'}}},\n'
+    struct +=  f'    {{{f"\"{request_name}\",":<25} {f"{interface_name}_{request_name},":<30} {f"{nargs},":<3} {signature if nargs > 0 else '{0}'}}},\n'
 
     if file_type == "h":
         if desc.text:
@@ -141,7 +141,7 @@ def parse_request(interface_name: str, request: ET.Element, file_type: Literal["
         if args:
             decl += "   */\n"
 
-    decl+=f"C_WL_REQUEST {interface_name}_{request_name}(struct c_wl_connection *conn, union c_wl_arg *args);\n"
+    decl+=f"C_WL_REQUEST {interface_name}_{request_name}(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata);\n"
 
     return decl, struct
 

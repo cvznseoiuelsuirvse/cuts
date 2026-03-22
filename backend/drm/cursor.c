@@ -85,10 +85,10 @@ struct c_drm_cursor *c_drm_cursor_init(struct c_drm *drm, struct c_input *input)
     goto error;
   }
 
-  struct c_input_listener_mouse input_listener_mouse = {
+  struct c_input_event_listener_mouse input_listener_mouse = {
     .on_mouse_movement = on_mouse_movement_cb,
   };
-  c_input_add_listener_mouse(input, &input_listener_mouse, drm);
+  c_input_add_event_listener_mouse(input, &input_listener_mouse, drm);
 
   return cursor;
 

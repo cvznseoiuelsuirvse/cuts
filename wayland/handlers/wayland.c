@@ -164,7 +164,6 @@ int wl_shm_pool_create_buffer(struct c_wl_connection *conn, union c_wl_arg *args
   c_shm->format = format;
   c_wl_buffer->shm = c_shm;
 
-
   c_wl_object_add(conn, wl_buffer_id, c_wl_interface_get("wl_buffer"), c_wl_buffer);
   return 0;
 }
@@ -206,9 +205,6 @@ int wl_buffer_destroy(struct c_wl_connection *conn, union c_wl_arg *args, void *
 
   struct c_wl_object *wl_buffer = c_wl_object_get(conn, wl_buffer_id);
   struct c_wl_buffer *c_wl_buffer = wl_buffer->data;
-
-  if (c_wl_buffer->type == C_WL_BUFFER_DMA)
-    c_render_destroy_dmabuf(userdata, c_wl_buffer->dma);
 
   free(c_wl_buffer);
   c_wl_object_del(conn, wl_buffer_id);
@@ -309,10 +305,20 @@ int wl_surface_destroy(struct c_wl_connection *conn, union c_wl_arg *args, void 
   struct c_wl_object *wl_surface = c_wl_object_get(conn, wl_surface_id);
   struct c_wl_surface *c_wl_surface = wl_surface->data;
 
-  struct c_wl_display *dpy = conn->dpy;
-  c_wl_display_notify(dpy, c_wl_surface,  C_WL_DISPLAY_ON_SURFACE_DESTROY);
+  // union c_wl_arg wl_buffer_arg;
+  // if (c_wl_surface->pending) {
+  //   wl_buffer_arg.o = c_wl_surface->pending->id;
+  //   wl_buffer_destroy(conn, &wl_buffer_arg, userdata);
+  //
+  // } else if (c_wl_surface->active) {
+  //   wl_buffer_arg.o = c_wl_surface->pending->id;
+  //   wl_buffer_destroy(conn, &wl_buffer_arg, userdata);
+  // }
 
-  free(wl_surface->data);
+  struct c_wl_display *dpy = conn->dpy;
+  c_wl_display_notify(dpy, c_wl_surface, C_WL_DISPLAY_ON_SURFACE_DESTROY);
+
+  free(c_wl_surface);
   c_wl_object_del(conn, wl_surface_id);
   return 0;
 }

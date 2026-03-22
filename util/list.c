@@ -9,6 +9,7 @@ c_list *c_list_new() {
     perror("malloc");
     return NULL;
   }
+  l->size = 0;
   return l;
 }
 
@@ -23,8 +24,8 @@ void c_list_destroy(c_list *l) {
 }
 
 void *c_list_push(c_list *l, void *data, size_t data_size) {
-  for (; l->next; l = l->next)
-    ;
+  l->size++;
+  for (; l->next; l = l->next);
 
   l->next = c_list_new();
   l->next->prev = l;
@@ -45,11 +46,13 @@ void *c_list_push(c_list *l, void *data, size_t data_size) {
 
 void c_list_remove_ptr(c_list **head, void *ptr) {
   c_list *l = *head;
+  l->size--;
 
   for (size_t i = 0; l; l = l->next, i++) {
     if (l->data == ptr) {
       if (!l->prev && l->next) {
         *head = l->next;
+        l->next->size = l->size;
         l->next->prev = NULL;
       }
       else if (l->prev && l->next) {
@@ -62,6 +65,8 @@ void c_list_remove_ptr(c_list **head, void *ptr) {
 
       if (l->copied)
         free(l->data);
+
+      free(l);
 
       break;
     }
@@ -93,8 +98,8 @@ void c_list_remove_ptr_(c_list **head, void *ptr) {
   }
 }
 
-void *c_list_get(c_list *l, size_t n) {
-  for (size_t i = 0; l->next; l = l->next, i++) {
+void *c_list_get(c_list *l, int n) {
+  for (int i = 0; l->next; l = l->next, i++) {
     if (n == i) {
       return l->data;
     }
@@ -103,18 +108,18 @@ void *c_list_get(c_list *l, size_t n) {
   return NULL;
 }
 
+int c_list_idx(c_list *l, void *data) {
+  for (int i = 0; l->next; l = l->next, i++) {
+    if (l->data == data) {
+      return i;
+    }
+  }
+
+  return -1;
+}
+
 void *c_list_get_last(c_list *l) {
   void *data = NULL;
   for (size_t i = 0; l->next; l = l->next, i++) data = l->data;
   return data;
-}
-
-size_t c_list_len(c_list *l) {
-  size_t i;
-  if (!l)
-    return 0;
-
-  for (i = 0; l->next; l = l->next, i++)
-    ;
-  return i;
 }

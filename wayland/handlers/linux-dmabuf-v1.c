@@ -10,53 +10,40 @@
 #include "wayland/server.h"
 #include "wayland/error.h"
 
-#include "backend/drm/drm.h"
 #include "render/render.h"
 
 #include "util/log.h"
 
-
-static int send_feedback(struct c_wl_connection *conn, c_wl_object_id id, c_wl_object_id feedback_id, struct c_render *render) {
-  int ret = 0;
-  dev_t dev_id;
-
-  if (c_drm_dev_id(render->drm, &dev_id) == -1) 
-    return c_wl_error_set(id, WL_DISPLAY_ERROR_IMPLEMENTATION, "failed to get dev id"); 
-
+static int send_feedback(struct c_wl_connection *conn, c_wl_object_id id, c_wl_object_id feedback_id, struct c_wl_linux_dmabuf_ctx *ctx) {
   c_wl_array device = {
     sizeof(dev_t), 
-    &dev_id,
+    &ctx->drm_dev_id,
   };
 
   zwp_linux_dmabuf_feedback_v1_main_device(conn, feedback_id, &device);
 
-  int fd = c_render_get_ft_fd(render);
-  if (fd == -1) 
-    return c_wl_error_set(feedback_id, WL_DISPLAY_ERROR_IMPLEMENTATION, "failed to get format table id");
-  
-  zwp_linux_dmabuf_feedback_v1_format_table(conn, feedback_id, fd, render->formats.n_entries * 16);
+  zwp_linux_dmabuf_feedback_v1_format_table(conn, feedback_id, ctx->ft_fd, ctx->n_ft_entries * 16);
   zwp_linux_dmabuf_feedback_v1_tranche_target_device(conn, feedback_id, &device);
   zwp_linux_dmabuf_feedback_v1_tranche_flags(conn, feedback_id, ZWP_LINUX_DMABUF_FEEDBACK_V1_TRANCHE_FLAGS_SCANOUT);
 
-  uint16_t data[render->formats.n_entries];
+  uint16_t data[ctx->n_ft_entries];
   c_wl_array arr = {
-    .size = render->formats.n_entries * 2,
+    .size = ctx->n_ft_entries * 2,
   };
 
-  for (size_t i = 0; i < render->formats.n_entries; i++) {
+  for (size_t i = 0; i < ctx->n_ft_entries; i++) {
     data[i] = i;
   }
 
   arr.data = data;
 
   zwp_linux_dmabuf_feedback_v1_tranche_formats(conn, feedback_id, &arr);
-
   zwp_linux_dmabuf_feedback_v1_done(conn, feedback_id);
 
-  return ret;
+  return 0;
 }
 
-int zwp_linux_dmabuf_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
+int zwp_linux_dmabuf_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_new_id zwp_linux_buffer_v1_id = args[0].n;
   struct c_wl_object *zwp_linux_buffer_v1;
   C_WL_CHECK_IF_REGISTERED(zwp_linux_buffer_v1_id, zwp_linux_buffer_v1);
@@ -66,7 +53,7 @@ int zwp_linux_dmabuf_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *ar
   return 0;
 }
 
-int zwp_linux_dmabuf_v1_get_surface_feedback(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
+int zwp_linux_dmabuf_v1_get_surface_feedback(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_new_id zwp_linux_buffer_feedback_v1_id = args[1].n;
   struct c_wl_object *zwp_linux_buffer_feedback_v1;
   C_WL_CHECK_IF_NOT_REGISTERED(zwp_linux_buffer_feedback_v1_id, zwp_linux_buffer_feedback_v1);
@@ -76,7 +63,7 @@ int zwp_linux_dmabuf_v1_get_surface_feedback(struct c_wl_connection *conn, union
 }
 
 
-int zwp_linux_dmabuf_v1_get_default_feedback(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
+int zwp_linux_dmabuf_v1_get_default_feedback(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_new_id zwp_linux_buffer_feedback_v1_id = args[1].n;
   struct c_wl_object *zwp_linux_buffer_feedback_v1;
   C_WL_CHECK_IF_NOT_REGISTERED(zwp_linux_buffer_feedback_v1_id, zwp_linux_buffer_feedback_v1);
@@ -85,19 +72,18 @@ int zwp_linux_dmabuf_v1_get_default_feedback(struct c_wl_connection *conn, union
   return send_feedback(conn, args[0].o, zwp_linux_buffer_feedback_v1_id, userdata);
 }
 
-int zwp_linux_dmabuf_feedback_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
+int zwp_linux_dmabuf_feedback_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_new_id zwp_linux_buffer_feedback_v1_id = args[0].n;
   struct c_wl_object *zwp_linux_buffer_feedback_v1;
   C_WL_CHECK_IF_REGISTERED(zwp_linux_buffer_feedback_v1_id, zwp_linux_buffer_feedback_v1);
   
-  // close(*(int *)zwp_linux_buffer_feedback_v1->data);
   free(zwp_linux_buffer_feedback_v1->data);
   c_wl_object_del(conn, zwp_linux_buffer_feedback_v1_id);
 
   return 0;
 }
 
-int zwp_linux_dmabuf_v1_create_params(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
+int zwp_linux_dmabuf_v1_create_params(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_new_id zwp_linux_buffer_params_v1_id = args[1].n;
   struct c_wl_object *zwp_linux_buffer_params_v1;
   C_WL_CHECK_IF_NOT_REGISTERED(zwp_linux_buffer_params_v1_id, zwp_linux_buffer_params_v1);
@@ -113,7 +99,7 @@ int zwp_linux_dmabuf_v1_create_params(struct c_wl_connection *conn, union c_wl_a
   return 0;
 }
 
-int zwp_linux_buffer_params_v1_add(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
+int zwp_linux_buffer_params_v1_add(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id zwp_linux_buffer_params_v1_id = args[0].o;
   struct c_wl_object *zwp_linux_buffer_params_v1 = c_wl_object_get(conn, zwp_linux_buffer_params_v1_id);
   struct c_dmabuf *dma = zwp_linux_buffer_params_v1->data;
@@ -146,7 +132,7 @@ int zwp_linux_buffer_params_v1_add(struct c_wl_connection *conn, union c_wl_arg 
   return 0;
 }
 
-int zwp_linux_buffer_params_v1_create_immed(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
+int zwp_linux_buffer_params_v1_create_immed(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id zwp_linux_buffer_params_v1_id = args[0].o;
   struct c_wl_object *zwp_linux_buffer_params_v1 = c_wl_object_get(conn, zwp_linux_buffer_params_v1_id);
   struct c_dmabuf *dma = zwp_linux_buffer_params_v1->data;
@@ -175,24 +161,15 @@ int zwp_linux_buffer_params_v1_create_immed(struct c_wl_connection *conn, union 
   c_wl_buffer->height = height;
   c_wl_buffer->dma = dma;
 
-  struct c_dmabuf_params dmabuf_params = {
-    .width = c_wl_buffer->width,
-    .height = c_wl_buffer->height,
-    .modifier = dma->modifier,
-    .drm_format = dma->drm_format,
-    .n_planes = dma->n_planes,
-  };
-  memcpy(dmabuf_params.planes, dma->planes, sizeof(dma->planes));
-
-  if (c_render_import_dmabuf(userdata, &dmabuf_params, dma) == -1) {
-    return c_wl_error_set(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "failed to import dmabuf");
-  }
+  // if (c_render_import_dmabuf(userdata, c_wl_buffer) == -1) {
+  //   return c_wl_error_set(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "failed to import dmabuf");
+  // }
 
   c_wl_object_add(conn, wl_buffer_id, c_wl_interface_get("wl_buffer"), c_wl_buffer);
   return 0;
 }
 
-int zwp_linux_buffer_params_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
+int zwp_linux_buffer_params_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_new_id zwp_linux_buffer_params_v1_id = args[0].n;
   struct c_wl_object *zwp_linux_buffer_params_v1;
   C_WL_CHECK_IF_REGISTERED(zwp_linux_buffer_params_v1_id, zwp_linux_buffer_params_v1);

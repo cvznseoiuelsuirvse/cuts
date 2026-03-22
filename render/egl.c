@@ -300,7 +300,7 @@ struct c_format *c_egl_query_formats(struct c_egl *egl, size_t *n_entries) {
       entry->max_height = max_tex_size;
      
       char *modifier_name = drmGetFormatModifierName(modifier);
-      if (external_only[m])
+      if (!no_modifiers_found && external_only[m])
         c_log(C_LOG_DEBUG, "   modifier=%s external_only", modifier_name);
       else
         c_log(C_LOG_DEBUG, "   modifier=%s", modifier_name);
@@ -382,13 +382,17 @@ static void c_gles_free(struct c_gles *gl) {
 
 void c_egl_free(struct c_egl *egl) {
   if (egl->display) {
-    if (egl->context)
-      eglDestroyContext(egl->display, egl->context);
+    if (egl->context && egl->surface)
+      eglMakeCurrent(egl->display, egl->surface, egl->surface, egl->context);
+
+    if (egl->gl)
+      c_gles_free(egl->gl);
+
+    eglMakeCurrent(egl->display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    if (egl->surface) eglDestroySurface(egl->display, egl->surface);
+    if (egl->context) eglDestroyContext(egl->display, egl->context);
     eglTerminate(egl->display);
   }
-
-  if (egl->gl)
-    c_gles_free(egl->gl);
 
   free(egl);
 }
@@ -456,6 +460,9 @@ static struct c_gles *c_gles_init() {
   return gl;
 
 err_link:
+  glDetachShader(prog, vertex);
+  glDetachShader(prog, fragment);
+  glDeleteProgram(prog);
   glDeleteShader(vertex);
   glDeleteShader(fragment);
 

@@ -34,8 +34,18 @@ static int create_socket(struct c_wl_display *display) {
 
   for(size_t i = 0; i < 1000; i++) {
     snprintf(addr.sun_path, sizeof(addr.sun_path), "%s/wayland-%ld", xdg_runtime_dir, i);
-    if (access(addr.sun_path, F_OK) == -1) break;
+    if (access(addr.sun_path, F_OK) == -1) {
+      char env_value[16];
+      snprintf(env_value, sizeof(env_value), "wayland-%ld", i);
+
+      if (setenv("WAYLAND_DISPLAY", env_value, 1) < 0) {
+        c_log_errno(C_LOG_ERROR, "failed to set WAYLAND_DISPLAY env");
+        goto error;
+      }
+      break;
+    }
     addr.sun_path[0] = 0;
+    
   }
 
   if (!*addr.sun_path) {
@@ -58,7 +68,7 @@ static int create_socket(struct c_wl_display *display) {
   return fd;
 
 error:
-  // unsetenv("WAYLAND-DISPLAY");
+  unsetenv("WAYLAND_DISPLAY");
   close(fd);
   return -1;
 }
@@ -68,6 +78,7 @@ C_EVENT_CALLBACK client_epoll_callback(struct c_event_loop *loop, int fd, void *
   int ret = c_wl_connection_dispatch(connection);
   if (ret == 1) {
     c_log(C_LOG_DEBUG, "client %d gone (conn %p)", connection->client_fd, connection);
+    c_wl_display_notify(connection->dpy, connection, C_WL_DISPLAY_ON_CLIENT_GONE);
     c_wl_connection_free(connection);
     ret = C_EVENT_ERROR_FD_GONE;
   } else if (ret == -1) {
@@ -80,13 +91,14 @@ C_EVENT_CALLBACK client_epoll_callback(struct c_event_loop *loop, int fd, void *
 }
 
 C_EVENT_CALLBACK server_epoll_callback(struct c_event_loop *loop, int fd, void *data) {
+  struct c_wl_display *display = data;
   int client_fd = accept(fd, NULL, NULL);
 
   if (set_nonblocking(client_fd) == -1) {
     c_log(C_LOG_WARNING, "failed to set client fd to non-blocking");
   }
   
-  struct c_wl_connection *connection = c_wl_connection_init(client_fd, data);
+  struct c_wl_connection *connection = c_wl_connection_init(client_fd, display);
   if (!connection) {
     c_log(C_LOG_ERROR, "c_wl_connection_init failed");
     return C_EVENT_ERROR_FATAL;
@@ -97,6 +109,8 @@ C_EVENT_CALLBACK server_epoll_callback(struct c_event_loop *loop, int fd, void *
     c_log(C_LOG_ERROR, "c_event_loop_add failed");
     return C_EVENT_ERROR_FATAL;
   }
+
+  c_wl_display_notify(display, connection, C_WL_DISPLAY_ON_CLIENT_NEW);
 
   return C_EVENT_OK;
 }
@@ -110,17 +124,20 @@ void c_wl_display_add_listener(struct c_wl_display *display, struct c_wl_display
   c_list_push(display->listeners, &l, sizeof(l)); 
 }
 
-void c_wl_display_notify(struct c_wl_display *display, struct c_wl_surface *surface, enum c_wl_display_notifer notifier) {
+void c_wl_display_notify(struct c_wl_display *display, void *data, enum c_wl_display_notifer notifier) {
   struct __display_event_listener *l;
 
   #define notify(callback) \
     c_list_for_each(display->listeners, l) { \
       if (l->listener->callback) {\
-        l->listener->callback(surface, l->userdata); \
+        l->listener->callback(data, l->userdata); \
       } \
     }
 
   switch (notifier) {
+    case C_WL_DISPLAY_ON_CLIENT_NEW:      notify(on_client_new); break;
+    case C_WL_DISPLAY_ON_CLIENT_GONE:     notify(on_client_gone); break;
+
     case C_WL_DISPLAY_ON_SURFACE_NEW:     notify(on_surface_new); break;
     case C_WL_DISPLAY_ON_SURFACE_UPDATE:  notify(on_surface_update); break;
     case C_WL_DISPLAY_ON_SURFACE_DESTROY: notify(on_surface_destroy); break;
@@ -183,6 +200,8 @@ void c_wl_display_free(struct c_wl_display *display) {
 
   if (display->supported_ifaces)
     c_list_destroy(display->supported_ifaces);
+
+  unsetenv("WAYLAND_DISPLAY");
   
   free(display);
 }

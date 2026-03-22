@@ -68,7 +68,6 @@ typedef int (*c_wl_request_handler)(struct c_wl_connection *, union c_wl_arg *, 
 struct c_wl_request {
 	char    name[256];
 	c_wl_request_handler handler;
-	void   *handler_data;
 	size_t  nargs;
 	char    signature[16];
 };

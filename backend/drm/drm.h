@@ -5,6 +5,7 @@
 #include <xf86drmMode.h>
 #include <drm_fourcc.h>
 
+#include "wayland/types/wayland.h"
 #include "backend/input.h"
 
 #define c_drm_for_each_connector(backend, conn)  \
@@ -39,5 +40,12 @@ struct c_drm *c_drm_init(int drm_fd, struct c_input *input);
 void c_drm_free(struct c_drm *drm);
 int c_drm_dev_id(struct c_drm *drm, dev_t *dev_id);
 int drm_format_num_planes(uint32_t format);
+static inline enum wl_shm_format_enum drm_to_wl_shm_format(uint32_t format) {
+	switch (format) {
+		case DRM_FORMAT_ARGB8888: return WL_SHM_FORMAT_ARGB8888;
+		case DRM_FORMAT_XRGB8888: return WL_SHM_FORMAT_XRGB8888;
+		default:				  return format;
+	}
+}
 
 #endif

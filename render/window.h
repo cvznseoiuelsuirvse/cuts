@@ -17,5 +17,6 @@ void c_window_move(struct c_window *window);
 void c_window_hide(struct c_window *window);
 void c_window_activate(struct c_window *window);
 void c_window_deactivate(struct c_window *window);
+void c_window_close(struct c_window *window);
 
 #endif

@@ -403,6 +403,11 @@ struct c_wl_connection *c_wl_connection_init(int client_fd, struct c_wl_display 
 }
 
 int c_wl_connection_free(struct c_wl_connection *conn) {
+  int key;
+  struct c_wl_object *o;
+  c_map_for_each(conn->objects, key, o)
+    if (o->data) free(o->data);
+  
   c_map_destroy(conn->objects);
   c_list_destroy(conn->callback_queue);
   c_bitmap_destroy(conn->client_id_pool);

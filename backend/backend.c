@@ -3,9 +3,12 @@
 #include <fcntl.h>
 #include <string.h>
 
+#include "wayland/types/wayland.h"
+
 #include "backend/backend.h"
 #include "backend/input.h"
 #include "backend/drm/drm.h"
+
 #include "util/event_loop.h"
 #include "util/log.h"
 
@@ -54,6 +57,29 @@ C_EVENT_CALLBACK seat_event_cb(struct c_event_loop *loop, int fd, void *userdata
   
 }
 
+static int input_open_restricted(const char *path, int flags, void *userdata) {
+  struct c_backend *backend = userdata;
+  struct c_backend_device *dev = c_backend_device_open(backend, path, C_BACKEND_DEV_INPUT);
+  if (!dev) return -1;
+  return dev->fd;
+}
+
+static void input_close_restricted(int fd, void *userdata) {
+  struct c_backend *backend = userdata;
+  struct c_backend_device *dev;
+  c_list_for_each(backend->devices, dev) {
+    if (dev->fd == fd)
+      c_backend_device_close(backend, dev);
+  }
+}
+
+static void *on_wl_seat_bind(struct c_wl_connection *conn, c_wl_object_id new_id, void *userdata) {
+  struct c_input *input = userdata;
+  wl_seat_name(conn, new_id, "seat0");
+  wl_seat_capabilities(conn, new_id, input->capabilities);
+  return NULL;
+}
+
 void c_backend_device_close(struct c_backend *backend, struct c_backend_device *device) {
   if (c_seat_close_device(backend->seat, device->id) < 0) {
     c_log(C_LOG_WARNING, "failed to close device: %s", device->path);
@@ -61,7 +87,6 @@ void c_backend_device_close(struct c_backend *backend, struct c_backend_device *
   } else {
     c_log(C_LOG_DEBUG, "closed device: %s", device->path);
     c_list_remove_ptr(&backend->devices, device);
-    free(device);
   }
 }
 
@@ -73,15 +98,10 @@ struct c_backend_device *c_backend_device_open(struct c_backend *backend, const 
     return NULL;
   }
 
-  struct c_backend_device *dev = calloc(1, sizeof(*dev));
-  if (!dev) {
-    c_log(C_LOG_ERROR, "calloc failed");
-    return NULL;
-  }
-
-  dev->fd = fd;
-  dev->id = id;
-  snprintf(dev->path, sizeof(dev->path), "%s", path);
+  struct c_backend_device dev = {0};
+  dev.fd = fd;
+  dev.id = id;
+  snprintf(dev.path, sizeof(dev.path), "%s", path);
 
   const char *dev_type_str;
   switch (type) {
@@ -100,8 +120,7 @@ struct c_backend_device *c_backend_device_open(struct c_backend *backend, const 
 
   c_log(C_LOG_INFO, "opened new %s device: %s", dev_type_str, path);
 
-  c_list_push(backend->devices, dev, 0);
-  return dev;
+  return c_list_push(backend->devices, &dev, sizeof(dev));
 }
 
 void c_backend_free(struct c_backend *backend) {
@@ -119,7 +138,7 @@ void c_backend_free(struct c_backend *backend) {
   free(backend);
 }
 
-struct c_backend *c_backend_init(struct c_event_loop *loop) {
+struct c_backend *c_backend_init(struct c_wl_display *display) {
   struct c_backend *backend = calloc(1, sizeof(*backend));
   if (!backend) {
     c_log(C_LOG_ERROR, "calloc failed");
@@ -138,17 +157,23 @@ struct c_backend *c_backend_init(struct c_event_loop *loop) {
 
   if (c_seat_dispatch(backend->seat) == -1) goto error;
 
-  c_event_loop_add(loop, backend->seat->fd, seat_event_cb, backend->seat);
+  c_event_loop_add(display->loop, backend->seat->fd, seat_event_cb, backend->seat);
 
   struct c_backend_device *dev_gpu = open_gpu(backend);
   if (!dev_gpu) goto error;
 
-  backend->input = c_input_init(loop, backend);
+  struct c_input_libinput_interface libinput_interface = {
+    .open_restricted = input_open_restricted,
+    .close_restricted = input_close_restricted,
+    .userdata = backend,
+  };
+  backend->input = c_input_init(display->loop, &libinput_interface);
   if (!backend->input) goto error;
-
 
   backend->drm = c_drm_init(dev_gpu->fd, backend->input);
   if (!backend->drm) goto error;
+
+  c_wl_display_add_supported_interface(display, "wl_seat", on_wl_seat_bind, backend->input);
 
   return backend;
 

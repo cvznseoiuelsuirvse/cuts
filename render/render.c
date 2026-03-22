@@ -99,15 +99,50 @@ static void page_flip_handler(int fd, unsigned int sequence, unsigned int tv_sec
       
   render->drm->connector.waiting_for_flip = 0;
 
-  struct c_window *window;
   size_t key;
-
+  struct c_window *window;
   c_map_for_each(render->surfaces, key, window) {
     struct c_wl_surface *surface = (struct c_wl_surface *)key;
       if (surface->active)
         c_wl_connection_callback_done(surface->conn, surface->id);
   }
 
+}
+
+static void *on_linux_dmabuf_bind(struct c_wl_connection *conn, c_wl_object_id new_id, void *userdata) {
+  struct c_render *render = userdata;
+  struct c_wl_linux_dmabuf_ctx *ctx = malloc(sizeof(*ctx));
+  if (!ctx) {
+    c_log(C_LOG_ERROR, "malloc(c_wl_linux_dmabuf_ctx) failed");
+    return NULL;
+  }
+
+  if (c_drm_dev_id(render->drm, &ctx->drm_dev_id) == -1)  {
+    c_log_errno(C_LOG_ERROR, "failed to get drm rdev"); 
+    goto error;
+  }
+
+  ctx->ft_fd = c_render_get_ft_fd(render);
+  if (ctx->ft_fd == -1) {
+    c_log_errno(C_LOG_ERROR, "failed to get format table fd");
+    goto error;
+  }
+
+  return ctx;
+
+error:
+  free(ctx);
+  return NULL;
+
+}
+
+static void *on_wl_shm_bind(struct c_wl_connection *conn, c_wl_object_id new_id, void *userdata) {
+  struct c_render *render = userdata;
+  int *fmt;
+  c_list_for_each(render->formats.wl_shm_formats, fmt)
+      wl_shm_format(conn, new_id, (uint64_t)fmt);
+  
+  return render;
 }
 
 int c_render_handle_event(struct c_render *render) {
@@ -169,77 +204,6 @@ static int gbm_init(struct c_render *render) {
 
   return 0;
 }
-
-int c_render_get_ft_fd(struct c_render *render) {
-  int fd = memfd_create("format_table", MFD_CLOEXEC);
-  if (!fd) {
-    c_log(C_LOG_ERROR, "memfd_create failed");
-    return -1;
-  }
-
-  for (size_t i = 0; i < render->formats.n_entries; i++) {
-    struct c_format format = render->formats.entries[i];
-    struct {
-      uint32_t format;
-      uint32_t pad;
-      uint64_t modifier;
-    } entry = {
-      .format = format.drm_format,
-      .modifier = format.modifier
-    };
-    write(fd, &entry, sizeof(entry));
-  }
-
-  return fd;
-}
-
-int c_render_destroy_dmabuf(struct c_render *render, struct c_dmabuf *buf) {
-  eglDestroyImage(render->egl->display, buf->image);
-  glDeleteTextures(1, &buf->texture);
-  free(buf);
-  return 0;
-}
-
-int c_render_import_dmabuf(struct c_render *render, struct c_dmabuf_params *params, struct c_dmabuf *buf) {
-  assert(render->egl);
-
-  struct c_format *format = NULL;
-  for (size_t i = 0; i < render->formats.n_entries; i++) {
-    format = &render->formats.entries[i];
-    if (format->drm_format == params->drm_format && format->modifier == params->modifier) break;
-  }
-
-  char *format_name = drmGetFormatName(params->drm_format);
-
-  if (!format) {
-    c_log(C_LOG_ERROR, "%s (0x%08"PRIx32") 0x%08"PRIx64" pair not found", 
-          format_name, params->drm_format, params->modifier);
-    goto err;
-  }
-
-  if (format->n_planes != params->n_planes) {
-    c_log(C_LOG_ERROR, "%s (0x%08"PRIx32") requires %d planes, but %d was specified", 
-          format_name, params->drm_format, format->n_planes, params->n_planes);
-    goto err;
-
-  }
-
-  if (params->width > format->max_width || params->height > format->max_height) {
-    c_log(C_LOG_ERROR, "buffer is too large. %s (0x%08"PRIx32") max resolution: %ux%u", 
-          format_name, format->drm_format, format->max_width, format->max_height);
-    goto err;
-  };
-
-  free(format_name);
-
-  c_egl_import_dmabuf(render->egl, params, buf);
-  return 0;
-
-err:
-  free(format_name);
-  return -1;
-}
-
 static inline float value_transform_x(int value, int max_value) {
   return -1 + (float)value/max_value * 2;
 }
@@ -301,29 +265,30 @@ static int draw_window(struct c_render *render, struct c_window *window, GLuint 
 
 }
 
+static GLuint ensure_buf_imported(struct c_render *render, struct c_wl_buffer *buf) {
+  if (buf->type == C_WL_BUFFER_DMA && buf->dma->texture == 0) {
+    c_render_import_dmabuf(render, buf);
+    return buf->dma->texture;
+
+  } else if (buf->type == C_WL_BUFFER_DMA && buf->shm->texture == 0) {
+    c_render_import_shm(render, buf);
+    return buf->shm->texture;
+  }
+
+  assert(0);
+}
+
 static void draw_windows(struct c_render *render) {
   struct c_window *window;
   size_t key;
 
   c_map_for_each(render->surfaces, key, window) {
     struct c_wl_surface *surface = (struct c_wl_surface *)key;
-      if (surface->active)
-        draw_window(render, window, surface->active->dma->texture);
+      if (surface->active) {
+        GLuint texture = ensure_buf_imported(render, surface->active);
+        draw_window(render, window, texture);
+    }
   }
-}
-
-
-void c_render_redraw(struct c_render *render) {
-  if (render->drm->connector.waiting_for_flip) {
-    __needs_redraw = 1;
-    return;
-  }
-
-  clear_color();
-  draw_windows(render);
-
-  if (!c_render_new_page_flip(render)) 
-    __needs_redraw = 0;
 }
 
 
@@ -337,8 +302,30 @@ static int _on_surface_new_cb(struct c_wl_surface *surface, void *userdata) {
 
 static int _on_surface_destroy_cb(struct c_wl_surface *surface, void *userdata) {
   struct c_render *render = userdata;
+  if (surface->active)
+    c_render_destroy_dmabuf(render, surface->active->dma);
+
+  if (surface->pending)
+    c_render_destroy_dmabuf(render, surface->pending->dma);
+
   c_map_remove(render->surfaces, (uint64_t)surface);
   c_render_redraw(render);
+  return 0;
+}
+
+static int _on_client_gone(struct c_wl_connection *connection, void *userdata) {
+  struct c_render *render = userdata;
+
+  size_t key;
+  struct c_window *window;
+  c_map_for_each(render->surfaces, key, window) {
+    struct c_wl_surface *surface = window->wl_surface;
+      if (surface->conn == connection) {
+        notify(render, window, C_RENDER_ON_WINDOW_CLOSE);
+        _on_surface_destroy_cb(surface, userdata);
+        break;
+    }
+  }
   return 0;
 }
 
@@ -365,6 +352,103 @@ C_EVENT_CALLBACK render_callback(struct c_event_loop *loop, int fd, void *userda
   return C_EVENT_OK;
 }
 
+
+int c_render_get_ft_fd(struct c_render *render) {
+  int fd = memfd_create("format_table", MFD_CLOEXEC);
+  if (!fd)
+    return -1;
+
+  for (size_t i = 0; i < render->formats.n_entries; i++) {
+    struct c_format format = render->formats.entries[i];
+    struct {
+      uint32_t format;
+      uint32_t pad;
+      uint64_t modifier;
+    } entry = {
+      .format = format.drm_format,
+      .modifier = format.modifier
+    };
+    write(fd, &entry, sizeof(entry));
+  }
+
+  return fd;
+}
+
+int c_render_destroy_dmabuf(struct c_render *render, struct c_dmabuf *buf) {
+  eglDestroyImage(render->egl->display, buf->image);
+  glDeleteTextures(1, &buf->texture);
+  free(buf);
+  return 0;
+}
+
+int c_render_import_shm(struct c_render *render, struct c_wl_buffer *buf) {
+  return 0;
+}
+
+int c_render_import_dmabuf(struct c_render *render, struct c_wl_buffer *buf) {
+  assert(render->egl);
+  struct c_dmabuf *dmabuf = buf->dma;
+
+  struct c_format *format = NULL;
+  for (size_t i = 0; i < render->formats.n_entries; i++) {
+    format = &render->formats.entries[i];
+    if (format->drm_format == dmabuf->drm_format && format->modifier == dmabuf->modifier) break;
+  }
+
+  char *format_name = drmGetFormatName(dmabuf->drm_format);
+
+  if (!format) {
+    c_log(C_LOG_ERROR, "%s (0x%08"PRIx32") 0x%08"PRIx64" pair not found", 
+          format_name, dmabuf->drm_format, dmabuf->modifier);
+    goto err;
+  }
+
+  if (format->n_planes != dmabuf->n_planes) {
+    c_log(C_LOG_ERROR, "%s (0x%08"PRIx32") requires %d planes, but %d was specified", 
+          format_name, dmabuf->drm_format, format->n_planes, dmabuf->n_planes);
+    goto err;
+
+  }
+
+  if (buf->width > format->max_width || buf->height > format->max_height) {
+    c_log(C_LOG_ERROR, "buffer is too large. %s (0x%08"PRIx32") max resolution: %ux%u", 
+          format_name, format->drm_format, format->max_width, format->max_height);
+    goto err;
+  };
+
+  free(format_name);
+
+  struct c_dmabuf_params params = {
+    .width = buf->width,
+    .height = buf->height,
+    .modifier = dmabuf->modifier,
+    .drm_format = dmabuf->drm_format,
+    .n_planes = dmabuf->n_planes,
+    .planes = dmabuf->planes,
+  };
+
+  c_egl_import_dmabuf(render->egl, &params, dmabuf);
+  return 0;
+
+err:
+  free(format_name);
+  return -1;
+}
+
+
+void c_render_redraw(struct c_render *render) {
+  if (render->drm->connector.waiting_for_flip) {
+    __needs_redraw = 1;
+    return;
+  }
+
+  clear_color();
+  draw_windows(render);
+
+  if (!c_render_new_page_flip(render)) 
+    __needs_redraw = 0;
+}
+
 void c_render_add_listener(struct c_render *render, struct c_render_listener *listener, void *userdata) {
   struct __render_event_listener l = {
     .userdata = userdata,
@@ -389,19 +473,17 @@ struct c_render *c_render_init(struct c_wl_display *display, struct c_drm *drm) 
   if (!render->egl) goto error;
 
   render->formats.entries = c_egl_query_formats(render->egl, &render->formats.n_entries);
+  render->formats.wl_shm_formats = c_list_new();
+
+  for (size_t i = 0; i < render->formats.n_entries; i++) {
+    struct c_format format = render->formats.entries[i];
+    c_list_push(render->formats.wl_shm_formats, (void *)drm_to_wl_shm_format(format.drm_format), 0);
+  }
 
   struct c_wl_interface *zwp_linux_dmabuf_v1 = c_wl_interface_get("zwp_linux_dmabuf_v1");
   assert(zwp_linux_dmabuf_v1);
   zwp_linux_dmabuf_v1->requests[2].handler_data = render; // zwp_linux_dmabuf_v1_get_default_feedback
   zwp_linux_dmabuf_v1->requests[3].handler_data = render; // zwp_linux_dmabuf_v1_get_surface_feedback
-    
-  struct c_wl_interface *zwp_linux_buffer_params_v1 = c_wl_interface_get("zwp_linux_buffer_params_v1");
-  assert(zwp_linux_buffer_params_v1);
-  zwp_linux_buffer_params_v1->requests[3].handler_data = render; // zwp_linux_buffer_params_v1_create_immed    
-    
-  struct c_wl_interface *wl_buffer = c_wl_interface_get("wl_buffer");
-  assert(wl_buffer);
-  wl_buffer->requests[0].handler_data = render;
 
   c_egl_swap_buffers(render->egl);
   if (add_fb(render) != 0) goto error;
@@ -419,12 +501,16 @@ struct c_render *c_render_init(struct c_wl_display *display, struct c_drm *drm) 
   c_event_loop_add(display->loop, drm->fd, render_callback, render);
 
   struct c_wl_display_listener dpy_listeners = {
+    .on_client_gone = _on_client_gone,
     .on_surface_new = _on_surface_new_cb,
     .on_surface_update = _on_surface_update_cb,
     .on_surface_destroy = _on_surface_destroy_cb,
     .on_toplevel_new = _on_toplevel_new,
   };
+
   c_wl_display_add_listener(display, &dpy_listeners, render);
+  c_wl_display_add_supported_interface(display, "wl_shm", on_wl_shm_bind, render);
+  c_wl_display_add_supported_interface(display, "zwp_linux_dmabuf_v1", on_linux_dmabuf_bind, render);
 
   render->listeners = c_list_new();
     
@@ -436,12 +522,25 @@ error:
 }
 
 void c_render_free(struct c_render *render) {
+  if (render->surfaces) {
+    size_t key;
+    struct c_window *window;
+    c_map_for_each(render->surfaces, key, window) {
+      struct c_wl_surface *surface = (struct c_wl_surface *)key;
+      if (surface->active)
+        c_render_destroy_dmabuf(render, surface->active->dma);
+
+      if (surface->pending)
+        c_render_destroy_dmabuf(render, surface->pending->dma);
+    }
+    c_map_destroy(render->surfaces);
+  }
+
   if (render->egl)              c_egl_free(render->egl);
-  if (render->gbm_bo)           gbm_bo_destroy(render->gbm_bo);
-  if (render->gbm_bo_next)      gbm_bo_destroy(render->gbm_bo_next);
   if (render->gbm_surface)      gbm_surface_destroy(render->gbm_surface);
-  if (render->formats.entries)  free(render->formats.entries);
-  if (render->surfaces)         c_map_destroy(render->surfaces);
+
+  if (render->formats.entries)        free(render->formats.entries);
+  if (render->formats.wl_shm_formats) free(render->formats.wl_shm_formats);
 
   if (render->listeners) {
     struct __render_event_listener *l;

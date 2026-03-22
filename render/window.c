@@ -51,3 +51,8 @@ void c_window_activate(struct c_window *window) {
   surface->xdg_state.serial = CLOCK;
   xdg_surface_configure(surface->conn, surface->xdg_state.surface_id, surface->xdg_state.serial);
 };
+
+void c_window_close(struct c_window *window) {
+  struct c_wl_surface *surface = window->wl_surface;
+  xdg_toplevel_close(surface->conn, surface->xdg_state.toplevel_id);
+}

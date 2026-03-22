@@ -167,10 +167,8 @@ static int c_drm_get_connector(struct c_drm *drm, drmModeResPtr resource) {
 
 int c_drm_dev_id(struct c_drm *drm, dev_t *dev_id) {
 	struct stat stat;
-	if (fstat(drm->fd, &stat) != 0) {
-		c_log(C_LOG_ERROR, "fstat failed");
+	if (fstat(drm->fd, &stat) != 0)
 		return -1;
-	}
 
 	*dev_id = stat.st_rdev;
   return 0;

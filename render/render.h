@@ -33,7 +33,8 @@ struct c_dmabuf_plane {
 
 struct c_dmabuf {
 	int flags;
-    uint32_t drm_format;   // DRM_FORMAT_*
+
+    uint32_t drm_format;
     uint64_t modifier;
 
 	uint32_t 			  n_planes;
@@ -43,34 +44,28 @@ struct c_dmabuf {
 	GLuint texture;
 };
 
-struct c_dmabuf_params {
-	uint32_t width, height;
-    uint32_t drm_format;   // DRM_FORMAT_*
-    uint64_t modifier;
-	uint32_t n_planes;
-	struct c_dmabuf_plane planes[C_DMABUF_MAX_PLANES];
-};
-
-
 struct c_shm {
     int fd;
     uint32_t   format;
     int        stride;
     int        offset;
+	GLuint texture;
+};
 
+struct c_dmabuf_params {
+	uint32_t width, height;
+	uint32_t drm_format;
+	uint64_t modifier;
+	uint32_t n_planes;
+	struct c_dmabuf_plane *planes;
 };
 
 struct c_shm_params {
     int fd;
-	uint32_t width, height;
+	  uint32_t width, height;
     uint32_t format;
     int      stride;
     int      offset;
-};
-
-union c_buf_params {
-	struct c_shm_params    *shm;
-	struct c_dmabuf_params *dma;
 };
 
 struct c_render_listener {
@@ -89,6 +84,7 @@ struct c_render {
 	struct {
 		size_t n_entries;
 		struct c_format *entries;
+		c_list *wl_shm_formats;
 	} formats;
 
 	c_list *listeners;
@@ -100,8 +96,12 @@ struct c_render *c_render_init(struct c_wl_display *dpy, struct c_drm *drm);
 void c_render_free(struct c_render *render);
 void c_render_add_listener(struct c_render *render, struct c_render_listener *listener, void *userdata);
 
-int c_render_import_dmabuf(struct c_render *render, struct c_dmabuf_params *params, struct c_dmabuf *buf);
+int c_render_import_shm(struct c_render *render, struct c_wl_buffer *buf);
+int c_render_destroy_shm(struct c_render *render, struct c_shm *buf);
+
+int c_render_import_dmabuf(struct c_render *render, struct c_wl_buffer *buf);
 int c_render_destroy_dmabuf(struct c_render *render, struct c_dmabuf *buf);
+
 int c_render_get_ft_fd(struct c_render *render);
 
 void c_render_redraw(struct c_render *render);
