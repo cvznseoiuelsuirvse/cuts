@@ -11,21 +11,24 @@
 static int on_mouse_movement_cb(struct c_input_mouse_event *event, void *userdata) {
   struct c_drm *drm = userdata;
   struct c_output *output = drm->output;
+  struct c_output_mode *preferred_mode = c_drm_get_preferred_mode(drm);
+  uint32_t width = preferred_mode->width;
+  uint32_t height = preferred_mode->height;
+
   double new_x, new_y;
   if (!event->abs) {
     new_x = event->x + output->cursor->x;
     new_y = event->y + output->cursor->y;
   } else {
-    new_x = libinput_event_pointer_get_absolute_x_transformed(event->libinput_event, drm->output->width);
-    new_y = libinput_event_pointer_get_absolute_y_transformed(event->libinput_event, drm->output->height);
+    new_x = libinput_event_pointer_get_absolute_x_transformed(event->libinput_event, width);
+    new_y = libinput_event_pointer_get_absolute_y_transformed(event->libinput_event, height);
   }
 
-
   if (new_x < 0) new_x = 0;
-  if (new_x > output->width) new_x = output->width;
+  if (new_x > width) new_x = width;
 
   if (new_y < 0) new_y = 0;
-  if (new_y > output->height) new_y = output->height;
+  if (new_y > height) new_y = height;
 
   output->cursor->x = new_x;
   output->cursor->y = new_y;

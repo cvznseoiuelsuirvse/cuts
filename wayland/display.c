@@ -130,6 +130,7 @@ void c_wl_display_notify(struct c_wl_display *display, void *data, enum c_wl_dis
   #define notify(callback) \
     c_list_for_each(display->listeners, l) { \
       if (l->listener->callback) {\
+        c_log(C_LOG_DEBUG, #callback " %p", data); \
         l->listener->callback(data, l->userdata); \
       } \
     }

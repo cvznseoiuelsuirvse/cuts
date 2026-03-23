@@ -271,7 +271,7 @@ static int dispatch(struct c_wl_connection *conn,
   }
 
   c_log_wl_request(conn, object, &request, args);
-  int ret = request.handler(conn, args, request.handler_data);
+  int ret = request.handler(conn, args);
 
   if (arr.data) free(arr.data);
 
@@ -403,10 +403,10 @@ struct c_wl_connection *c_wl_connection_init(int client_fd, struct c_wl_display 
 }
 
 int c_wl_connection_free(struct c_wl_connection *conn) {
-  int key;
-  struct c_wl_object *o;
-  c_map_for_each(conn->objects, key, o)
-    if (o->data) free(o->data);
+  // int key;
+  // struct c_wl_object *o;
+  // c_map_for_each(conn->objects, key, o)
+  //   if (o->data) free(o->data);
   
   c_map_destroy(conn->objects);
   c_list_destroy(conn->callback_queue);

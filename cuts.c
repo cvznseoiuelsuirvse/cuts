@@ -36,12 +36,14 @@ struct cuts {
   struct c_wl_display *display;
   struct c_backend    *backend;
   struct c_render     *render;
+  struct c_output     *output;
 
-  c_list 	            *clients;
+  c_list 	      *clients;
   struct client *focused_client;
-  int focused_client_n;
+  int           focused_client_n;
 
-  size_t curr_layout;
+  size_t        n_stacked_windows;
+  size_t        curr_layout;
   struct layout *layouts;
 };
 
@@ -60,8 +62,7 @@ struct client *get_client_from_connection(struct c_wl_connection *conn) {
   c_list_for_each(comp->clients, c) {
     if (c->conn == conn) return c;
   }
-
-  assert(0);
+  return NULL;
 }
 
 struct client *get_client_from_window(struct c_window *window) {
@@ -76,8 +77,10 @@ void client_focus(struct client *client, double mx, double my) {
   struct c_window *window = client->window;
 
   c_wl_array arr = {0};
-  wl_keyboard_enter(window->wl_surface->conn, client->wl_keyboard_id, CLOCK, window->wl_surface->id, &arr);
-  wl_pointer_enter(window->wl_surface->conn, client->wl_pointer_id, CLOCK, window->wl_surface->id, mx, my);
+  if (client->wl_keyboard_id)
+    wl_keyboard_enter(window->wl_surface->conn, client->wl_keyboard_id, CLOCK, window->wl_surface->id, &arr);
+  if (client->wl_pointer_id)
+    wl_pointer_enter(window->wl_surface->conn, client->wl_pointer_id, CLOCK, window->wl_surface->id, mx, my);
   c_window_activate(window);
   comp->focused_client = client;
 };
@@ -85,18 +88,22 @@ void client_focus(struct client *client, double mx, double my) {
 void client_unfocus(struct client *client) {
   struct c_window *window = client->window;
 
-  wl_keyboard_leave(window->wl_surface->conn, client->wl_keyboard_id, CLOCK, window->wl_surface->id);
-  wl_pointer_leave(window->wl_surface->conn, client->wl_pointer_id, CLOCK, window->wl_surface->id);
+  if (client->wl_keyboard_id)
+    wl_keyboard_leave(window->wl_surface->conn, client->wl_keyboard_id, CLOCK, window->wl_surface->id);
+  if (client->wl_pointer_id)
+    wl_pointer_leave(window->wl_surface->conn, client->wl_pointer_id, CLOCK, window->wl_surface->id);
   c_window_deactivate(window);
   comp->focused_client = NULL;
 };
 
 void client_close(struct cuts *comp, struct client *client) {
+  if (!(client->window->state & C_WINDOW_FLOAT))
+    comp->n_stacked_windows--;
+
   c_window_close(client->window);
   c_list_remove_ptr(&comp->clients, client);
 
   LAYOUT(comp);
-  comp->focused_client = NULL;
 }
 
 
@@ -107,18 +114,25 @@ void client_close(struct cuts *comp, struct client *client) {
 // }
 //
 int on_client_new(struct c_wl_connection *conn, void *userdata) {
-  struct cuts *comp = userdata;
   struct client client = {0};
   client.conn = conn;
   
   c_list_push(comp->clients, &client, sizeof(client));
   return 0;
 };
+int on_client_gone(struct c_wl_connection *conn, void *userdata) {
+  struct client *client = get_client_from_connection(conn);
+  if (!client) return 0;
+  c_list_remove_ptr(&comp->clients, client);
+  return 0;
+}
 
 int on_window_new_cb(struct c_window *window, void *userdata) {
-  struct cuts *comp = userdata;
   struct client *client = get_client_from_connection(window->wl_surface->conn);
   client->window = window;
+
+  if (!(window->state & C_WINDOW_FLOAT))
+    comp->n_stacked_windows++;
 
   LAYOUT(comp);
   return 0;
@@ -134,7 +148,7 @@ int on_window_close_cb(struct c_window *window, void *userdata) {
 
 int on_keyboard_key(struct c_input_keyboard_event *event, void *userdata) {
   struct cuts *comp = userdata;
-  if (!comp->focused_client) return 0;
+  if (!comp->focused_client || !comp->focused_client->wl_keyboard_id) return 0;
 
   struct client *client = comp->focused_client;
   struct c_window *window = client->window;
@@ -177,7 +191,7 @@ int on_mouse_movement(struct c_input_mouse_event *event, void *userdata) {
         client_focus(client, hotspot_x, hotspot_y);
         comp->focused_client_n = i;
 
-      } else {
+      } else if (client->wl_pointer_id) {
         wl_pointer_motion(comp->focused_client->conn, client->wl_pointer_id, epoch_millis(), hotspot_x, hotspot_y);
       }
 
@@ -189,9 +203,7 @@ int on_mouse_movement(struct c_input_mouse_event *event, void *userdata) {
   return 0;
 }
 
-
-
-int wl_seat_get_keyboard(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
+int wl_seat_get_keyboard(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id wl_keyboard_id = args[1].o;
   struct c_wl_object *wl_keyboard;
   C_WL_CHECK_IF_NOT_REGISTERED(wl_keyboard_id, wl_keyboard);
@@ -216,7 +228,7 @@ int wl_seat_get_keyboard(struct c_wl_connection *conn, union c_wl_arg *args, voi
   return 0;
 }
 
-int wl_seat_get_pointer(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata) {
+int wl_seat_get_pointer(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id wl_pointer_id = args[1].o;
   struct c_wl_object *wl_pointer;
   C_WL_CHECK_IF_NOT_REGISTERED(wl_pointer_id, wl_pointer);
@@ -235,8 +247,6 @@ int wl_seat_get_pointer(struct c_wl_connection *conn, union c_wl_arg *args, void
 }
 
 void cleanup(int err, void *userdata) {
-  // struct cuts *comp = userdata;
-
   if (comp->render)  c_render_free(comp->render);
   if (comp->backend) c_backend_free(comp->backend);
   if (comp->display) c_wl_display_free(comp->display);
@@ -261,8 +271,8 @@ void kill_client(bind_args *args) {
     c_log(C_LOG_WARNING, "no focused client"); 
     return;
   }
-
   client_close(comp, comp->focused_client);
+  comp->focused_client = NULL;
 }
 
 void focus(bind_args *args) {
@@ -276,21 +286,32 @@ void focus(bind_args *args) {
   client_focus(comp->focused_client, 0, 0);
 }
 
+void quit(bind_args *args) {
+  cleanup(0, NULL);
+}
+
 void tile() {
   struct c_render *render = comp->render;
   c_list *clients = comp->clients;
-  if (clients->size == 0) return;
+  if (comp->n_stacked_windows == 0) return;
 
-  uint32_t mon_width = render->drm->output->width;
-  uint32_t mon_height = render->drm->output->height;
+  struct c_output_mode *preferred_mode = c_drm_get_preferred_mode(render->drm);
+  uint32_t mon_width =  preferred_mode->width;
+  uint32_t mon_height = preferred_mode->height;
 
-  mon_width -= (clients->size + 1) * gap;
-  uint32_t one_window_width = mon_width / clients->size;
+  mon_width -= (comp->n_stacked_windows + 1) * gap;
+  uint32_t one_window_width = mon_width / comp->n_stacked_windows;
 
   int i = 0;
   struct client *client;
   c_list_for_each(clients, client) {
     struct c_window *window = client->window;
+    if (!window) {
+      c_log(C_LOG_ERROR, "%p client (conn %p) has no window", client, client->conn);
+      cleanup(1, NULL);
+    }
+    if (window->state & C_WINDOW_FLOAT) continue;
+
     window->x = i++ * one_window_width;
     window->x += i * gap;
     window->y = gap;
@@ -318,6 +339,7 @@ int main() {
 
   struct c_wl_display_listener display_listener = {
     .on_client_new = on_client_new,
+    .on_client_gone = on_client_gone,
   };
   c_wl_display_add_listener(display, &display_listener, &_comp);
 

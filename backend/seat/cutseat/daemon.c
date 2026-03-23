@@ -11,8 +11,8 @@
 #include "util/event_loop.h"
 #include "util/list.h"
 
-#include "backend/seat/sock.h"
-#include "backend/seat/vt.h"
+#include "sock.h"
+#include "vt.h"
 
 #define MAX_DEVICES 256
 static uint32_t __dev_id = 1;

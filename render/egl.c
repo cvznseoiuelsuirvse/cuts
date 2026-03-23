@@ -17,7 +17,7 @@
 #include "render/render.h"
 #include "render/egl.h"
 
-#include "backend/drm/drm.h"
+#include "backend/drm/util.h"
 #include "util/log.h"
 #include "util/helpers.h"
 

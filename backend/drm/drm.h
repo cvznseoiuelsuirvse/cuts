@@ -14,15 +14,25 @@
 struct c_drm_connector {
 	uint32_t 		    id;
 	drmModeConnectorPtr conn;
-	drmModeModeInfoPtr  info;
 	uint32_t		    crtc_id;
 	drmModeCrtcPtr	    orig_crtc;
 	int 				waiting_for_flip;
 };
 
-struct c_output {
+struct c_output_mode {
 	uint32_t width, height;
+	uint32_t refresh;
+	int 	 preferred;
+	drmModeModeInfoPtr info;
+};
+struct c_output {
 	char name[64];
+	char make[64];
+	char model[64];
+	uint32_t mm_width, mm_height;
+	drmModeSubPixel subpixel;
+
+	c_list *modes;
 	struct c_drm_cursor *cursor;
 };
 
@@ -38,8 +48,8 @@ struct c_drm {
 
 struct c_drm *c_drm_init(int drm_fd, struct c_input *input);
 void c_drm_free(struct c_drm *drm);
-int c_drm_dev_id(struct c_drm *drm, dev_t *dev_id);
-int drm_format_num_planes(uint32_t format);
+int  c_drm_dev_id(struct c_drm *drm, dev_t *dev_id);
+struct c_output_mode *c_drm_get_preferred_mode(struct c_drm *drm);
 static inline enum wl_shm_format_enum drm_to_wl_shm_format(uint32_t format) {
 	switch (format) {
 		case DRM_FORMAT_ARGB8888: return WL_SHM_FORMAT_ARGB8888;

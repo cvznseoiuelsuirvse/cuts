@@ -7,7 +7,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "backend/seat/sock.h"
+#include "sock.h"
 
 
 int seat_send(int fd, struct c_seat_msg_params *params) {

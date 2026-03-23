@@ -1,6 +1,17 @@
-seat_sources = files('seat.c', 'sock.c', 'util.c')
-seat_daemon_sources = files('daemon.c', 'sock.c', 'util.c', 'vt.c')
-executable('cuts-seat', seat_daemon_sources,
+cutseatd_sources = files(
+ 'cutseat/daemon.c',
+ 'cutseat/vt.c',
+ 'cutseat/sock.c',
+)
+
+seat_sources = files(
+  'seat.c', 
+  'libseat.c', 
+  'cutseat/cutseat.c',
+  'cutseat/sock.c',
+)
+
+executable('cutseat', cutseatd_sources,
   dependencies: [
     util_dep
   ],

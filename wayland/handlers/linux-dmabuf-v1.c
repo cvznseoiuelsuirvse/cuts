@@ -48,6 +48,7 @@ int zwp_linux_dmabuf_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *ar
   struct c_wl_object *zwp_linux_buffer_v1;
   C_WL_CHECK_IF_REGISTERED(zwp_linux_buffer_v1_id, zwp_linux_buffer_v1);
   
+  free(zwp_linux_buffer_v1->data);
   c_wl_object_del(conn, zwp_linux_buffer_v1_id);
 
   return 0;
@@ -58,8 +59,9 @@ int zwp_linux_dmabuf_v1_get_surface_feedback(struct c_wl_connection *conn, union
   struct c_wl_object *zwp_linux_buffer_feedback_v1;
   C_WL_CHECK_IF_NOT_REGISTERED(zwp_linux_buffer_feedback_v1_id, zwp_linux_buffer_feedback_v1);
 
+  struct c_wl_linux_dmabuf_ctx *ctx = c_wl_object_get(conn, args[0].o)->data;
   c_wl_object_add(conn, zwp_linux_buffer_feedback_v1_id, c_wl_interface_get("zwp_linux_dmabuf_feedback_v1"), NULL);
-  return send_feedback(conn, args[0].o, zwp_linux_buffer_feedback_v1_id, userdata);
+  return send_feedback(conn, args[0].o, zwp_linux_buffer_feedback_v1_id, ctx);
 }
 
 
@@ -68,8 +70,9 @@ int zwp_linux_dmabuf_v1_get_default_feedback(struct c_wl_connection *conn, union
   struct c_wl_object *zwp_linux_buffer_feedback_v1;
   C_WL_CHECK_IF_NOT_REGISTERED(zwp_linux_buffer_feedback_v1_id, zwp_linux_buffer_feedback_v1);
 
+  struct c_wl_linux_dmabuf_ctx *ctx = c_wl_object_get(conn, args[0].o)->data;
   c_wl_object_add(conn, zwp_linux_buffer_feedback_v1_id, c_wl_interface_get("zwp_linux_dmabuf_feedback_v1"), NULL);
-  return send_feedback(conn, args[0].o, zwp_linux_buffer_feedback_v1_id, userdata);
+  return send_feedback(conn, args[0].o, zwp_linux_buffer_feedback_v1_id, ctx);
 }
 
 int zwp_linux_dmabuf_feedback_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
@@ -77,9 +80,7 @@ int zwp_linux_dmabuf_feedback_v1_destroy(struct c_wl_connection *conn, union c_w
   struct c_wl_object *zwp_linux_buffer_feedback_v1;
   C_WL_CHECK_IF_REGISTERED(zwp_linux_buffer_feedback_v1_id, zwp_linux_buffer_feedback_v1);
   
-  free(zwp_linux_buffer_feedback_v1->data);
   c_wl_object_del(conn, zwp_linux_buffer_feedback_v1_id);
-
   return 0;
 }
 
@@ -160,10 +161,7 @@ int zwp_linux_buffer_params_v1_create_immed(struct c_wl_connection *conn, union 
   c_wl_buffer->width = width;
   c_wl_buffer->height = height;
   c_wl_buffer->dma = dma;
-
-  // if (c_render_import_dmabuf(userdata, c_wl_buffer) == -1) {
-  //   return c_wl_error_set(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "failed to import dmabuf");
-  // }
+  c_wl_buffer->type = C_WL_BUFFER_DMA;
 
   c_wl_object_add(conn, wl_buffer_id, c_wl_interface_get("wl_buffer"), c_wl_buffer);
   return 0;

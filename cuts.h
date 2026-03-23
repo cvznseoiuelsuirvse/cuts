@@ -24,6 +24,7 @@ struct layout {
 };
 
 // bind functions
+void quit(bind_args *args);
 void spawn_client(bind_args *args);
 void kill_client(bind_args *args);
 void focus(bind_args *args);

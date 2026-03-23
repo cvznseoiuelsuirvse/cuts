@@ -2,10 +2,11 @@
 #define CUTS_BACKEND_SESSION_H
 
 #include "util/event_loop.h"
-#include "backend/seat/seat.h"
 
+struct c_session_seat_impl;
 struct c_session {
-	struct c_seat  *seat;
+	struct c_session_seat_impl *impl;
+	void *backend;
 	int active;
 };
 

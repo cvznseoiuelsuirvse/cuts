@@ -1,9 +1,9 @@
-#include "wayland/server.h"
-#include "wayland/types/linux-dmabuf-v1.h"
-
 #include <stdint.h>
 
+#include "wayland/server.h"
 
+
+#include "wayland/types/linux-dmabuf-v1.h"
 C_WL_EVENT zwp_linux_dmabuf_v1_format(struct c_wl_connection *conn, c_wl_object_id zwp_linux_dmabuf_v1, c_wl_uint format) {
   struct c_wl_message msg = {zwp_linux_dmabuf_v1, 0, "u", "format"};
   return c_wl_connection_send(conn, &msg, 1, format);
@@ -12,19 +12,19 @@ C_WL_EVENT zwp_linux_dmabuf_v1_modifier(struct c_wl_connection *conn, c_wl_objec
   struct c_wl_message msg = {zwp_linux_dmabuf_v1, 1, "uuu", "modifier"};
   return c_wl_connection_send(conn, &msg, 3, format, modifier_hi, modifier_lo);
 }
-C_WL_REQUEST zwp_linux_dmabuf_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata);
+C_WL_REQUEST zwp_linux_dmabuf_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
 
-C_WL_REQUEST zwp_linux_dmabuf_v1_create_params(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata);
+C_WL_REQUEST zwp_linux_dmabuf_v1_create_params(struct c_wl_connection *conn, union c_wl_arg *args);
 
-C_WL_REQUEST zwp_linux_dmabuf_v1_get_default_feedback(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata);
+C_WL_REQUEST zwp_linux_dmabuf_v1_get_default_feedback(struct c_wl_connection *conn, union c_wl_arg *args);
 
-C_WL_REQUEST zwp_linux_dmabuf_v1_get_surface_feedback(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata);
+C_WL_REQUEST zwp_linux_dmabuf_v1_get_surface_feedback(struct c_wl_connection *conn, union c_wl_arg *args);
 
 C_WL_INTERFACE_REGISTER(zwp_linux_dmabuf_v1_interface, "zwp_linux_dmabuf_v1", 5, 4, 
-    {"destroy",                zwp_linux_dmabuf_v1_destroy,  NULL, 0,  {0}},
-    {"create_params",          zwp_linux_dmabuf_v1_create_params,NULL, 1,  "n"},
-    {"get_default_feedback",   zwp_linux_dmabuf_v1_get_default_feedback,NULL, 1,  "n"},
-    {"get_surface_feedback",   zwp_linux_dmabuf_v1_get_surface_feedback,NULL, 2,  "no"},
+    {"destroy",                zwp_linux_dmabuf_v1_destroy,   0,  {0}},
+    {"create_params",          zwp_linux_dmabuf_v1_create_params, 1,  "n"},
+    {"get_default_feedback",   zwp_linux_dmabuf_v1_get_default_feedback, 1,  "n"},
+    {"get_surface_feedback",   zwp_linux_dmabuf_v1_get_surface_feedback, 2,  "no"},
 )
 
 C_WL_EVENT zwp_linux_buffer_params_v1_created(struct c_wl_connection *conn, c_wl_object_id zwp_linux_buffer_params_v1, c_wl_new_id wl_buffer) {
@@ -35,19 +35,19 @@ C_WL_EVENT zwp_linux_buffer_params_v1_failed(struct c_wl_connection *conn, c_wl_
   struct c_wl_message msg = {zwp_linux_buffer_params_v1, 1, {0}, "failed"};
   return c_wl_connection_send(conn, &msg, 0);
 }
-C_WL_REQUEST zwp_linux_buffer_params_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata);
+C_WL_REQUEST zwp_linux_buffer_params_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
 
-C_WL_REQUEST zwp_linux_buffer_params_v1_add(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata);
+C_WL_REQUEST zwp_linux_buffer_params_v1_add(struct c_wl_connection *conn, union c_wl_arg *args);
 
-C_WL_REQUEST zwp_linux_buffer_params_v1_create(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata);
+C_WL_REQUEST zwp_linux_buffer_params_v1_create(struct c_wl_connection *conn, union c_wl_arg *args);
 
-C_WL_REQUEST zwp_linux_buffer_params_v1_create_immed(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata);
+C_WL_REQUEST zwp_linux_buffer_params_v1_create_immed(struct c_wl_connection *conn, union c_wl_arg *args);
 
 C_WL_INTERFACE_REGISTER(zwp_linux_buffer_params_v1_interface, "zwp_linux_buffer_params_v1", 5, 4, 
-    {"destroy",                zwp_linux_buffer_params_v1_destroy,NULL, 0,  {0}},
-    {"add",                    zwp_linux_buffer_params_v1_add,NULL, 6,  "Fuuuuu"},
-    {"create",                 zwp_linux_buffer_params_v1_create,NULL, 4,  "iiuu"},
-    {"create_immed",           zwp_linux_buffer_params_v1_create_immed,NULL, 5,  "niiuu"},
+    {"destroy",                zwp_linux_buffer_params_v1_destroy, 0,  {0}},
+    {"add",                    zwp_linux_buffer_params_v1_add, 6,  "Fuuuuu"},
+    {"create",                 zwp_linux_buffer_params_v1_create, 4,  "iiuu"},
+    {"create_immed",           zwp_linux_buffer_params_v1_create_immed, 5,  "niiuu"},
 )
 
 C_WL_EVENT zwp_linux_dmabuf_feedback_v1_done(struct c_wl_connection *conn, c_wl_object_id zwp_linux_dmabuf_feedback_v1) {
@@ -78,9 +78,9 @@ C_WL_EVENT zwp_linux_dmabuf_feedback_v1_tranche_flags(struct c_wl_connection *co
   struct c_wl_message msg = {zwp_linux_dmabuf_feedback_v1, 6, "u", "tranche_flags"};
   return c_wl_connection_send(conn, &msg, 1, flags);
 }
-C_WL_REQUEST zwp_linux_dmabuf_feedback_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata);
+C_WL_REQUEST zwp_linux_dmabuf_feedback_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
 
 C_WL_INTERFACE_REGISTER(zwp_linux_dmabuf_feedback_v1_interface, "zwp_linux_dmabuf_feedback_v1", 5, 1, 
-    {"destroy",                zwp_linux_dmabuf_feedback_v1_destroy,NULL, 0,  {0}},
+    {"destroy",                zwp_linux_dmabuf_feedback_v1_destroy, 0,  {0}},
 )
 

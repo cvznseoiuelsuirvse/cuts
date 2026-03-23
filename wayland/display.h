@@ -23,7 +23,7 @@ struct c_wl_display_listener {
 	int (*on_toplevel_new) 	 (struct c_wl_surface *, void *);
 };
 
-typedef void*(*c_wl_display_on_bind)(struct c_wl_connection *, c_wl_object_id, void *);
+typedef void*(*c_wl_display_on_bind)(struct c_wl_connection *, c_wl_object_id, c_wl_uint, void *);
 
 struct c_wl_display_supported_iface {
   struct c_wl_interface *iface;

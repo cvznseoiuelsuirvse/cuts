@@ -155,8 +155,6 @@ static void handle_event_keyboard(struct c_input *input, struct libinput_event_k
   if (keyboard_event.pressed == 1) {
     struct __input_shortcut_listener *sl;
     c_list_for_each(input->shortcut_listeners, sl) {
-      c_log(C_LOG_DEBUG, "sl modmask: %08b, xkb modmask: %08b, sl keysym: %d, xkb_keysym: %d", 
-            sl->mod_mask, mod_mask, sl->keysym, keysym);
       if (sl->keysym == keysym && ((sl->mod_mask & mod_mask) == sl->mod_mask)) {
         sl->handler(sl->userdata);
         return;

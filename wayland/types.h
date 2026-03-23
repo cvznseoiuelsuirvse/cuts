@@ -59,6 +59,7 @@ enum c_wl_surface_roles {
 	C_WL_SURFACE_POPUP,
 };
 
+
 struct c_wl_surface {
 	c_wl_object_id  id;
 	enum c_wl_surface_roles role;
@@ -75,13 +76,26 @@ struct c_wl_surface {
 		c_wl_object_id  toplevel_id;
 		char title[256];
 		char app_id[256];
-	} xdg_state;
+
+		struct c_wl_surface *prev;
+		struct c_wl_surface *next;
+	} xdg;
+
+	struct {
+		c_wl_object_id  surface_id;
+		c_wl_int x, y;
+		int sync;
+
+		struct c_wl_surface *prev;
+		struct c_wl_surface *next;
+	} sub;
 
 	struct c_wl_region opaque;
 	struct c_wl_region input;
 
 	struct c_wl_buffer 	*pending;
 	struct c_wl_buffer 	*active;
+
 
 	struct c_wl_connection *conn;
 };

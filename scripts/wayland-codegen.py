@@ -111,7 +111,7 @@ def parse_request(interface_name: str, request: ET.Element, file_type: Literal["
     signature_list = [SIGNATURE[arg.attrib['type']] for arg in args]
     signature = f'"{"".join(signature_list)}"'
 
-    struct +=  f'    {{{f"\"{request_name}\",":<25} {f"{interface_name}_{request_name},":<30}NULL, {f"{nargs},":<3} {signature if nargs > 0 else '{0}'}}},\n'
+    struct +=  f'    {{{f"\"{request_name}\",":<25} {f"{interface_name}_{request_name},":<30} {f"{nargs},":<3} {signature if nargs > 0 else '{0}'}}},\n'
 
     if file_type == "h":
         if desc.text:
@@ -222,8 +222,9 @@ def parse(xml_path: str, basename: str) -> None:
         f.write(f'#ifndef {h_guard_name}\n')
         f.write(f'#define {h_guard_name}\n\n')
 
-        f.write('#include "wayland/types.h"\n')
-        f.write('#include <stdint.h>\n\n\n')
+        f.write('#include <stdint.h>\n\n')
+        f.write('#include "wayland/server.h"\n')
+        f.write('#include "wayland/types.h"\n\n\n')
 
         enums_s = []
         interfaces_s = []
@@ -243,9 +244,9 @@ def parse(xml_path: str, basename: str) -> None:
         f.write("#endif")
 
     with open(f"{basename}.c", "w") as f:
-        f.write('#include "wayland/server.h"\n')
-        f.write(f'#include "wayland/types/{os.path.basename(basename)}.h"\n\n')
-        f.write('#include <stdint.h>\n\n\n')
+        f.write('#include <stdint.h>\n\n')
+        f.write('#include "wayland/server.h"\n\n\n')
+        f.write(f'#include "wayland/types/{os.path.basename(basename)}.h"\n')
 
         for child in root:
             if child.tag == "interface":

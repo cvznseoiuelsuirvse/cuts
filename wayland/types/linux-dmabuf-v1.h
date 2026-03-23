@@ -1,8 +1,10 @@
 #ifndef CUTS_LINUX_DMABUF_V1_H
 #define CUTS_LINUX_DMABUF_V1_H
 
-#include "wayland/server.h"
 #include <stdint.h>
+
+#include "wayland/server.h"
+#include "wayland/types.h"
 
 
 enum zwp_linux_buffer_params_v1_error_enum {
@@ -66,7 +68,7 @@ C_WL_EVENT zwp_linux_dmabuf_v1_modifier(struct c_wl_connection *conn, c_wl_objec
 
    /* Objects created through this interface, especially wl_buffers, will
         remain valid. */
-C_WL_REQUEST zwp_linux_dmabuf_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata);
+C_WL_REQUEST zwp_linux_dmabuf_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
 
    /* This temporary object is used to collect multiple dmabuf handles into
         a single batch to create a wl_buffer. It can only be used once and
@@ -75,7 +77,7 @@ C_WL_REQUEST zwp_linux_dmabuf_v1_destroy(struct c_wl_connection *conn, union c_w
 
     @arg1: c_wl_new_id zwp_linux_buffer_params_v1
    */
-C_WL_REQUEST zwp_linux_dmabuf_v1_create_params(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata);
+C_WL_REQUEST zwp_linux_dmabuf_v1_create_params(struct c_wl_connection *conn, union c_wl_arg *args);
 
    /* This request creates a new wp_linux_dmabuf_feedback object not bound
         to a particular surface. This object will deliver feedback about dmabuf
@@ -84,7 +86,7 @@ C_WL_REQUEST zwp_linux_dmabuf_v1_create_params(struct c_wl_connection *conn, uni
 
     @arg1: c_wl_new_id zwp_linux_dmabuf_feedback_v1
    */
-C_WL_REQUEST zwp_linux_dmabuf_v1_get_default_feedback(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata);
+C_WL_REQUEST zwp_linux_dmabuf_v1_get_default_feedback(struct c_wl_connection *conn, union c_wl_arg *args);
 
    /* This request creates a new wp_linux_dmabuf_feedback object for the
         specified wl_surface. This object will deliver feedback about dmabuf
@@ -96,7 +98,7 @@ C_WL_REQUEST zwp_linux_dmabuf_v1_get_default_feedback(struct c_wl_connection *co
     @arg1: c_wl_new_id zwp_linux_dmabuf_feedback_v1
     @arg2: c_wl_object_id wl_surface
    */
-C_WL_REQUEST zwp_linux_dmabuf_v1_get_surface_feedback(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata);
+C_WL_REQUEST zwp_linux_dmabuf_v1_get_surface_feedback(struct c_wl_connection *conn, union c_wl_arg *args);
 
 
  /* This event indicates that the attempted buffer creation was
@@ -116,7 +118,7 @@ C_WL_EVENT zwp_linux_buffer_params_v1_failed(struct c_wl_connection *conn, c_wl_
 
    /* Cleans up the temporary data sent to the server for dmabuf-based
         wl_buffer creation. */
-C_WL_REQUEST zwp_linux_buffer_params_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata);
+C_WL_REQUEST zwp_linux_buffer_params_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
 
    /* This request adds one dmabuf to the set in this
         zwp_linux_buffer_params_v1.
@@ -145,7 +147,7 @@ C_WL_REQUEST zwp_linux_buffer_params_v1_destroy(struct c_wl_connection *conn, un
     @arg5: c_wl_uint modifier_hi
     @arg6: c_wl_uint modifier_lo
    */
-C_WL_REQUEST zwp_linux_buffer_params_v1_add(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata);
+C_WL_REQUEST zwp_linux_buffer_params_v1_add(struct c_wl_connection *conn, union c_wl_arg *args);
 
    /* This asks for creation of a wl_buffer from the added dmabuf
         buffers. The wl_buffer is not created immediately but returned via
@@ -212,7 +214,7 @@ C_WL_REQUEST zwp_linux_buffer_params_v1_add(struct c_wl_connection *conn, union 
     @arg3: c_wl_uint format
     @arg4: enum zwp_linux_buffer_params_v1_flags_enum flags
    */
-C_WL_REQUEST zwp_linux_buffer_params_v1_create(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata);
+C_WL_REQUEST zwp_linux_buffer_params_v1_create(struct c_wl_connection *conn, union c_wl_arg *args);
 
    /* This asks for immediate creation of a wl_buffer by importing the
         added dmabufs.
@@ -244,7 +246,7 @@ C_WL_REQUEST zwp_linux_buffer_params_v1_create(struct c_wl_connection *conn, uni
     @arg4: c_wl_uint format
     @arg5: enum zwp_linux_buffer_params_v1_flags_enum flags
    */
-C_WL_REQUEST zwp_linux_buffer_params_v1_create_immed(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata);
+C_WL_REQUEST zwp_linux_buffer_params_v1_create_immed(struct c_wl_connection *conn, union c_wl_arg *args);
 
 
  /* This event is sent after all parameters of a wp_linux_dmabuf_feedback
@@ -367,7 +369,7 @@ C_WL_EVENT zwp_linux_dmabuf_feedback_v1_tranche_flags(struct c_wl_connection *co
 
    /* Using this request a client can tell the server that it is not going to
         use the wp_linux_dmabuf_feedback object anymore. */
-C_WL_REQUEST zwp_linux_dmabuf_feedback_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args, void *userdata);
+C_WL_REQUEST zwp_linux_dmabuf_feedback_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
 
 
 #endif

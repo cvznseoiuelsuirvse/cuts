@@ -40,12 +40,10 @@ static struct c_backend_device *open_gpu(struct c_backend *backend) {
 
 static void seat_enable_cb(struct c_seat *seat, void *userdata) {
   ((struct c_backend *)userdata)->active = 1;
-  c_log(C_LOG_DEBUG, "seat enabled");
 }
 
 static void seat_disable_cb(struct c_seat *seat, void *userdata) {
   ((struct c_backend *)userdata)->active = 0;
-  c_log(C_LOG_DEBUG, "seat disabled");
 }
 
 C_EVENT_CALLBACK seat_event_cb(struct c_event_loop *loop, int fd, void *userdata) {
@@ -68,12 +66,37 @@ static void input_close_restricted(int fd, void *userdata) {
   struct c_backend *backend = userdata;
   struct c_backend_device *dev;
   c_list_for_each(backend->devices, dev) {
-    if (dev->fd == fd)
+    if (dev->fd == fd) {
       c_backend_device_close(backend, dev);
+      break;
+    }
   }
 }
 
-static void *on_wl_seat_bind(struct c_wl_connection *conn, c_wl_object_id new_id, void *userdata) {
+static void *on_wl_output_bind(struct c_wl_connection *conn, c_wl_object_id new_id, c_wl_uint version, void *userdata) {
+  struct c_drm *drm = userdata;
+  struct c_output *output = drm->output;
+
+  if (version >= 4)
+    wl_output_name(conn, new_id, output->name);
+
+  wl_output_scale(conn, new_id, 1);
+  wl_output_geometry(conn, new_id, 0, 0, output->mm_width, output->mm_height, output->subpixel - 1, "unknown", "unknown", WL_OUTPUT_TRANSFORM_NORMAL);
+  
+  struct c_output_mode *mode;
+  c_list_for_each(output->modes, mode) {
+    if (mode->preferred)
+      wl_output_mode(conn, new_id, 
+                     WL_OUTPUT_MODE_PREFERRED | WL_OUTPUT_MODE_CURRENT, mode->width, mode->height, mode->refresh);
+    else
+      wl_output_mode(conn, new_id, 0, mode->width, mode->height, mode->refresh);
+  }
+
+  wl_output_done(conn, new_id);
+  return NULL;
+}
+
+static void *on_wl_seat_bind(struct c_wl_connection *conn, c_wl_object_id new_id, c_wl_uint version, void *userdata) {
   struct c_input *input = userdata;
   wl_seat_name(conn, new_id, "seat0");
   wl_seat_capabilities(conn, new_id, input->capabilities);
@@ -155,9 +178,10 @@ struct c_backend *c_backend_init(struct c_wl_display *display) {
   backend->seat = c_seat_open(&seat_listener, backend);
   if (!backend->seat) goto error;
 
+  c_event_loop_add(display->loop, c_seat_get_fd(backend->seat), seat_event_cb, backend->seat);
+
   if (c_seat_dispatch(backend->seat) == -1) goto error;
 
-  c_event_loop_add(display->loop, backend->seat->fd, seat_event_cb, backend->seat);
 
   struct c_backend_device *dev_gpu = open_gpu(backend);
   if (!dev_gpu) goto error;
@@ -167,6 +191,7 @@ struct c_backend *c_backend_init(struct c_wl_display *display) {
     .close_restricted = input_close_restricted,
     .userdata = backend,
   };
+
   backend->input = c_input_init(display->loop, &libinput_interface);
   if (!backend->input) goto error;
 
@@ -174,6 +199,7 @@ struct c_backend *c_backend_init(struct c_wl_display *display) {
   if (!backend->drm) goto error;
 
   c_wl_display_add_supported_interface(display, "wl_seat", on_wl_seat_bind, backend->input);
+  c_wl_display_add_supported_interface(display, "wl_output", on_wl_output_bind, backend->drm);
 
   return backend;
 

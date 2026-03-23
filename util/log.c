@@ -36,7 +36,7 @@ void _c_log(enum c_log_level level, const char *file, int line, int insert_nl, c
   }
 
   vprintf(format, args);
-  if (level == C_LOG_ERROR || level == C_LOG_WARNING)
+  if (level & (C_LOG_ERROR | C_LOG_WARNING))
     printf("\033[0m");
   if (insert_nl)
     printf("\n");

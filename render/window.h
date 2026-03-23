@@ -3,6 +3,11 @@
 
 #include <stdint.h>
 
+enum c_window_states {
+	C_WINDOW_FLOAT = 	  1,
+	C_WINDOW_FULLSCREEN = 2,
+};
+
 struct c_window {
   struct c_wl_surface *wl_surface;
   uint32_t width, height;
@@ -10,6 +15,8 @@ struct c_window {
 
   char title[256];
   char app_id[256];
+
+  enum c_window_states state;
 };
 
 void c_window_resize(struct c_window *window, uint32_t width, uint32_t height, int activate);

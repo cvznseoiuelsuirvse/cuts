@@ -45,8 +45,8 @@ struct c_dmabuf {
 };
 
 struct c_shm {
-    int fd;
-    uint32_t   format;
+	uint8_t    *ptr;
+    uint32_t   format; // WL_SHM_FORMAT
     int        stride;
     int        offset;
 	GLuint texture;
@@ -96,11 +96,11 @@ struct c_render *c_render_init(struct c_wl_display *dpy, struct c_drm *drm);
 void c_render_free(struct c_render *render);
 void c_render_add_listener(struct c_render *render, struct c_render_listener *listener, void *userdata);
 
-int c_render_import_shm(struct c_render *render, struct c_wl_buffer *buf);
-int c_render_destroy_shm(struct c_render *render, struct c_shm *buf);
+// int c_render_import_shm(struct c_render *render, struct c_wl_buffer *buf);
+// int c_render_destroy_shm(struct c_render *render, struct c_shm *buf);
 
-int c_render_import_dmabuf(struct c_render *render, struct c_wl_buffer *buf);
-int c_render_destroy_dmabuf(struct c_render *render, struct c_dmabuf *buf);
+// int c_render_import_dmabuf(struct c_render *render, struct c_wl_buffer *buf);
+// int c_render_destroy_dmabuf(struct c_render *render, struct c_dmabuf *buf);
 
 int c_render_get_ft_fd(struct c_render *render);
 

@@ -10,7 +10,7 @@
 
 #include "render/vulkan.h"
 #include "render/render.h"
-#include "backend/drm/drm.h"
+#include "backend/drm/util.h"
 #include "util/log.h"
 #include "util/helpers.h"
 

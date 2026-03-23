@@ -1,154 +1,66 @@
 #include <stdlib.h>
-#include <sys/socket.h>
-#include <sys/sysmacros.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <sys/un.h>
-#include <assert.h>
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
 
-#include "backend/seat/sock.h"
 #include "backend/seat/seat.h"
 
 #include "util/log.h"
+#include "util/helpers.h"
 
-static int server_connect() {
-  struct sockaddr_un sock_addr;
-  int fd = socket(AF_UNIX, C_SEAT_SOCKET_FLAGS, 0);
-  memset(&sock_addr, 0, sizeof(sock_addr));
-  sock_addr.sun_family = AF_UNIX;
-  snprintf(sock_addr.sun_path, sizeof(sock_addr.sun_path), "%s", C_SEAT_SOCKET_PATH);
+struct c_seat {
+  const struct c_seat_impl *impl;
+  void *backend;
+};
 
-  if (connect(fd, (struct sockaddr *)&sock_addr, sizeof(sock_addr)) < 0) {
-    c_log_errno(C_LOG_ERROR, "failed to connect to the socket");
-    return -1;
-  }
-  return fd;
-}
+extern const struct c_seat_impl cutseat_impl;
+extern const struct c_seat_impl libseat_impl;
 
-int c_seat_dispatch(struct c_seat *seat) {
-  struct c_seat_msg_params params;
-  seat_recv(seat->fd, &params);
 
-  switch (params.header.op) {
-    case C_SEAT_MSG_ENABLE_SEAT: 
-      if (seat->listener->seat_enable)
-        seat->listener->seat_enable(seat, seat->listener_data);
-      return 0;
-
-    case C_SEAT_MSG_DISABLE_SEAT: 
-      if (seat->listener->seat_disable)
-        seat->listener->seat_disable(seat, seat->listener_data);
-      return 0;
-
-    case C_SEAT_MSG_ERROR: 
-      c_log(C_LOG_ERROR, "[cuts-seat] %s", params.body);
-      return -1;
-
-    default: 
-      c_log(C_LOG_WARNING, "received unknown op: %d", params.header.op);
-      return -1;
-  }
-
-}
-
-struct c_seat *c_seat_open(struct c_seat_listener *listener, void *usedata) {
-  int fd = server_connect();
-  if (fd < 0) return NULL;
-  
+struct c_seat *c_seat_open(struct c_seat_listener *listener, void *listener_data) {
   struct c_seat *seat = calloc(1, sizeof(*seat));
   if (!seat) {
     c_log(C_LOG_ERROR, "calloc failed");
-    goto error;
+    return NULL;
   }
 
-
-  struct stat st;
-  if (fstat(0, &st) < 0) {
-    c_log_errno(C_LOG_ERROR, "failed to get current vt");
-    goto error_seat;
+	char *backend_type = getenv("CUTS_SEAT_BACKEND");
+  if (backend_type) {
+    if (STREQ(backend_type, "libseat")) {
+      seat->impl = &libseat_impl;
+    } else if (STREQ("cuts", backend_type)) {
+      seat->impl = &cutseat_impl;
+    } else {
+      c_log(C_LOG_ERROR, "invalid CUTS_SEAT_BACKEND value: %s. expected 'cuts' or 'libinput'", backend_type);
+      goto error;
+    }
+    c_log(C_LOG_INFO, "using '%s' seat backend", backend_type);
+  } else {
+    seat->impl = &cutseat_impl;
+    c_log(C_LOG_INFO, "using 'cuts' seat backend", backend_type);
   }
 
-  seat->fd = fd;
-  seat->listener = listener;
-  seat->listener_data = usedata;
-
-  struct c_seat_msg_params params = {0};
-  params.header.op = C_SEAT_MSG_OPEN_SEAT;
-
-  if (seat_send(fd, &params) < 0) {
-    c_log_errno(C_LOG_ERROR, "failed to send C_SEAT_MSG_OPEN_SEAT message");
-    goto error_seat;
-  }
-
+  if (seat->impl->open(&seat->backend, listener, listener_data) < 0) goto error;
   return seat;
 
-error_seat:
-  free(seat);
 error:
-  close(fd);
-  return NULL; 
+  free(seat);
+  return NULL;
 }
 
 void c_seat_close(struct c_seat *seat) {
-  struct c_seat_msg_params params = {0};
-  params.header.op = C_SEAT_MSG_CLOSE_SEAT;
-  seat_send(seat->fd, &params);
-  free(seat);
+  seat->impl->close(seat->backend);
+}
+
+int c_seat_dispatch(struct c_seat *seat) {
+  return seat->impl->dispatch(seat->backend);
 }
 
 int c_seat_open_device(struct c_seat *seat, const char *path, int *fd) {
-  struct c_seat_msg_params params = {0};
-  params.header.op = C_SEAT_MSG_OPEN_DEVICE;
-  params.header.body_size = strlen(path) + 1;
-  snprintf(params.body, sizeof(params.body), "%s", path);
-
-  if (seat_send(seat->fd, &params) < 0) {
-    c_log_errno(C_LOG_ERROR, "failed to send C_SEAT_MSG_OPEN_DEVICE message");
-    return -1;
-  }
-
-  struct c_seat_msg_params resp_params = {0};
-  int n = seat_recv(seat->fd, &resp_params);
-  if (n < 0) {
-    c_log_errno(C_LOG_ERROR, "failed to receive ack message");
-    return -1;
-  }
-
-  if (resp_params.header.op == C_SEAT_MSG_ERROR) {
-    c_log(C_LOG_ERROR, "[cuts-seat] failed to open %s: %s", path, resp_params.body);
-    return -1;
-  }
-
-  *fd = resp_params.fd;
-
-  return *(int *)resp_params.body;
+  return seat->impl->open_device(seat->backend, path, fd);
 }
 
 int c_seat_close_device(struct c_seat *seat, int id) {
-  struct c_seat_msg_params params = {0};
-  params.header.op = C_SEAT_MSG_CLOSE_DEVICE;
-  params.header.body_size = sizeof(id);
-  *(int *)params.body = id;
+  return seat->impl->close_device(seat->backend, id);
+}
 
-  if (seat_send(seat->fd, &params) < 0) {
-    c_log_errno(C_LOG_ERROR, "failed to send C_SEAT_MSG_CLOSE_DEVICE message");
-    return -1;
-  }
-
-  struct c_seat_msg_params resp_params = {0};
-  if (seat_recv(seat->fd, &resp_params) < 0) {
-    c_log_errno(C_LOG_ERROR, "failed to receive ack message");
-    return -1;
-  }
-
-  if (resp_params.header.op == C_SEAT_MSG_ERROR) {
-    c_log(C_LOG_ERROR, "[cuts-seat] failed to close device %d: %s", id, resp_params.body);
-    return -1;
-  }
-
-
-  return 0;
+int c_seat_get_fd(struct c_seat *seat) {
+  return seat->impl->get_fd(seat->backend);
 }
