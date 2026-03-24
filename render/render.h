@@ -11,6 +11,7 @@
 #include "wayland/server.h"
 
 #include "backend/drm/drm.h"
+#include "render/buffer.h"
 
 #include "render/window.h"
 
@@ -22,7 +23,6 @@ struct c_format {
 	uint32_t n_planes;
 	uint32_t max_width;
 	uint32_t max_height;
-	int 	 supports_disjoint;
 };
 
 struct c_dmabuf_plane {
@@ -32,8 +32,6 @@ struct c_dmabuf_plane {
 };
 
 struct c_dmabuf {
-	int flags;
-
     uint32_t drm_format;
     uint64_t modifier;
 
@@ -45,11 +43,11 @@ struct c_dmabuf {
 };
 
 struct c_shm {
-	uint8_t    *ptr;
+	uint8_t    **base_ptr;
     uint32_t   format; // WL_SHM_FORMAT
     int        stride;
     int        offset;
-	GLuint texture;
+	GLuint 	   texture;
 };
 
 struct c_dmabuf_params {
@@ -74,18 +72,23 @@ struct c_render_listener {
 };
 
 struct c_render {
-	struct c_drm  *drm;
-	struct gbm_surface *gbm_surface;
-	struct gbm_bo 	   *gbm_bo;
-	struct gbm_bo 	   *gbm_bo_next;
+	struct gbm_device  *gbm_device;
 
+	struct c_drm  *drm;
 	struct c_egl *egl;
+	struct c_gles *gl;
 
 	struct {
 		size_t n_entries;
 		struct c_format *entries;
 		c_list *wl_shm_formats;
 	} formats;
+
+
+	struct {
+		int front;
+		struct c_render_buffer *buffers[2];
+	} swapchain;
 
 	c_list *listeners;
 	c_map  *surfaces;
@@ -95,12 +98,6 @@ struct c_render {
 struct c_render *c_render_init(struct c_wl_display *dpy, struct c_drm *drm);
 void c_render_free(struct c_render *render);
 void c_render_add_listener(struct c_render *render, struct c_render_listener *listener, void *userdata);
-
-// int c_render_import_shm(struct c_render *render, struct c_wl_buffer *buf);
-// int c_render_destroy_shm(struct c_render *render, struct c_shm *buf);
-
-// int c_render_import_dmabuf(struct c_render *render, struct c_wl_buffer *buf);
-// int c_render_destroy_dmabuf(struct c_render *render, struct c_dmabuf *buf);
 
 int c_render_get_ft_fd(struct c_render *render);
 

@@ -3,7 +3,8 @@ gles_dep = dependency('glesv2')
 gbm_dep = dependency('gbm')
 
 render_sources = files(
-  'egl.c',
+  'gl/egl.c',
+  'gl/gles.c',
   'render.c',
   'window.c',
 )

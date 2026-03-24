@@ -38,9 +38,6 @@ struct c_output {
 
 struct c_drm {
 	int 	 fd;
-	uint32_t buf_id;
-	uint32_t buf_id_old;
-	struct gbm_device  *gbm_device;
 
 	struct c_drm_connector connector; 
 	struct c_output 	   *output;

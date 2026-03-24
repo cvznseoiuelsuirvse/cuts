@@ -5,7 +5,7 @@ project('cuts', 'c',
     'c_std=c11',
     'optimization=0',
     'debug=true',
-    # 'b_sanitize=address',
+    'b_sanitize=address',
   ],
 )
 

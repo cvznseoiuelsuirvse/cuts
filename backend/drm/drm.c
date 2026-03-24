@@ -104,7 +104,6 @@ struct c_output_mode *c_drm_get_preferred_mode(struct c_drm *drm) {
 
 void c_drm_free(struct c_drm *drm) {
   struct c_drm_connector connector = drm->connector;
-  if (drm->gbm_device)       gbm_device_destroy(drm->gbm_device);
   if (drm->output) {
     if (drm->output->cursor) {
       memset(drm->output->cursor->image, 0, drm->output->cursor->image_size);
@@ -145,12 +144,6 @@ struct c_drm *c_drm_init(int drm_fd, struct c_input *input) {
   }
 
   if (c_drm_get_connector(drm, resource) == -1) goto error_resources;
-
-  drm->gbm_device = gbm_create_device(drm->fd);
-  if (!drm->gbm_device) {
-    c_log_errno(C_LOG_ERROR, "gbm_create_device failed");
-    goto error_resources;
-  }
 
   struct c_drm_cursor *cursor = c_drm_cursor_init(drm, input);
   if (!cursor) goto error_resources;

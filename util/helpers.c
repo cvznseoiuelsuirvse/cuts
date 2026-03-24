@@ -84,10 +84,10 @@ void write_u16(char *buffer, uint32_t *offset, uint16_t val) {
 }
 
 void write_string(char *buffer, uint32_t *offset, const char *string) {
-    uint32_t string_size = strlen(string);
+    uint32_t string_size = strlen(string) + 1;
     uint32_t padded_string_size = PADDED4(string_size);
 
-    write_u32(buffer, offset, string_size + 1);
+    write_u32(buffer, offset, string_size);
     memset(buffer + *offset, 0, padded_string_size);
     snprintf(buffer + *offset, padded_string_size, "%s", string);
 

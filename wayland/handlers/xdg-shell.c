@@ -82,8 +82,9 @@ int xdg_surface_get_toplevel(struct c_wl_connection *conn, union c_wl_arg *args)
   C_WL_CHECK_IF_NOT_REGISTERED(xdg_toplevel_id, xdg_toplevel);
 
   struct c_wl_surface *c_wl_surface = xdg_surface->data;
-  c_wl_surface->role = C_WL_SURFACE_TOPLEVEL;
+  c_wl_surface->role = C_WL_SURFACE_ROLE_XDG_TOPLEVEL;
   c_wl_surface->xdg.toplevel_id = xdg_toplevel_id;
+  c_wl_surface->xdg.children = c_list_new();
 
   c_wl_object_add(conn, xdg_toplevel_id, c_wl_interface_get("xdg_toplevel"), c_wl_surface);
 
@@ -140,18 +141,23 @@ int xdg_toplevel_set_max_size(struct c_wl_connection *conn, union c_wl_arg *args
 }
 
 int xdg_toplevel_set_parent(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_wl_surface *surface_child = c_wl_object_get(conn, args[0].o)->data;
+  struct c_wl_object *xdg_toplevel_surface_child = c_wl_object_get(conn, args[0].o);
+  struct c_wl_object *xdg_toplevel_surface_parent = c_wl_object_get(conn, args[1].o);
+  struct c_wl_surface *surface_child = xdg_toplevel_surface_child->data;
 
-  if (args[1].o == 0 && surface_child->parent) {
-    surface_child->parent->child = NULL;
-    surface_child->parent = NULL;
+  if (xdg_toplevel_surface_child == xdg_toplevel_surface_parent)
+    return c_wl_error_set(args[0].o, XDG_TOPLEVEL_ERROR_INVALID_PARENT, "parent and child cannot be the same objects");
 
-  } else if (args[1].o) {
-    struct c_wl_surface *surface_parent = c_wl_object_get(conn, args[1].o)->data;
-    surface_parent->child = surface_child;
-    surface_child->parent = surface_parent;
-
+  if (!xdg_toplevel_surface_parent) {
+    if (surface_child->xdg.parent)
+      c_list_remove_ptr(&surface_child->xdg.parent->xdg.children, surface_child);
+    surface_child->xdg.parent = NULL;
+    return 0;
   }
+
+  struct c_wl_surface *surface_parent = xdg_toplevel_surface_parent->data;
+  c_list_push(surface_parent->xdg.children, surface_child, 0);
+  surface_child->xdg.parent = surface_parent;
 
   return 0;
 }

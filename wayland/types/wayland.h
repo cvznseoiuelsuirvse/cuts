@@ -411,7 +411,7 @@ C_WL_EVENT wl_display_delete_id(struct c_wl_connection *conn, c_wl_object_id wl_
 
 	The callback_data passed in the callback is undefined and should be ignored.
 
-    @arg1: c_wl_new_id wl_callback
+    @[1] callback: c_wl_new_id [[wl_callback]]
    */
 C_WL_REQUEST wl_display_sync(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -425,7 +425,7 @@ C_WL_REQUEST wl_display_sync(struct c_wl_connection *conn, union c_wl_arg *args)
 	Therefore, clients should invoke get_registry as infrequently as
 	possible to avoid wasting memory.
 
-    @arg1: c_wl_new_id wl_registry
+    @[1] registry: c_wl_new_id [[wl_registry]]
    */
 C_WL_REQUEST wl_display_get_registry(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -452,10 +452,10 @@ C_WL_EVENT wl_registry_global_remove(struct c_wl_connection *conn, c_wl_object_i
    /* Binds a new, client-created object to the server using the
 	specified name as the identifier.
 
-    @arg1: c_wl_uint name
-    @arg2: c_wl_string interface
-    @arg3: c_wl_uint version
-    @arg4: c_wl_new_id id
+    @[1] name: c_wl_uint
+    @[2] interface: c_wl_string
+    @[3] version: c_wl_uint
+    @[4] id: c_wl_new_id
    */
 C_WL_REQUEST wl_registry_bind(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -466,13 +466,13 @@ C_WL_EVENT wl_callback_done(struct c_wl_connection *conn, c_wl_object_id wl_call
 
    /* Ask the compositor to create a new surface.
 
-    @arg1: c_wl_new_id wl_surface
+    @[1] id: c_wl_new_id [[wl_surface]]
    */
 C_WL_REQUEST wl_compositor_create_surface(struct c_wl_connection *conn, union c_wl_arg *args);
 
    /* Ask the compositor to create a new region.
 
-    @arg1: c_wl_new_id wl_region
+    @[1] id: c_wl_new_id [[wl_region]]
    */
 C_WL_REQUEST wl_compositor_create_region(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -489,12 +489,12 @@ C_WL_REQUEST wl_compositor_create_region(struct c_wl_connection *conn, union c_w
 	so it is valid to destroy the pool immediately after creating
 	a buffer from it.
 
-    @arg1: c_wl_new_id wl_buffer
-    @arg2: c_wl_int offset
-    @arg3: c_wl_int width
-    @arg4: c_wl_int height
-    @arg5: c_wl_int stride
-    @arg6: enum wl_shm_format_enum format
+    @[1] id: c_wl_new_id [[wl_buffer]]
+    @[2] offset: c_wl_int
+    @[3] width: c_wl_int
+    @[4] height: c_wl_int
+    @[5] stride: c_wl_int
+    @[6] format: enum wl_shm_format_enum
    */
 C_WL_REQUEST wl_shm_pool_create_buffer(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -516,7 +516,7 @@ C_WL_REQUEST wl_shm_pool_destroy(struct c_wl_connection *conn, union c_wl_arg *a
 	responsibility to ensure that the file is at least as big as
 	the new pool size.
 
-    @arg1: c_wl_int size
+    @[1] size: c_wl_int
    */
 C_WL_REQUEST wl_shm_pool_resize(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -532,9 +532,9 @@ C_WL_EVENT wl_shm_format(struct c_wl_connection *conn, c_wl_object_id wl_shm, en
 	objects.  The server will mmap size bytes of the passed file
 	descriptor, to use as backing memory for the pool.
 
-    @arg1: c_wl_new_id wl_shm_pool
-    @arg2: c_wl_fd fd
-    @arg3: c_wl_int size
+    @[1] id: c_wl_new_id [[wl_shm_pool]]
+    @[2] fd: c_wl_fd
+    @[3] size: c_wl_int
    */
 C_WL_REQUEST wl_shm_create_pool(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -630,8 +630,8 @@ C_WL_EVENT wl_data_offer_action(struct c_wl_connection *conn, c_wl_object_id wl_
 	wl_data_source.cancelled. Clients may still use this event in
 	conjunction with wl_data_source.action for feedback.
 
-    @arg1: c_wl_uint serial
-    @arg2: c_wl_string mime_type
+    @[1] serial: c_wl_uint
+    @[2] mime_type: c_wl_string
    */
 C_WL_REQUEST wl_data_offer_accept(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -651,8 +651,8 @@ C_WL_REQUEST wl_data_offer_accept(struct c_wl_connection *conn, union c_wl_arg *
 	clients may preemptively fetch data or examine it more closely to
 	determine acceptance.
 
-    @arg1: c_wl_string mime_type
-    @arg2: c_wl_fd fd
+    @[1] mime_type: c_wl_string
+    @[2] fd: c_wl_fd
    */
 C_WL_REQUEST wl_data_offer_receive(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -707,8 +707,8 @@ C_WL_REQUEST wl_data_offer_finish(struct c_wl_connection *conn, union c_wl_arg *
 	This request can only be made on drag-and-drop offers, a protocol error
 	will be raised otherwise.
 
-    @arg1: enum wl_data_device_manager_dnd_action_enum dnd_actions
-    @arg2: enum wl_data_device_manager_dnd_action_enum preferred_action
+    @[1] dnd_actions: enum wl_data_device_manager_dnd_action_enum
+    @[2] preferred_action: enum wl_data_device_manager_dnd_action_enum
    */
 C_WL_REQUEST wl_data_offer_set_actions(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -796,7 +796,7 @@ C_WL_EVENT wl_data_source_action(struct c_wl_connection *conn, c_wl_object_id wl
 	advertised to targets.  Can be called several times to offer
 	multiple types.
 
-    @arg1: c_wl_string mime_type
+    @[1] mime_type: c_wl_string
    */
 C_WL_REQUEST wl_data_source_offer(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -817,7 +817,7 @@ C_WL_REQUEST wl_data_source_destroy(struct c_wl_connection *conn, union c_wl_arg
 	wl_data_device.start_drag. Attempting to use the source other than
 	for drag-and-drop will raise a protocol error.
 
-    @arg1: enum wl_data_device_manager_dnd_action_enum dnd_actions
+    @[1] dnd_actions: enum wl_data_device_manager_dnd_action_enum
    */
 C_WL_REQUEST wl_data_source_set_actions(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -907,10 +907,10 @@ C_WL_EVENT wl_data_device_selection(struct c_wl_connection *conn, c_wl_object_id
 	start_drag requests. Attempting to reuse a previously-used source
 	may send a used_source error.
 
-    @arg1: c_wl_object_id wl_data_source
-    @arg2: c_wl_object_id wl_surface
-    @arg3: c_wl_object_id wl_surface
-    @arg4: c_wl_uint serial
+    @[1] source: c_wl_object_id [[wl_data_source]]
+    @[2] origin: c_wl_object_id [[wl_surface]]
+    @[3] icon: c_wl_object_id [[wl_surface]]
+    @[4] serial: c_wl_uint
    */
 C_WL_REQUEST wl_data_device_start_drag(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -923,8 +923,8 @@ C_WL_REQUEST wl_data_device_start_drag(struct c_wl_connection *conn, union c_wl_
 	start_drag requests. Attempting to reuse a previously-used source
 	may send a used_source error.
 
-    @arg1: c_wl_object_id wl_data_source
-    @arg2: c_wl_uint serial
+    @[1] source: c_wl_object_id [[wl_data_source]]
+    @[2] serial: c_wl_uint
    */
 C_WL_REQUEST wl_data_device_set_selection(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -934,14 +934,14 @@ C_WL_REQUEST wl_data_device_release(struct c_wl_connection *conn, union c_wl_arg
 
    /* Create a new data source.
 
-    @arg1: c_wl_new_id wl_data_source
+    @[1] id: c_wl_new_id [[wl_data_source]]
    */
 C_WL_REQUEST wl_data_device_manager_create_data_source(struct c_wl_connection *conn, union c_wl_arg *args);
 
    /* Create a new data device for a given seat.
 
-    @arg1: c_wl_new_id wl_data_device
-    @arg2: c_wl_object_id wl_seat
+    @[1] id: c_wl_new_id [[wl_data_device]]
+    @[2] seat: c_wl_object_id [[wl_seat]]
    */
 C_WL_REQUEST wl_data_device_manager_get_data_device(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -952,8 +952,8 @@ C_WL_REQUEST wl_data_device_manager_get_data_device(struct c_wl_connection *conn
 
 	Only one shell surface can be associated with a given surface.
 
-    @arg1: c_wl_new_id wl_shell_surface
-    @arg2: c_wl_object_id wl_surface
+    @[1] id: c_wl_new_id [[wl_shell_surface]]
+    @[2] surface: c_wl_object_id [[wl_surface]]
    */
 C_WL_REQUEST wl_shell_get_shell_surface(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -989,7 +989,7 @@ C_WL_EVENT wl_shell_surface_popup_done(struct c_wl_connection *conn, c_wl_object
    /* A client must respond to a ping event with a pong request or
 	the client may be deemed unresponsive.
 
-    @arg1: c_wl_uint serial
+    @[1] serial: c_wl_uint
    */
 C_WL_REQUEST wl_shell_surface_pong(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -999,8 +999,8 @@ C_WL_REQUEST wl_shell_surface_pong(struct c_wl_connection *conn, union c_wl_arg 
 	The server may ignore move requests depending on the state of
 	the surface (e.g. fullscreen or maximized).
 
-    @arg1: c_wl_object_id wl_seat
-    @arg2: c_wl_uint serial
+    @[1] seat: c_wl_object_id [[wl_seat]]
+    @[2] serial: c_wl_uint
    */
 C_WL_REQUEST wl_shell_surface_move(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -1010,9 +1010,9 @@ C_WL_REQUEST wl_shell_surface_move(struct c_wl_connection *conn, union c_wl_arg 
 	The server may ignore resize requests depending on the state of
 	the surface (e.g. fullscreen or maximized).
 
-    @arg1: c_wl_object_id wl_seat
-    @arg2: c_wl_uint serial
-    @arg3: enum wl_shell_surface_resize_enum edges
+    @[1] seat: c_wl_object_id [[wl_seat]]
+    @[2] serial: c_wl_uint
+    @[3] edges: enum wl_shell_surface_resize_enum
    */
 C_WL_REQUEST wl_shell_surface_resize(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -1029,10 +1029,10 @@ C_WL_REQUEST wl_shell_surface_set_toplevel(struct c_wl_connection *conn, union c
 
 	The flags argument controls details of the transient behaviour.
 
-    @arg1: c_wl_object_id wl_surface
-    @arg2: c_wl_int x
-    @arg3: c_wl_int y
-    @arg4: enum wl_shell_surface_transient_enum flags
+    @[1] parent: c_wl_object_id [[wl_surface]]
+    @[2] x: c_wl_int
+    @[3] y: c_wl_int
+    @[4] flags: enum wl_shell_surface_transient_enum
    */
 C_WL_REQUEST wl_shell_surface_set_transient(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -1070,9 +1070,9 @@ C_WL_REQUEST wl_shell_surface_set_transient(struct c_wl_connection *conn, union 
 	with the dimensions for the output on which the surface will
 	be made fullscreen.
 
-    @arg1: enum wl_shell_surface_fullscreen_method_enum method
-    @arg2: c_wl_uint framerate
-    @arg3: c_wl_object_id wl_output
+    @[1] method: enum wl_shell_surface_fullscreen_method_enum
+    @[2] framerate: c_wl_uint
+    @[3] output: c_wl_object_id [[wl_output]]
    */
 C_WL_REQUEST wl_shell_surface_set_fullscreen(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -1096,12 +1096,12 @@ C_WL_REQUEST wl_shell_surface_set_fullscreen(struct c_wl_connection *conn, union
 	corner of the surface relative to the upper left corner of the
 	parent surface, in surface-local coordinates.
 
-    @arg1: c_wl_object_id wl_seat
-    @arg2: c_wl_uint serial
-    @arg3: c_wl_object_id wl_surface
-    @arg4: c_wl_int x
-    @arg5: c_wl_int y
-    @arg6: enum wl_shell_surface_transient_enum flags
+    @[1] seat: c_wl_object_id [[wl_seat]]
+    @[2] serial: c_wl_uint
+    @[3] parent: c_wl_object_id [[wl_surface]]
+    @[4] x: c_wl_int
+    @[5] y: c_wl_int
+    @[6] flags: enum wl_shell_surface_transient_enum
    */
 C_WL_REQUEST wl_shell_surface_set_popup(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -1124,7 +1124,7 @@ C_WL_REQUEST wl_shell_surface_set_popup(struct c_wl_connection *conn, union c_wl
 
 	The details depend on the compositor implementation.
 
-    @arg1: c_wl_object_id wl_output
+    @[1] output: c_wl_object_id [[wl_output]]
    */
 C_WL_REQUEST wl_shell_surface_set_maximized(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -1136,7 +1136,7 @@ C_WL_REQUEST wl_shell_surface_set_maximized(struct c_wl_connection *conn, union 
 
 	The string must be encoded in UTF-8.
 
-    @arg1: c_wl_string title
+    @[1] title: c_wl_string
    */
 C_WL_REQUEST wl_shell_surface_set_title(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -1147,7 +1147,7 @@ C_WL_REQUEST wl_shell_surface_set_title(struct c_wl_connection *conn, union c_wl
 	file name (or the full path if it is a non-standard location) of
 	the application's .desktop file as the class.
 
-    @arg1: c_wl_string class_
+    @[1] class_: c_wl_string
    */
 C_WL_REQUEST wl_shell_surface_set_class(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -1264,9 +1264,9 @@ C_WL_REQUEST wl_surface_destroy(struct c_wl_connection *conn, union c_wl_arg *ar
 	ensure that they explicitly remove content from surfaces, even after
 	destroying buffers.
 
-    @arg1: c_wl_object_id wl_buffer
-    @arg2: c_wl_int x
-    @arg3: c_wl_int y
+    @[1] buffer: c_wl_object_id [[wl_buffer]]
+    @[2] x: c_wl_int
+    @[3] y: c_wl_int
    */
 C_WL_REQUEST wl_surface_attach(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -1292,10 +1292,10 @@ C_WL_REQUEST wl_surface_attach(struct c_wl_connection *conn, union c_wl_arg *arg
 	posted with wl_surface.damage_buffer which uses buffer coordinates
 	instead of surface coordinates.
 
-    @arg1: c_wl_int x
-    @arg2: c_wl_int y
-    @arg3: c_wl_int width
-    @arg4: c_wl_int height
+    @[1] x: c_wl_int
+    @[2] y: c_wl_int
+    @[3] width: c_wl_int
+    @[4] height: c_wl_int
    */
 C_WL_REQUEST wl_surface_damage(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -1332,7 +1332,7 @@ C_WL_REQUEST wl_surface_damage(struct c_wl_connection *conn, union c_wl_arg *arg
 	The callback_data passed in the callback is the current time, in
 	milliseconds, with an undefined base.
 
-    @arg1: c_wl_new_id wl_callback
+    @[1] callback: c_wl_new_id [[wl_callback]]
    */
 C_WL_REQUEST wl_surface_frame(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -1361,7 +1361,7 @@ C_WL_REQUEST wl_surface_frame(struct c_wl_connection *conn, union c_wl_arg *args
 	destroyed immediately. A NULL wl_region causes the pending opaque
 	region to be set to empty.
 
-    @arg1: c_wl_object_id wl_region
+    @[1] region: c_wl_object_id [[wl_region]]
    */
 C_WL_REQUEST wl_surface_set_opaque_region(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -1388,7 +1388,7 @@ C_WL_REQUEST wl_surface_set_opaque_region(struct c_wl_connection *conn, union c_
 	immediately. A NULL wl_region causes the input region to be set
 	to infinite.
 
-    @arg1: c_wl_object_id wl_region
+    @[1] region: c_wl_object_id [[wl_region]]
    */
 C_WL_REQUEST wl_surface_set_input_region(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -1445,7 +1445,7 @@ C_WL_REQUEST wl_surface_commit(struct c_wl_connection *conn, union c_wl_arg *arg
 	wl_output.transform enum the invalid_transform protocol error
 	is raised.
 
-    @arg1: enum wl_output_transform_enum transform
+    @[1] transform: enum wl_output_transform_enum
    */
 C_WL_REQUEST wl_surface_set_buffer_transform(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -1473,7 +1473,7 @@ C_WL_REQUEST wl_surface_set_buffer_transform(struct c_wl_connection *conn, union
 	If scale is not greater than 0 the invalid_scale protocol error is
 	raised.
 
-    @arg1: c_wl_int scale
+    @[1] scale: c_wl_int
    */
 C_WL_REQUEST wl_surface_set_buffer_scale(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -1510,10 +1510,10 @@ C_WL_REQUEST wl_surface_set_buffer_scale(struct c_wl_connection *conn, union c_w
 	two requests separately and only transform from one to the other
 	after receiving the wl_surface.commit.
 
-    @arg1: c_wl_int x
-    @arg2: c_wl_int y
-    @arg3: c_wl_int width
-    @arg4: c_wl_int height
+    @[1] x: c_wl_int
+    @[2] y: c_wl_int
+    @[3] width: c_wl_int
+    @[4] height: c_wl_int
    */
 C_WL_REQUEST wl_surface_damage_buffer(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -1533,8 +1533,8 @@ C_WL_REQUEST wl_surface_damage_buffer(struct c_wl_connection *conn, union c_wl_a
 	arguments in the wl_surface.attach request in wl_surface versions prior
 	to 5. See wl_surface.attach for details.
 
-    @arg1: c_wl_int x
-    @arg2: c_wl_int y
+    @[1] x: c_wl_int
+    @[2] y: c_wl_int
    */
 C_WL_REQUEST wl_surface_offset(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -1593,7 +1593,7 @@ C_WL_EVENT wl_seat_name(struct c_wl_connection *conn, c_wl_object_id wl_seat, c_
 	never had the pointer capability. The missing_capability error will
 	be sent in this case.
 
-    @arg1: c_wl_new_id wl_pointer
+    @[1] id: c_wl_new_id [[wl_pointer]]
    */
 C_WL_REQUEST wl_seat_get_pointer(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -1606,7 +1606,7 @@ C_WL_REQUEST wl_seat_get_pointer(struct c_wl_connection *conn, union c_wl_arg *a
 	never had the keyboard capability. The missing_capability error will
 	be sent in this case.
 
-    @arg1: c_wl_new_id wl_keyboard
+    @[1] id: c_wl_new_id [[wl_keyboard]]
    */
 C_WL_REQUEST wl_seat_get_keyboard(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -1619,7 +1619,7 @@ C_WL_REQUEST wl_seat_get_keyboard(struct c_wl_connection *conn, union c_wl_arg *
 	never had the touch capability. The missing_capability error will
 	be sent in this case.
 
-    @arg1: c_wl_new_id wl_touch
+    @[1] id: c_wl_new_id [[wl_touch]]
    */
 C_WL_REQUEST wl_seat_get_touch(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -1887,10 +1887,10 @@ C_WL_EVENT wl_pointer_axis_relative_direction(struct c_wl_connection *conn, c_wl
 	serial number sent to the client. Otherwise the request will be
 	ignored.
 
-    @arg1: c_wl_uint serial
-    @arg2: c_wl_object_id wl_surface
-    @arg3: c_wl_int hotspot_x
-    @arg4: c_wl_int hotspot_y
+    @[1] serial: c_wl_uint
+    @[2] surface: c_wl_object_id [[wl_surface]]
+    @[3] hotspot_x: c_wl_int
+    @[4] hotspot_y: c_wl_int
    */
 C_WL_REQUEST wl_pointer_set_cursor(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -2223,19 +2223,19 @@ C_WL_REQUEST wl_region_destroy(struct c_wl_connection *conn, union c_wl_arg *arg
 
    /* Add the specified rectangle to the region.
 
-    @arg1: c_wl_int x
-    @arg2: c_wl_int y
-    @arg3: c_wl_int width
-    @arg4: c_wl_int height
+    @[1] x: c_wl_int
+    @[2] y: c_wl_int
+    @[3] width: c_wl_int
+    @[4] height: c_wl_int
    */
 C_WL_REQUEST wl_region_add(struct c_wl_connection *conn, union c_wl_arg *args);
 
    /* Subtract the specified rectangle from the region.
 
-    @arg1: c_wl_int x
-    @arg2: c_wl_int y
-    @arg3: c_wl_int width
-    @arg4: c_wl_int height
+    @[1] x: c_wl_int
+    @[2] y: c_wl_int
+    @[3] width: c_wl_int
+    @[4] height: c_wl_int
    */
 C_WL_REQUEST wl_region_subtract(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -2265,9 +2265,9 @@ C_WL_REQUEST wl_subcompositor_destroy(struct c_wl_connection *conn, union c_wl_a
 	This request modifies the behaviour of wl_surface.commit request on
 	the sub-surface, see the documentation on wl_subsurface interface.
 
-    @arg1: c_wl_new_id wl_subsurface
-    @arg2: c_wl_object_id wl_surface
-    @arg3: c_wl_object_id wl_surface
+    @[1] id: c_wl_new_id [[wl_subsurface]]
+    @[2] surface: c_wl_object_id [[wl_surface]]
+    @[3] parent: c_wl_object_id [[wl_surface]]
    */
 C_WL_REQUEST wl_subcompositor_get_subsurface(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -2293,8 +2293,8 @@ C_WL_REQUEST wl_subsurface_destroy(struct c_wl_connection *conn, union c_wl_arg 
 
 	The initial position is 0, 0.
 
-    @arg1: c_wl_int x
-    @arg2: c_wl_int y
+    @[1] x: c_wl_int
+    @[2] y: c_wl_int
    */
 C_WL_REQUEST wl_subsurface_set_position(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -2312,14 +2312,14 @@ C_WL_REQUEST wl_subsurface_set_position(struct c_wl_connection *conn, union c_wl
 	A new sub-surface is initially added as the top-most in the stack
 	of its siblings and parent.
 
-    @arg1: c_wl_object_id wl_surface
+    @[1] sibling: c_wl_object_id [[wl_surface]]
    */
 C_WL_REQUEST wl_subsurface_place_above(struct c_wl_connection *conn, union c_wl_arg *args);
 
    /* The sub-surface is placed just below the reference surface.
 	See wl_subsurface.place_above.
 
-    @arg1: c_wl_object_id wl_surface
+    @[1] sibling: c_wl_object_id [[wl_surface]]
    */
 C_WL_REQUEST wl_subsurface_place_below(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -2372,7 +2372,7 @@ C_WL_REQUEST wl_fixes_destroy(struct c_wl_connection *conn, union c_wl_arg *args
 	client should re-use the object ID once it receives the
 	wl_display.delete_id event.
 
-    @arg1: c_wl_object_id wl_registry
+    @[1] registry: c_wl_object_id [[wl_registry]]
    */
 C_WL_REQUEST wl_fixes_destroy_registry(struct c_wl_connection *conn, union c_wl_arg *args);
 

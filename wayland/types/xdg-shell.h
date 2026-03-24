@@ -154,7 +154,7 @@ C_WL_REQUEST xdg_wm_base_destroy(struct c_wl_connection *conn, union c_wl_arg *a
 	surfaces relative to some parent surface. See the interface description
 	and xdg_surface.get_popup for details.
 
-    @arg1: c_wl_new_id xdg_positioner
+    @[1] id: c_wl_new_id [[xdg_positioner]]
    */
 C_WL_REQUEST xdg_wm_base_create_positioner(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -172,8 +172,8 @@ C_WL_REQUEST xdg_wm_base_create_positioner(struct c_wl_connection *conn, union c
 	See the documentation of xdg_surface for more details about what an
 	xdg_surface is and how it is used.
 
-    @arg1: c_wl_new_id xdg_surface
-    @arg2: c_wl_object_id wl_surface
+    @[1] id: c_wl_new_id [[xdg_surface]]
+    @[2] surface: c_wl_object_id [[wl_surface]]
    */
 C_WL_REQUEST xdg_wm_base_get_xdg_surface(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -181,7 +181,7 @@ C_WL_REQUEST xdg_wm_base_get_xdg_surface(struct c_wl_connection *conn, union c_w
 	the client may be deemed unresponsive. See xdg_wm_base.ping
 	and xdg_wm_base.error.unresponsive.
 
-    @arg1: c_wl_uint serial
+    @[1] serial: c_wl_uint
    */
 C_WL_REQUEST xdg_wm_base_pong(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -195,8 +195,8 @@ C_WL_REQUEST xdg_positioner_destroy(struct c_wl_connection *conn, union c_wl_arg
 
 	If a zero or negative size is set the invalid_input error is raised.
 
-    @arg1: c_wl_int width
-    @arg2: c_wl_int height
+    @[1] width: c_wl_int
+    @[2] height: c_wl_int
    */
 C_WL_REQUEST xdg_positioner_set_size(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -211,10 +211,10 @@ C_WL_REQUEST xdg_positioner_set_size(struct c_wl_connection *conn, union c_wl_ar
 
 	If a negative size is set the invalid_input error is raised.
 
-    @arg1: c_wl_int x
-    @arg2: c_wl_int y
-    @arg3: c_wl_int width
-    @arg4: c_wl_int height
+    @[1] x: c_wl_int
+    @[2] y: c_wl_int
+    @[3] width: c_wl_int
+    @[4] height: c_wl_int
    */
 C_WL_REQUEST xdg_positioner_set_anchor_rect(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -225,7 +225,7 @@ C_WL_REQUEST xdg_positioner_set_anchor_rect(struct c_wl_connection *conn, union 
 	otherwise, the derived anchor point will be centered on the specified
 	edge, or in the center of the anchor rectangle if no edge is specified.
 
-    @arg1: enum xdg_positioner_anchor_enum anchor
+    @[1] anchor: enum xdg_positioner_anchor_enum
    */
 C_WL_REQUEST xdg_positioner_set_anchor(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -237,7 +237,7 @@ C_WL_REQUEST xdg_positioner_set_anchor(struct c_wl_connection *conn, union c_wl_
 	gravity specified. If the gravity is not in the ‘gravity’ enum, an
 	invalid_input error is raised.
 
-    @arg1: enum xdg_positioner_gravity_enum gravity
+    @[1] gravity: enum xdg_positioner_gravity_enum
    */
 C_WL_REQUEST xdg_positioner_set_gravity(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -255,7 +255,7 @@ C_WL_REQUEST xdg_positioner_set_gravity(struct c_wl_connection *conn, union c_wl
 
 	The default adjustment is none.
 
-    @arg1: enum xdg_positioner_constraint_adjustment_enum constraint_adjustment
+    @[1] constraint_adjustment: enum xdg_positioner_constraint_adjustment_enum
    */
 C_WL_REQUEST xdg_positioner_set_constraint_adjustment(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -271,8 +271,8 @@ C_WL_REQUEST xdg_positioner_set_constraint_adjustment(struct c_wl_connection *co
 	element, while aligning the user interface element of the parent surface
 	with some user interface element placed somewhere in the popup surface.
 
-    @arg1: c_wl_int x
-    @arg2: c_wl_int y
+    @[1] x: c_wl_int
+    @[2] y: c_wl_int
    */
 C_WL_REQUEST xdg_positioner_set_offset(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -292,8 +292,8 @@ C_WL_REQUEST xdg_positioner_set_reactive(struct c_wl_connection *conn, union c_w
 
 	The arguments are given in the surface-local coordinate space.
 
-    @arg1: c_wl_int parent_width
-    @arg2: c_wl_int parent_height
+    @[1] parent_width: c_wl_int
+    @[2] parent_height: c_wl_int
    */
 C_WL_REQUEST xdg_positioner_set_parent_size(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -302,7 +302,7 @@ C_WL_REQUEST xdg_positioner_set_parent_size(struct c_wl_connection *conn, union 
 	with set_parent_size to determine what future state the popup should be
 	constrained using.
 
-    @arg1: c_wl_uint serial
+    @[1] serial: c_wl_uint
    */
 C_WL_REQUEST xdg_positioner_set_parent_configure(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -336,7 +336,7 @@ C_WL_REQUEST xdg_surface_destroy(struct c_wl_connection *conn, union c_wl_arg *a
 	See the documentation of xdg_toplevel for more details about what an
 	xdg_toplevel is and how it is used.
 
-    @arg1: c_wl_new_id xdg_toplevel
+    @[1] id: c_wl_new_id [[xdg_toplevel]]
    */
 C_WL_REQUEST xdg_surface_get_toplevel(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -349,9 +349,9 @@ C_WL_REQUEST xdg_surface_get_toplevel(struct c_wl_connection *conn, union c_wl_a
 	See the documentation of xdg_popup for more details about what an
 	xdg_popup is and how it is used.
 
-    @arg1: c_wl_new_id xdg_popup
-    @arg2: c_wl_object_id xdg_surface
-    @arg3: c_wl_object_id xdg_positioner
+    @[1] id: c_wl_new_id [[xdg_popup]]
+    @[2] parent: c_wl_object_id [[xdg_surface]]
+    @[3] positioner: c_wl_object_id [[xdg_positioner]]
    */
 C_WL_REQUEST xdg_surface_get_popup(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -396,10 +396,10 @@ C_WL_REQUEST xdg_surface_get_popup(struct c_wl_connection *conn, union c_wl_arg 
 	greater than zero. Setting an invalid size will raise an
 	invalid_size error.
 
-    @arg1: c_wl_int x
-    @arg2: c_wl_int y
-    @arg3: c_wl_int width
-    @arg4: c_wl_int height
+    @[1] x: c_wl_int
+    @[2] y: c_wl_int
+    @[3] width: c_wl_int
+    @[4] height: c_wl_int
    */
 C_WL_REQUEST xdg_surface_set_window_geometry(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -436,7 +436,7 @@ C_WL_REQUEST xdg_surface_set_window_geometry(struct c_wl_connection *conn, union
 	event identified by the last ack_configure request for the same
 	xdg_surface. Doing so will raise an invalid_serial error.
 
-    @arg1: c_wl_uint serial
+    @[1] serial: c_wl_uint
    */
 C_WL_REQUEST xdg_surface_ack_configure(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -536,7 +536,7 @@ C_WL_REQUEST xdg_toplevel_destroy(struct c_wl_connection *conn, union c_wl_arg *
 	descendants, and the parent must be different from the child toplevel,
 	otherwise the invalid_parent protocol error is raised.
 
-    @arg1: c_wl_object_id xdg_toplevel
+    @[1] parent: c_wl_object_id [[xdg_toplevel]]
    */
 C_WL_REQUEST xdg_toplevel_set_parent(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -548,7 +548,7 @@ C_WL_REQUEST xdg_toplevel_set_parent(struct c_wl_connection *conn, union c_wl_ar
 
 	The string must be encoded in UTF-8.
 
-    @arg1: c_wl_string title
+    @[1] title: c_wl_string
    */
 C_WL_REQUEST xdg_toplevel_set_title(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -576,7 +576,7 @@ C_WL_REQUEST xdg_toplevel_set_title(struct c_wl_connection *conn, union c_wl_arg
 
 	[0] https://standards.freedesktop.org/desktop-entry-spec/
 
-    @arg1: c_wl_string app_id
+    @[1] app_id: c_wl_string
    */
 C_WL_REQUEST xdg_toplevel_set_app_id(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -593,10 +593,10 @@ C_WL_REQUEST xdg_toplevel_set_app_id(struct c_wl_connection *conn, union c_wl_ar
 	This request must be used in response to some sort of user action
 	like a button press, key press, or touch down event.
 
-    @arg1: c_wl_object_id wl_seat
-    @arg2: c_wl_uint serial
-    @arg3: c_wl_int x
-    @arg4: c_wl_int y
+    @[1] seat: c_wl_object_id [[wl_seat]]
+    @[2] serial: c_wl_uint
+    @[3] x: c_wl_int
+    @[4] y: c_wl_int
    */
 C_WL_REQUEST xdg_toplevel_show_window_menu(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -617,8 +617,8 @@ C_WL_REQUEST xdg_toplevel_show_window_menu(struct c_wl_connection *conn, union c
 	updating a pointer cursor, during the move. There is no guarantee
 	that the device focus will return when the move is completed.
 
-    @arg1: c_wl_object_id wl_seat
-    @arg2: c_wl_uint serial
+    @[1] seat: c_wl_object_id [[wl_seat]]
+    @[2] serial: c_wl_uint
    */
 C_WL_REQUEST xdg_toplevel_move(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -654,9 +654,9 @@ C_WL_REQUEST xdg_toplevel_move(struct c_wl_connection *conn, union c_wl_arg *arg
 	use this information to adapt its behavior, e.g. choose an appropriate
 	cursor image.
 
-    @arg1: c_wl_object_id wl_seat
-    @arg2: c_wl_uint serial
-    @arg3: enum xdg_toplevel_resize_edge_enum edges
+    @[1] seat: c_wl_object_id [[wl_seat]]
+    @[2] serial: c_wl_uint
+    @[3] edges: enum xdg_toplevel_resize_edge_enum
    */
 C_WL_REQUEST xdg_toplevel_resize(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -694,8 +694,8 @@ C_WL_REQUEST xdg_toplevel_resize(struct c_wl_connection *conn, union c_wl_arg *a
 	strictly negative values for width or height will result in a
 	invalid_size error.
 
-    @arg1: c_wl_int width
-    @arg2: c_wl_int height
+    @[1] width: c_wl_int
+    @[2] height: c_wl_int
    */
 C_WL_REQUEST xdg_toplevel_set_max_size(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -733,8 +733,8 @@ C_WL_REQUEST xdg_toplevel_set_max_size(struct c_wl_connection *conn, union c_wl_
 	strictly negative values for width and height will result in a
 	invalid_size error.
 
-    @arg1: c_wl_int width
-    @arg2: c_wl_int height
+    @[1] width: c_wl_int
+    @[2] height: c_wl_int
    */
 C_WL_REQUEST xdg_toplevel_set_min_size(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -806,7 +806,7 @@ C_WL_REQUEST xdg_toplevel_unset_maximized(struct c_wl_connection *conn, union c_
 	up of subsurfaces, popups or similarly coupled surfaces) are not
 	visible below the fullscreened surface.
 
-    @arg1: c_wl_object_id wl_output
+    @[1] output: c_wl_object_id [[wl_output]]
    */
 C_WL_REQUEST xdg_toplevel_set_fullscreen(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -921,8 +921,8 @@ C_WL_REQUEST xdg_popup_destroy(struct c_wl_connection *conn, union c_wl_arg *arg
 	"owner-events" grab in X11 parlance), while the top most grabbing popup
 	will always have keyboard focus.
 
-    @arg1: c_wl_object_id wl_seat
-    @arg2: c_wl_uint serial
+    @[1] seat: c_wl_object_id [[wl_seat]]
+    @[2] serial: c_wl_uint
    */
 C_WL_REQUEST xdg_popup_grab(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -950,8 +950,8 @@ C_WL_REQUEST xdg_popup_grab(struct c_wl_connection *conn, union c_wl_arg *args);
 	resized, but not in response to a configure event, the client should
 	send an xdg_positioner.set_parent_size request.
 
-    @arg1: c_wl_object_id xdg_positioner
-    @arg2: c_wl_uint token
+    @[1] positioner: c_wl_object_id [[xdg_positioner]]
+    @[2] token: c_wl_uint
    */
 C_WL_REQUEST xdg_popup_reposition(struct c_wl_connection *conn, union c_wl_arg *args);
 

@@ -55,8 +55,9 @@ struct c_wl_region {
 };
 
 enum c_wl_surface_roles {
-	C_WL_SURFACE_TOPLEVEL = 1,
-	C_WL_SURFACE_POPUP,
+	C_WL_SURFACE_ROLE_XDG_TOPLEVEL = 1,
+	C_WL_SURFACE_ROLE_XDG_POPUP,
+	C_WL_SURFACE_ROLE_SUBSURFACE,
 };
 
 
@@ -71,14 +72,14 @@ struct c_wl_surface {
 	} damage;
 
 	struct {
-		c_wl_uint 		serial;
 		c_wl_object_id  surface_id;
 		c_wl_object_id  toplevel_id;
 		char title[256];
 		char app_id[256];
+		c_wl_uint 		serial;
 
-		struct c_wl_surface *prev;
-		struct c_wl_surface *next;
+		struct c_wl_surface *parent;
+		c_list *children;
 	} xdg;
 
 	struct {
@@ -86,8 +87,8 @@ struct c_wl_surface {
 		c_wl_int x, y;
 		int sync;
 
-		struct c_wl_surface *prev;
-		struct c_wl_surface *next;
+		struct c_wl_surface *parent;
+		c_list *children;
 	} sub;
 
 	struct c_wl_region opaque;
@@ -95,7 +96,6 @@ struct c_wl_surface {
 
 	struct c_wl_buffer 	*pending;
 	struct c_wl_buffer 	*active;
-
 
 	struct c_wl_connection *conn;
 };

@@ -39,7 +39,8 @@ C_WL_EVENT wl_callback_done(struct c_wl_connection *conn, c_wl_object_id wl_call
   struct c_wl_message msg = {wl_callback, 0, "u", "done"};
   return c_wl_connection_send(conn, &msg, 1, callback_data);
 }
-C_WL_INTERFACE_REGISTER(wl_callback_interface, "wl_callback", 1, 0);
+
+C_WL_INTERFACE_REGISTER(wl_callback_interface, "wl_callback", 1, 1);
 
 C_WL_REQUEST wl_compositor_create_surface(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -315,7 +316,7 @@ C_WL_REQUEST wl_seat_get_touch(struct c_wl_connection *conn, union c_wl_arg *arg
 
 C_WL_REQUEST wl_seat_release(struct c_wl_connection *conn, union c_wl_arg *args);
 
-C_WL_INTERFACE_REGISTER(wl_seat_interface, "wl_seat", 9, 4, 
+C_WL_INTERFACE_REGISTER(wl_seat_interface, "wl_seat", 10, 4, 
     {"get_pointer",            wl_seat_get_pointer,           1,  "n"},
     {"get_keyboard",           wl_seat_get_keyboard,          1,  "n"},
     {"get_touch",              wl_seat_get_touch,             1,  "n"},

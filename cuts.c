@@ -348,9 +348,6 @@ int main() {
   comp->layouts = layouts;
   comp->curr_layout = 0;
 
-  c_wl_display_add_supported_interface(display, "wl_compositor", NULL, NULL);
-  c_wl_display_add_supported_interface(display, "xdg_wm_base", NULL, NULL);
-
   struct c_backend *backend = c_backend_init(display);
   if (!backend) goto out;
 

@@ -75,7 +75,7 @@ C_WL_REQUEST zwp_linux_dmabuf_v1_destroy(struct c_wl_connection *conn, union c_w
         should be destroyed after a 'created' or 'failed' event has been
         received.
 
-    @arg1: c_wl_new_id zwp_linux_buffer_params_v1
+    @[1] params_id: c_wl_new_id [[zwp_linux_buffer_params_v1]]
    */
 C_WL_REQUEST zwp_linux_dmabuf_v1_create_params(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -84,7 +84,7 @@ C_WL_REQUEST zwp_linux_dmabuf_v1_create_params(struct c_wl_connection *conn, uni
         parameters to use if the client doesn't support per-surface feedback
         (see get_surface_feedback).
 
-    @arg1: c_wl_new_id zwp_linux_dmabuf_feedback_v1
+    @[1] id: c_wl_new_id [[zwp_linux_dmabuf_feedback_v1]]
    */
 C_WL_REQUEST zwp_linux_dmabuf_v1_get_default_feedback(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -95,8 +95,8 @@ C_WL_REQUEST zwp_linux_dmabuf_v1_get_default_feedback(struct c_wl_connection *co
         If the surface is destroyed before the wp_linux_dmabuf_feedback object,
         the feedback object becomes inert.
 
-    @arg1: c_wl_new_id zwp_linux_dmabuf_feedback_v1
-    @arg2: c_wl_object_id wl_surface
+    @[1] id: c_wl_new_id [[zwp_linux_dmabuf_feedback_v1]]
+    @[2] surface: c_wl_object_id [[wl_surface]]
    */
 C_WL_REQUEST zwp_linux_dmabuf_v1_get_surface_feedback(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -140,12 +140,12 @@ C_WL_REQUEST zwp_linux_buffer_params_v1_destroy(struct c_wl_connection *conn, un
         The error PLANE_SET is raised if attempting to set a plane that
         was already set.
 
-    @arg1: c_wl_fd fd
-    @arg2: c_wl_uint plane_idx
-    @arg3: c_wl_uint offset
-    @arg4: c_wl_uint stride
-    @arg5: c_wl_uint modifier_hi
-    @arg6: c_wl_uint modifier_lo
+    @[1] fd: c_wl_fd
+    @[2] plane_idx: c_wl_uint
+    @[3] offset: c_wl_uint
+    @[4] stride: c_wl_uint
+    @[5] modifier_hi: c_wl_uint
+    @[6] modifier_lo: c_wl_uint
    */
 C_WL_REQUEST zwp_linux_buffer_params_v1_add(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -209,10 +209,10 @@ C_WL_REQUEST zwp_linux_buffer_params_v1_add(struct c_wl_connection *conn, union 
         It is not mandatory to issue 'create'. If a client wants to
         cancel the buffer creation, it can just destroy this object.
 
-    @arg1: c_wl_int width
-    @arg2: c_wl_int height
-    @arg3: c_wl_uint format
-    @arg4: enum zwp_linux_buffer_params_v1_flags_enum flags
+    @[1] width: c_wl_int
+    @[2] height: c_wl_int
+    @[3] format: c_wl_uint
+    @[4] flags: enum zwp_linux_buffer_params_v1_flags_enum
    */
 C_WL_REQUEST zwp_linux_buffer_params_v1_create(struct c_wl_connection *conn, union c_wl_arg *args);
 
@@ -240,11 +240,11 @@ C_WL_REQUEST zwp_linux_buffer_params_v1_create(struct c_wl_connection *conn, uni
         This takes the same arguments as a 'create' request, and obeys the
         same restrictions.
 
-    @arg1: c_wl_new_id wl_buffer
-    @arg2: c_wl_int width
-    @arg3: c_wl_int height
-    @arg4: c_wl_uint format
-    @arg5: enum zwp_linux_buffer_params_v1_flags_enum flags
+    @[1] buffer_id: c_wl_new_id [[wl_buffer]]
+    @[2] width: c_wl_int
+    @[3] height: c_wl_int
+    @[4] format: c_wl_uint
+    @[5] flags: enum zwp_linux_buffer_params_v1_flags_enum
    */
 C_WL_REQUEST zwp_linux_buffer_params_v1_create_immed(struct c_wl_connection *conn, union c_wl_arg *args);
 

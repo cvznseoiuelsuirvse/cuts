@@ -124,10 +124,10 @@ def parse_request(interface_name: str, request: ET.Element, file_type: Literal["
         elif args:
             decl = "   /*\n"
 
-
         for i, arg in enumerate(args, 1):
             attrs = arg.attrib
-            arg_name = attrs["name"] if not attrs.get("interface") else attrs["interface"]
+            arg_name = attrs["name"]
+            arg_iface = attrs.get("interface")
             arg_wl_type = attrs["type"]
             if not attrs.get("enum"):
                 arg_c_type = WL_TYPES[arg_wl_type]
@@ -136,7 +136,10 @@ def parse_request(interface_name: str, request: ET.Element, file_type: Literal["
             else:
                 arg_c_type = f"enum {interface_name}_{attrs['enum']}_enum"
 
-            decl+=f"    @arg{i}: {arg_c_type} {arg_name}\n"
+            if arg_iface:
+                decl+=f"    @[{i}] {arg_name}: {arg_c_type} [[{arg_iface}]]\n"
+            else:
+                decl+=f"    @[{i}] {arg_name}: {arg_c_type}\n"
 
         if args:
             decl += "   */\n"

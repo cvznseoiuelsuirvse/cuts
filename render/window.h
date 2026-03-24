@@ -11,7 +11,7 @@ enum c_window_states {
 struct c_window {
   struct c_wl_surface *wl_surface;
   uint32_t width, height;
-  uint32_t x, y;
+  int32_t x, y;
 
   char title[256];
   char app_id[256];

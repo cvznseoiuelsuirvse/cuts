@@ -10,7 +10,8 @@
 #include <GLES2/gl2ext.h>
 
 #include "render/render.h"
-#include "render/egl.h"
+#include "render/gl/egl.h"
+#include "render/gl/gles.h"
 
 #include "backend/drm/drm.h"
 
@@ -56,34 +57,6 @@ static void notify(struct c_render *render, struct c_window *window, enum c_rend
     case C_RENDER_ON_WINDOW_CLOSE:     __notify(on_window_close); break;
     default: break;
   }
-
-}
-
-
-static int add_fb(struct c_render *render) {
-  struct gbm_bo *bo = gbm_surface_lock_front_buffer(render->gbm_surface);
-  if (!bo) { 
-    c_log_errno(C_LOG_ERROR, "gbm_surface_lock_front_buffer failed");
-    return -1; 
-  }
-  render->gbm_bo_next = bo;
-
-  uint32_t width = gbm_bo_get_width(bo);
-  uint32_t height = gbm_bo_get_height(bo);
-  uint32_t format = gbm_bo_get_format(bo);
-  uint32_t handles[4] = {gbm_bo_get_handle(bo).u32};
-  uint32_t pitches[4] = {gbm_bo_get_stride(bo)};
-  uint32_t offsets[4] = {gbm_bo_get_offset(bo, 0)};
-
-  render->drm->buf_id_old = render->drm->buf_id;
-  if (drmModeAddFB2(render->drm->fd, 
-                    width, height, format, 
-                    handles, pitches, offsets, &render->drm->buf_id, 0) != 0) {
-    c_log_errno(C_LOG_ERROR, "drmModeAddFB2 failed");
-    return -1;
-  }
-
-  return 0;
 
 }
 
@@ -188,14 +161,6 @@ static int gbm_init(struct c_render *render) {
 
   uint32_t width =  preferred_mode->width;
   uint32_t height = preferred_mode->height;
-  render->gbm_surface = gbm_surface_create(render->drm->gbm_device, 
-                                           width, height, GBM_FORMAT_XRGB8888, 
-                                           GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING);
-    
-  if (!render->gbm_surface) {
-    c_log(C_LOG_ERROR, "gbm_surface_create failed");
-    return -1;
-  }
 
   // render->gbm_bo = gbm_bo_create(render->gbm_device, width, height, GBM_FORMAT_XRGB8888, GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING);
   //
@@ -233,10 +198,10 @@ static void window_transform(struct c_window *window, struct vert_pos *vp,
 }
 
 static int draw_window(struct c_render *render, struct c_window *window, GLuint texture) {
-  struct c_gles *gl = render->egl->gl;
+  struct c_gles *gl = render->gl;
   struct c_output_mode *preferred_mode = c_drm_get_preferred_mode(render->drm);
 
-  glUseProgram(render->egl->gl->program);
+  glUseProgram(gl->program);
 
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_2D, texture);
@@ -271,17 +236,7 @@ static int draw_window(struct c_render *render, struct c_window *window, GLuint 
 
 static int c_render_import_shm(struct c_render *render, struct c_wl_buffer *buf) {
   struct c_shm *shm = buf->shm;
-  glGenTextures(1, &shm->texture);
-  glBindTexture(GL_TEXTURE_2D, shm->texture);
-
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-  glPixelStorei(GL_UNPACK_ROW_LENGTH, shm->stride / 4);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, buf->width, buf->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, shm->ptr);
-  glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-  glBindTexture(GL_TEXTURE_2D, 0);
-
+  c_gles_texture_from_shm(shm, buf->width, buf->height);
   return 0;
 }
 
@@ -326,7 +281,18 @@ static int c_render_import_dmabuf(struct c_render *render, struct c_wl_buffer *b
     .planes = dmabuf->planes,
   };
 
-  c_egl_import_dmabuf(render->egl, &params, dmabuf);
+  dmabuf->image = c_egl_create_dmabuf_image(render->egl, &params);
+  if (!dmabuf->image) {
+    c_log(C_LOG_ERROR, "failed to create an EGLImageKHR"); 
+    goto err;
+  }
+
+  c_gles_texture_from_dmabuf_image(render->gl, dmabuf);
+
+  for (uint32_t i = 0; i < dmabuf->n_planes; i++) {
+    close(dmabuf->planes[i].fd);
+  } 
+
   return 0;
 
 err:
@@ -355,20 +321,31 @@ static GLuint ensure_buf_imported(struct c_render *render, struct c_wl_buffer *b
 static void draw_windows(struct c_render *render) {
   struct c_window *window;
   size_t key;
-
   c_map_for_each(render->surfaces, key, window) {
     struct c_wl_surface *surface = (struct c_wl_surface *)key;
-    if (surface->active && !surface->parent) {
+    if (surface->active && surface->role != C_WL_SURFACE_ROLE_SUBSURFACE) {
       GLuint texture = ensure_buf_imported(render, surface->active);
       if (texture == 0) return;
+      c_log(C_LOG_DEBUG, "window %p: width=%d height=%d x=%d y=%d", window, 
+            window->width, window->height, window->x, window->y);
       draw_window(render, window, texture);
 
-      if (surface->child) {
-        texture = ensure_buf_imported(render, surface->child->active);
+      struct c_wl_surface *sub_surface;
+      c_list_for_each(surface->sub.children, sub_surface) {
+        if (!sub_surface->active || !sub_surface->sub.sync) continue;
+
+        texture = ensure_buf_imported(render, sub_surface->active);
         if (texture == 0) return;
 
-        struct c_window *child_window = c_map_get(render->surfaces, (uint64_t)surface->child);
-        draw_window(render, child_window, texture);
+        struct c_window *sub_window = c_map_get(render->surfaces, (uint64_t)sub_surface);
+        sub_window->x = window->x +sub_surface->sub.x;
+        sub_window->y = window->y + sub_surface->sub.y;
+        sub_window->width = sub_surface->active->width;
+        sub_window->height = sub_surface->active->height;
+        c_log(C_LOG_DEBUG, "sub window %p: width=%d height=%d x=%d y=%d", sub_window, 
+              sub_window->width, sub_window->height, sub_window->x, sub_window->y);
+
+        draw_window(render, sub_window, texture);
       }
       
     }
@@ -390,7 +367,6 @@ static int _on_surface_new_cb(struct c_wl_surface *surface, void *userdata) {
   struct c_render *render = userdata;
   struct c_window window = {0};
   window.wl_surface = surface;
-  window.state |= surface->parent != 0; // C_WINDOW_FLOAT == 1
   c_map_set(render->surfaces, (uint64_t)surface, &window, sizeof(window));
   return 0;
 }
@@ -492,6 +468,21 @@ void c_render_add_listener(struct c_render *render, struct c_render_listener *li
   c_list_push(render->listeners, &l, sizeof(l)); 
 }
 
+
+static int create_swapchain(struct c_render *render) {
+  struct c_output_mode *preferred_mode = c_drm_get_preferred_mode(render->drm);
+  uint32_t width = preferred_mode->width;
+  uint32_t height = preferred_mode->height;
+
+  render->swapchain.buffers[0] = c_render_buffer_create(render, width, height, DRM_FORMAT_XRGB8888, NULL, 0);
+  render->swapchain.buffers[1] = c_render_buffer_create(render, width, height, DRM_FORMAT_XRGB8888, NULL, 0);
+  if (!(uint64_t)(render->swapchain.buffers[0] || render->swapchain.buffers[1])) return -1;
+
+  render->swapchain.front = 0;
+
+  return 0;
+}
+
 struct c_render *c_render_init(struct c_wl_display *display, struct c_drm *drm) {
   int ret;
   struct c_render *render = calloc(1, sizeof(struct c_render));
@@ -500,11 +491,20 @@ struct c_render *c_render_init(struct c_wl_display *display, struct c_drm *drm) 
 
   render->surfaces = c_map_new(1024);
   render->drm = drm;
-  ret = gbm_init(render); 
-  if (ret != 0) goto error;
 
-  render->egl = c_egl_init(render->drm->gbm_device, render->gbm_surface);
+  render->gbm_device = gbm_create_device(drm->fd);
+  if (!render->gbm_device) {
+    c_log_errno(C_LOG_ERROR, "gbm_create_device failed");
+    goto error;
+  }
+
+  render->egl = c_egl_init(render->gbm_device);
   if (!render->egl) goto error;
+
+  render->gl = c_gles_init();
+  if (!render->gl) goto error;
+
+  if (create_swapchain(render) < 0) goto error;
 
   render->formats.entries = c_egl_query_formats(render->egl, &render->formats.n_entries);
   render->formats.wl_shm_formats = c_list_new();
@@ -513,9 +513,6 @@ struct c_render *c_render_init(struct c_wl_display *display, struct c_drm *drm) 
     struct c_format format = render->formats.entries[i];
     c_list_push(render->formats.wl_shm_formats, (void *)drm_to_wl_shm_format(format.drm_format), 0);
   }
-
-  c_egl_swap_buffers(render->egl);
-  if (add_fb(render) != 0) goto error;
 
   struct c_output_mode *preferred_mode = c_drm_get_preferred_mode(drm);
   if (drmModeSetCrtc(drm->fd, drm->connector.crtc_id, drm->buf_id,
@@ -568,8 +565,15 @@ void c_render_free(struct c_render *render) {
     c_map_destroy(render->surfaces);
   }
 
+  if (render->swapchain.buffers[0])
+    c_render_buffer_destroy(render, render->swapchain.buffers[0]);
+
+  if (render->swapchain.buffers[1])
+    c_render_buffer_destroy(render, render->swapchain.buffers[1]);
+
   if (render->egl)              c_egl_free(render->egl);
-  if (render->gbm_surface)      gbm_surface_destroy(render->gbm_surface);
+  if (render->gl)              c_gles_free(render->gl);
+  if (render->gbm_device)       gbm_device_destroy(render->gbm_device);
 
   if (render->formats.entries)        free(render->formats.entries);
   if (render->formats.wl_shm_formats) free(render->formats.wl_shm_formats);

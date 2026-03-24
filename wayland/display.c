@@ -174,6 +174,10 @@ struct c_wl_display *c_wl_display_init() {
   display->listeners = c_list_new();
   display->supported_ifaces = c_list_new();
 
+  c_wl_display_add_supported_interface(display, "wl_compositor", NULL, NULL);
+  c_wl_display_add_supported_interface(display, "wl_subcompositor", NULL, NULL);
+  c_wl_display_add_supported_interface(display, "xdg_wm_base", NULL, NULL);
+
   return display;
 
 }
