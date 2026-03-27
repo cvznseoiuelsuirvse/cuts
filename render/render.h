@@ -60,7 +60,7 @@ struct c_dmabuf_params {
 
 struct c_shm_params {
     int fd;
-	  uint32_t width, height;
+	uint32_t width, height;
     uint32_t format;
     int      stride;
     int      offset;
@@ -72,7 +72,6 @@ struct c_render_listener {
 };
 
 struct c_render {
-	struct gbm_device  *gbm_device;
 
 	struct c_drm  *drm;
 	struct c_egl *egl;

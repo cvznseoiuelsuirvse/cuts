@@ -7,7 +7,6 @@
 #include "wayland/types/wayland.h"
 
 #include "wayland/display.h"
-#include "wayland/error.h"
 
 #include "util/log.h"
 #include "render/render.h"
@@ -214,6 +213,13 @@ int wl_buffer_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
 
   struct c_wl_object *wl_buffer = c_wl_object_get(conn, wl_buffer_id);
   struct c_wl_buffer *c_wl_buffer = wl_buffer->data;
+  struct c_wl_surface *c_wl_surface = c_wl_buffer->surface;
+
+  if (c_wl_surface->pending == c_wl_buffer)
+    c_wl_surface->pending = NULL;
+
+  if (c_wl_surface->active == c_wl_buffer)
+    c_wl_surface->active = NULL;
 
   free(c_wl_buffer);
   c_wl_object_del(conn, wl_buffer_id);
@@ -261,24 +267,6 @@ int wl_region_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   return 0;
 }
 
-int wl_surface_attach(struct c_wl_connection *conn, union c_wl_arg *args) {
-  c_wl_object_id wl_surface_id = args[0].u;
-  struct c_wl_object *wl_surface = c_wl_object_get(conn, wl_surface_id);
-
-  c_wl_object_id wl_buffer_id = args[1].o;
-  struct c_wl_object *wl_buffer;
-  C_WL_CHECK_IF_REGISTERED(wl_buffer_id, wl_buffer);
-
-  struct c_wl_surface *c_wl_surface = wl_surface->data;
-  struct c_wl_buffer *c_wl_buffer = wl_buffer->data;
-
-  c_wl_surface->pending = c_wl_buffer;
-
-  return 0;
-}
-
-
-
 int wl_surface_damage(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id wl_surface_id = args[0].u;
   struct c_wl_object *wl_surface = c_wl_object_get(conn, wl_surface_id);
@@ -323,7 +311,6 @@ int wl_surface_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   if (c_wl_surface->sub.children)
     c_list_destroy(c_wl_surface->sub.children);
 
-  free(c_wl_surface);
   c_wl_object_del(conn, wl_surface_id);
   return 0;
 }
@@ -366,21 +353,39 @@ int wl_surface_set_input_region(struct c_wl_connection *conn, union c_wl_arg *ar
   return 0;
 }
 
+int wl_surface_attach(struct c_wl_connection *conn, union c_wl_arg *args) {
+  c_wl_object_id wl_surface_id = args[0].u;
+  struct c_wl_object *wl_surface = c_wl_object_get(conn, wl_surface_id);
+  struct c_wl_surface *c_wl_surface = wl_surface->data;
+
+  c_wl_object_id wl_buffer_id = args[1].o;
+  if (wl_buffer_id == 0) {
+    c_wl_surface->pending = NULL;
+    return 0;
+  }
+
+  struct c_wl_object *wl_buffer = c_wl_object_get(conn, wl_buffer_id);
+  C_WL_CHECK_IF_REGISTERED(wl_buffer_id, wl_buffer);
+  struct c_wl_buffer *c_wl_buffer = wl_buffer->data;
+  c_wl_buffer->surface = c_wl_surface;
+  c_wl_surface->pending = c_wl_buffer;
+
+  return 0;
+}
+
 int wl_surface_commit(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id wl_surface_id = args[0].u;
   struct c_wl_object *wl_surface = c_wl_object_get(conn, wl_surface_id);
-
   struct c_wl_surface *c_wl_surface = wl_surface->data;
-  struct c_wl_buffer *c_wl_buffer = c_wl_surface->pending;
-  if (!c_wl_buffer)
-    return 0;
   
   if (c_wl_surface->active) {
     wl_buffer_release(c_wl_surface->conn, c_wl_surface->active->id);
   }
 
-  c_wl_surface->active = c_wl_surface->pending;
-  c_wl_surface->pending = NULL;
+  if (c_wl_surface->pending) {
+    c_wl_surface->active = c_wl_surface->pending;
+    c_wl_surface->pending = NULL;
+  }
 
   struct c_wl_display *dpy = conn->dpy;
   c_wl_display_notify(dpy, c_wl_surface, C_WL_DISPLAY_ON_SURFACE_UPDATE);
@@ -430,6 +435,7 @@ int wl_subcompositor_get_subsurface(struct c_wl_connection *conn, union c_wl_arg
 
   if (surface_child->sub.children && c_list_idx(surface_child->sub.children, surface_parent) != -1)
     return c_wl_error_set(args[0].o, WL_SUBCOMPOSITOR_ERROR_BAD_SURFACE, "parent surface is one of the child's descendants,");
+  c_log(C_LOG_DEBUG, "adding %p to %p", surface_child, surface_parent);
 
   c_list_push(surface_parent->sub.children, surface_child, 0);
   surface_child->sub.parent = surface_parent;
@@ -463,8 +469,8 @@ int wl_subsurface_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_wl_surface *surface_child = c_wl_object_get(conn, args[0].o)->data;
   struct c_wl_surface *surface_parent = surface_child->sub.parent;
 
-  // if (surface_parent && c_list_idx(surface_parent->sub.children, surface_child))
-  //   c_list_remove_ptr(&surface_parent->sub.children, surface_child);
+  if (surface_parent)
+    c_list_remove_ptr(&surface_parent->sub.children, surface_child);
 
   memset(&surface_child->sub, 0, sizeof(surface_child->sub));
 

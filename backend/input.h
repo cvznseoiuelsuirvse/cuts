@@ -6,17 +6,35 @@
 
 #include "util/event_loop.h"
 
-enum c_input_kbd_mods {
-	C_MOD_SHIFT = 1 << 0,
-	C_MOD_CTRL =  1 << 2,
-	C_MOD_ALT  =  1 << 3,
-	C_MOD_LOGO =  1 << 6,
+enum c_input_keyboard_mods {
+	C_KEYBOARD_MOD_SHIFT = 1 << 0,
+	C_KEYBOARD_MOD_CTRL =  1 << 2,
+	C_KEYBOARD_MOD_ALT  =  1 << 3,
+	C_KEYBOARD_MOD_LOGO =  1 << 6,
+};
+
+enum c_input_mouse_buttons {
+	C_MOUSE_BUTTON_RIGHT = 1,
+};
+
+enum c_input_mouse_axis_source {
+	C_MOUSE_AXIS_SOURCE_WHEEL = 1,
+	C_MOUSE_AXIS_SOURCE_FINGER,
+	C_MOUSE_AXIS_SOURCE_CONTINUOUS,
+	C_MOUSE_AXIS_SOURCE_WHEEL_TILT,
 };
 
 struct c_input_mouse_event {
 	struct libinput_event_pointer *libinput_event;
 	double x, y;
 	int     abs;
+
+	enum c_input_mouse_buttons button;
+	int      button_pressed;
+
+	double axis;
+	double axis_discrete;
+	enum c_input_mouse_axis_source axis_source;
 };
 
 struct c_input_event_listener_mouse {
@@ -37,8 +55,8 @@ struct c_input_keyboard_event {
 	xkb_layout_index_t group;
 };
 
-struct c_input_event_listener_kbd {
-	int (*on_kbd_key)     (struct c_input_keyboard_event *event, void *userdata);
+struct c_input_event_listener_keyboard {
+	int (*on_keyboard_key)     (struct c_input_keyboard_event *event, void *userdata);
 };
 
 struct c_input_libinput_interface {
@@ -72,8 +90,8 @@ int c_input_get_xkb_keymap_fd(struct c_input *input, int *fd);
 void c_input_add_event_listener_mouse(struct c_input *input, 
 									  struct c_input_event_listener_mouse *listener, void *userdata);
 
-void c_input_add_event_listener_kbd(struct c_input *input, 
-									struct c_input_event_listener_kbd *listener, void *userdata);
+void c_input_add_event_listener_keyboard(struct c_input *input, 
+									struct c_input_event_listener_keyboard *listener, void *userdata);
 
 void c_input_add_shortcut_handler(struct c_input *input, uint32_t mod_mask, xkb_keysym_t keysym, 
                                   void(*handler)(void *userdata), void *userdata);

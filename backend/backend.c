@@ -148,8 +148,12 @@ struct c_backend_device *c_backend_device_open(struct c_backend *backend, const 
 
 void c_backend_free(struct c_backend *backend) {
   struct c_backend_device *dev;
-  c_list_for_each(backend->devices, dev)
-    c_backend_device_close(backend, dev);
+  c_list *l = backend->devices;
+  while(l->next) {
+    c_list *next = l->next;
+    c_backend_device_close(backend, l->data);
+    l = next;
+  }
   
   c_list_destroy(backend->devices);
 

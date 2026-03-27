@@ -4,6 +4,7 @@
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #include <drm_fourcc.h>
+#include <gbm.h>
 
 #include "wayland/types/wayland.h"
 #include "backend/input.h"
@@ -33,10 +34,11 @@ struct c_output {
 	drmModeSubPixel subpixel;
 
 	c_list *modes;
-	struct c_drm_cursor *cursor;
+	struct c_cursor *cursor;
 };
 
 struct c_drm {
+	struct gbm_device  *gbm_device;
 	int 	 fd;
 
 	struct c_drm_connector connector; 

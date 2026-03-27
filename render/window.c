@@ -1,6 +1,4 @@
 #include "wayland/types/xdg-shell.h"
-
-#include "util/helpers.h"
 #include "render/window.h"
 
 void c_window_resize(struct c_window *window, uint32_t width, uint32_t height, int activate) {
@@ -20,7 +18,7 @@ void c_window_resize(struct c_window *window, uint32_t width, uint32_t height, i
 
   xdg_toplevel_configure(surface->conn, surface->xdg.toplevel_id, width, height, &arr);
   
-  surface->xdg.serial = CLOCK;
+  surface->xdg.serial = c_wl_serial();
   xdg_surface_configure(surface->conn, surface->xdg.surface_id, surface->xdg.serial);
 };
 
@@ -34,7 +32,7 @@ void c_window_deactivate(struct c_window *window) {
   c_wl_array arr = {0};
   xdg_toplevel_configure(surface->conn, surface->xdg.toplevel_id, window->width, window->height, &arr);
   
-  surface->xdg.serial = CLOCK;
+  surface->xdg.serial = c_wl_serial();
   xdg_surface_configure(surface->conn, surface->xdg.surface_id, surface->xdg.serial);
 
 }
@@ -48,7 +46,7 @@ void c_window_activate(struct c_window *window) {
   };
   xdg_toplevel_configure(surface->conn, surface->xdg.toplevel_id, window->width, window->height, &arr);
   
-  surface->xdg.serial = CLOCK;
+  surface->xdg.serial = c_wl_serial();
   xdg_surface_configure(surface->conn, surface->xdg.surface_id, surface->xdg.serial);
 };
 

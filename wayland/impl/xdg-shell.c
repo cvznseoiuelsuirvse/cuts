@@ -4,7 +4,6 @@
 
 #include "wayland/types/xdg-shell.h"
 #include "wayland/display.h"
-#include "wayland/error.h"
 
 int xdg_wm_base_get_xdg_surface(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_new_id xdg_surface_id = args[1].n;
@@ -29,15 +28,15 @@ int xdg_surface_ack_configure(struct c_wl_connection *conn, union c_wl_arg *args
 
   struct c_wl_surface *wl_surface = xdg_surface_obj->data;
 
-  if (args[1].u != wl_surface->xdg.serial) {
+  if (!args[1].u) {
     c_wl_error_set(xdg_surface_id, XDG_SURFACE_ERROR_INVALID_SERIAL, "invalid serial");
     return -1;
   }
 
-  if (!wl_surface->xdg.serial) {
-    c_wl_error_set(xdg_surface_id, XDG_SURFACE_ERROR_INVALID_SERIAL, "unexpected xdg_surface.ack_configure()");
-    return -1;
-  }
+  // if (!wl_surface->xdg.serial) {
+  //   c_wl_error_set(xdg_surface_id, XDG_SURFACE_ERROR_INVALID_SERIAL, "unexpected xdg_surface.ack_configure()");
+  //   return -1;
+  // }
 
   wl_surface->xdg.serial = 0;
 

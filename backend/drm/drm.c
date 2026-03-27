@@ -4,11 +4,10 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <string.h>
-#include <gbm.h>
 
 #include "backend/drm/drm.h"
-#include "backend/drm/cursor.h"
 #include "backend/drm/util.h"
+#include "backend/drm/cursor.h"
 #include "backend/input.h"
 
 #include "util/log.h"
@@ -107,8 +106,8 @@ void c_drm_free(struct c_drm *drm) {
   if (drm->output) {
     if (drm->output->cursor) {
       memset(drm->output->cursor->image, 0, drm->output->cursor->image_size);
-      c_drm_cursor_update(drm, drm->output->cursor);
-      c_drm_cursor_free(drm->output->cursor);
+      c_cursor_update(drm, drm->output->cursor);
+      c_cursor_free(drm->output->cursor);
     }
     c_list_destroy(drm->output->modes);
     free(drm->output);
@@ -121,6 +120,8 @@ void c_drm_free(struct c_drm *drm) {
     drmModeFreeCrtc(connector.orig_crtc);
   }
   drmModeFreeConnector(connector.conn);
+
+  if (drm->gbm_device) gbm_device_destroy(drm->gbm_device);
 
   free(drm);
 }
@@ -145,7 +146,13 @@ struct c_drm *c_drm_init(int drm_fd, struct c_input *input) {
 
   if (c_drm_get_connector(drm, resource) == -1) goto error_resources;
 
-  struct c_drm_cursor *cursor = c_drm_cursor_init(drm, input);
+  drm->gbm_device = gbm_create_device(drm->fd);
+  if (!drm->gbm_device) {
+    c_log_errno(C_LOG_ERROR, "gbm_create_device failed");
+    goto error;
+  }
+
+  struct c_cursor *cursor = c_cursor_init(drm, input);
   if (!cursor) goto error_resources;
   drm->output->cursor = cursor;
 
@@ -156,7 +163,7 @@ struct c_drm *c_drm_init(int drm_fd, struct c_input *input) {
       cursor->image[y * cursor->height + x] = 0xFFFFFFFF;
     }
   }
-  c_drm_cursor_update(drm, cursor);
+  c_cursor_update(drm, cursor);
 
   drmModeFreeResources(resource);
 

@@ -10,5 +10,5 @@ util_sources = files(
 util_include = include_directories('..')
 util_dep = declare_dependency(
   include_directories: util_include,
-  sources: util_sources
+  sources: util_sources,
 )

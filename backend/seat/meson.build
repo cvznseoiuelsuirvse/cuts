@@ -1,4 +1,5 @@
 cutseatd_sources = files(
+ '../../wayland/types.c',
  'cutseat/daemon.c',
  'cutseat/vt.c',
  'cutseat/sock.c',
@@ -13,7 +14,7 @@ seat_sources = files(
 
 executable('cutseat', cutseatd_sources,
   dependencies: [
-    util_dep
+    util_dep,
   ],
   c_args: c_args,
   install: true,

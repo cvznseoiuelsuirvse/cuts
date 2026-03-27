@@ -56,6 +56,8 @@ void *c_map_set(c_map *m, uint64_t key, void *value, size_t value_size) {
       return NULL;
     }
     memcpy(new_pair->value, value, value_size);
+    new_pair->copied = 1;
+
   } else 
     new_pair->value = value;
   

@@ -7,14 +7,11 @@
 #include <GL/gl.h>
 
 struct c_render_buffer {
-  struct gbm_bo *gbm_bo;
-  uint32_t drm_fb_id;
+  uint32_t    drm_fb_id;
   EGLImageKHR egl_image;
-  GLuint texture;
-  GLuint fbo;
-  int busy;
+  GLuint      texture;
+  GLuint      fbo;
 };
-
 
 struct c_render;
 struct c_render_buffer *c_render_buffer_create(struct c_render *render, 

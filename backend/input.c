@@ -11,7 +11,7 @@
 
 enum __input_event_listener_type {
   INPUT_EVENT_LISTENER_MOUSE = 1 << 5,
-  INPUT_EVENT_LISTENER_KBD,
+  INPUT_EVENT_LISTENER_keyboard,
 };
 
 struct __input_event_listener {
@@ -33,7 +33,7 @@ enum c_input_notifier {
 	C_INPUT_NOTIFY_ON_MOUSE_SCROLL, 
 	C_INPUT_NOTIFY_ON_MOUSE_BUTTON, 
 
-	C_INPUT_NOTIFY_ON_KBD_KEY,
+	C_INPUT_NOTIFY_ON_keyboard_KEY,
 };
 
 static struct xkb_state *get_xkb_state(struct c_input *input) {
@@ -52,18 +52,18 @@ static struct xkb_keymap *get_xkb_keymap(struct c_input *input) {
   return input->xkb.keymap;
 }
 
-static void c_input_notify_kbd(struct c_input *input, 
+static void c_input_notify_keyboard(struct c_input *input, 
                                  struct c_input_keyboard_event *event, enum c_input_notifier notifier) {
   struct __input_event_listener *l;
 
-  #define notify_kbd(callback) \
+  #define notify_keyboard(callback) \
     c_list_for_each(input->event_listeners, l) { \
-      if (l->type == INPUT_EVENT_LISTENER_KBD && ((struct c_input_event_listener_kbd *)l->listener)->callback) \
-        ((struct c_input_event_listener_kbd *)l->listener)->callback(event, l->userdata); \
+      if (l->type == INPUT_EVENT_LISTENER_keyboard && ((struct c_input_event_listener_keyboard *)l->listener)->callback) \
+        ((struct c_input_event_listener_keyboard *)l->listener)->callback(event, l->userdata); \
     }
 
   switch (notifier) {
-    case C_INPUT_NOTIFY_ON_KBD_KEY: notify_kbd(on_kbd_key); break;
+    case C_INPUT_NOTIFY_ON_keyboard_KEY: notify_keyboard(on_keyboard_key); break;
     default: break;
   }
 }
@@ -110,8 +110,24 @@ static void handle_event_mouse(struct c_input *input, struct libinput_event_poin
       break;
 
     case LIBINPUT_EVENT_POINTER_BUTTON:
-    case LIBINPUT_EVENT_POINTER_AXIS:
+      mouse_event.button = libinput_event_pointer_get_button(event);
+      mouse_event.button_pressed = libinput_event_pointer_get_button_state(event);
+
+      c_input_notify_mouse(input, &mouse_event, C_INPUT_NOTIFY_ON_MOUSE_BUTTON);
+      break;
+
+    // case LIBINPUT_EVENT_POINTER_AXIS:
+    //   c_log(C_LOG_DEBUG, "%f", libinput_event_pointer_get_axis_value_discrete(event, LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL));
+    //   break;
+
     case LIBINPUT_EVENT_POINTER_SCROLL_WHEEL:
+      mouse_event.axis = libinput_event_pointer_get_scroll_value(event, LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL);
+      mouse_event.axis_discrete = mouse_event.axis < 0 ? -1 : 1;
+      mouse_event.axis_source = C_MOUSE_AXIS_SOURCE_WHEEL;
+
+      c_input_notify_mouse(input, &mouse_event, C_INPUT_NOTIFY_ON_MOUSE_SCROLL);
+      break;
+
     case LIBINPUT_EVENT_POINTER_SCROLL_FINGER:
     default:
       return;
@@ -162,7 +178,7 @@ static void handle_event_keyboard(struct c_input *input, struct libinput_event_k
     }
   }
 
-  c_input_notify_kbd(input, &keyboard_event, C_INPUT_NOTIFY_ON_KBD_KEY);
+  c_input_notify_keyboard(input, &keyboard_event, C_INPUT_NOTIFY_ON_keyboard_KEY);
 }
 
 static void handle_event_dev_added(struct c_input *input, struct libinput_device *li_dev) {
@@ -265,8 +281,8 @@ static void add_listener(c_list *listeners, enum __input_event_listener_type typ
   c_list_push(listeners, &l, sizeof(l));
 }
 
-void c_input_add_event_listener_kbd(struct c_input *input, struct c_input_event_listener_kbd *listener, void *userdata) {
-  add_listener(input->event_listeners, INPUT_EVENT_LISTENER_KBD, listener, sizeof(*listener), userdata);
+void c_input_add_event_listener_keyboard(struct c_input *input, struct c_input_event_listener_keyboard *listener, void *userdata) {
+  add_listener(input->event_listeners, INPUT_EVENT_LISTENER_keyboard, listener, sizeof(*listener), userdata);
 }
 
 void c_input_add_event_listener_mouse(struct c_input *input, struct c_input_event_listener_mouse *listener, void *userdata) {

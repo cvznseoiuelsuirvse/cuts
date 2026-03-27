@@ -5,15 +5,16 @@
 #include <stdint.h>
 
 struct c_map_pair {
-  uint64_t key;
-  void *value;
-  struct c_map_pair *next;
-  struct c_map_pair *prev;
+	int copied;
+	uint64_t key;
+	void *value;
+	struct c_map_pair *next;
+	struct c_map_pair *prev;
 };
 
 typedef struct c_map {
-  struct c_map_pair **pairs;
-  size_t size;
+	struct c_map_pair **pairs;
+	size_t size;
 } c_map;
 
 

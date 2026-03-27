@@ -7,7 +7,6 @@
 
 #include "wayland/display.h"
 #include "wayland/server.h"
-#include "wayland/error.h"
 #include "wayland/types.h"
 
 #include "wayland/types/wayland.h"
@@ -51,12 +50,6 @@ struct cuts *comp;
 
 #define LAYOUT(comp) (comp)->layouts[(comp)->curr_layout].func()
 
-uint32_t epoch_millis() {
-    struct timeval tv;
-    gettimeofday(&tv,NULL);
-    return (((uint32_t)tv.tv_sec)*1000)+(tv.tv_usec/1000);
-}
-
 struct client *get_client_from_connection(struct c_wl_connection *conn) {
   struct client *c;
   c_list_for_each(comp->clients, c) {
@@ -78,9 +71,11 @@ void client_focus(struct client *client, double mx, double my) {
 
   c_wl_array arr = {0};
   if (client->wl_keyboard_id)
-    wl_keyboard_enter(window->wl_surface->conn, client->wl_keyboard_id, CLOCK, window->wl_surface->id, &arr);
-  if (client->wl_pointer_id)
-    wl_pointer_enter(window->wl_surface->conn, client->wl_pointer_id, CLOCK, window->wl_surface->id, mx, my);
+    wl_keyboard_enter(window->wl_surface->conn, client->wl_keyboard_id, c_wl_serial(), window->wl_surface->id, &arr);
+  if (client->wl_pointer_id) {
+    wl_pointer_enter(window->wl_surface->conn, client->wl_pointer_id, c_wl_serial(), window->wl_surface->id, mx, my);
+    wl_pointer_frame(client->conn, client->wl_pointer_id);
+  }
   c_window_activate(window);
   comp->focused_client = client;
 };
@@ -89,30 +84,33 @@ void client_unfocus(struct client *client) {
   struct c_window *window = client->window;
 
   if (client->wl_keyboard_id)
-    wl_keyboard_leave(window->wl_surface->conn, client->wl_keyboard_id, CLOCK, window->wl_surface->id);
-  if (client->wl_pointer_id)
-    wl_pointer_leave(window->wl_surface->conn, client->wl_pointer_id, CLOCK, window->wl_surface->id);
+    wl_keyboard_leave(window->wl_surface->conn, client->wl_keyboard_id, c_wl_serial(), window->wl_surface->id);
+  if (client->wl_pointer_id) {
+    wl_pointer_leave(window->wl_surface->conn, client->wl_pointer_id, c_wl_serial(), window->wl_surface->id);
+    wl_pointer_frame(client->conn, client->wl_pointer_id);
+  }
+
   c_window_deactivate(window);
   comp->focused_client = NULL;
 };
 
 void client_close(struct cuts *comp, struct client *client) {
-  if (!(client->window->state & C_WINDOW_FLOAT))
+  if (client->window && !(client->window->state & C_WINDOW_FLOAT))
     comp->n_stacked_windows--;
 
-  c_window_close(client->window);
+  if (comp->focused_client == client) {
+    client_unfocus(client);
+    comp->focused_client = NULL;
+  }
+
+  if (client->window)
+    c_window_close(client->window);
+
   c_list_remove_ptr(&comp->clients, client);
 
   LAYOUT(comp);
 }
 
-
-// void client_switch_focus(struct cuts *comp, struct c_window *window) {
-//   if (comp->focused_window)
-//     window_unfocus(comp);
-//   window_focus(comp, window, 0, 0);
-// }
-//
 int on_client_new(struct c_wl_connection *conn, void *userdata) {
   struct client client = {0};
   client.conn = conn;
@@ -120,10 +118,11 @@ int on_client_new(struct c_wl_connection *conn, void *userdata) {
   c_list_push(comp->clients, &client, sizeof(client));
   return 0;
 };
+
 int on_client_gone(struct c_wl_connection *conn, void *userdata) {
   struct client *client = get_client_from_connection(conn);
   if (!client) return 0;
-  c_list_remove_ptr(&comp->clients, client);
+  client_close(comp, client);
   return 0;
 }
 
@@ -154,13 +153,41 @@ int on_keyboard_key(struct c_input_keyboard_event *event, void *userdata) {
   struct c_window *window = client->window;
   struct c_wl_surface *surface = window->wl_surface;
 
-  wl_keyboard_key(surface->conn, client->wl_keyboard_id, CLOCK, epoch_millis(), 
+  wl_keyboard_key(surface->conn, client->wl_keyboard_id, c_wl_serial(), c_since_start_ms(), 
                   event->key, event->pressed ? WL_KEYBOARD_KEY_STATE_PRESSED : WL_KEYBOARD_KEY_STATE_RELEASED);
 
   if (event->changed)
-    wl_keyboard_modifiers(surface->conn, client->wl_keyboard_id, CLOCK, 
+    wl_keyboard_modifiers(surface->conn, client->wl_keyboard_id, c_wl_serial(), 
                           event->mods_depressed, event->mods_latched, event->mods_locked, event->group);
 
+  return 0;
+}
+
+int on_mouse_scroll(struct c_input_mouse_event *event, void *userdata) {
+  if (!comp->focused_client) return 0;
+  struct client *client = comp->focused_client;
+  if (!client->wl_pointer_id) return 0;
+  
+  if (!event->axis) {
+    c_log(C_LOG_WARNING, "axis value is 0");
+    return 0;
+  }
+
+  wl_pointer_axis_source(client->conn, client->wl_pointer_id, event->axis_source - 1);
+  wl_pointer_axis_discrete(client->conn, client->wl_pointer_id, WL_POINTER_AXIS_VERTICAL_SCROLL, event->axis_discrete);
+  // wl_pointer_axis_relative_direction(client->conn, client->wl_pointer_id, WL_POINTER_AXIS_VERTICAL_SCROLL, WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);
+  wl_pointer_axis(client->conn, client->wl_pointer_id, c_since_start_ms(), WL_POINTER_AXIS_VERTICAL_SCROLL, (float)event->axis);
+  wl_pointer_frame(client->conn, client->wl_pointer_id);
+  return 0;
+}
+
+int on_mouse_button(struct c_input_mouse_event *event, void *userdata) {
+  if (!comp->focused_client) return 0;
+  struct client *client = comp->focused_client;
+  if (!client->wl_pointer_id) return 0;
+
+  wl_pointer_button(client->conn, client->wl_pointer_id, c_wl_serial(), c_since_start_ms(), event->button, event->button_pressed);
+  wl_pointer_frame(client->conn, client->wl_pointer_id);
   return 0;
 }
 
@@ -169,12 +196,12 @@ int on_mouse_movement(struct c_input_mouse_event *event, void *userdata) {
   double my = event->y;
   uint32_t wx, wy, ww, wh;
 
-  struct cuts *comp = userdata;
-
+  struct client *focused_client = comp->focused_client;
   struct client *client;
   int i = 0;
   c_list_for_each(comp->clients, client) {
     struct c_window *w = client->window;
+    if (!w) continue;
     wx = w->x;
     wy = w->y;
     ww = w->width;
@@ -182,20 +209,20 @@ int on_mouse_movement(struct c_input_mouse_event *event, void *userdata) {
 
     if (wx <= mx && mx <= wx + ww &&
         wy <= my && my <= wy + wh) {
-      float hotspot_x = (float)(mx - wx);
-      float hotspot_y = (float)(my - wy);
+      c_wl_fixed hotspot_x = c_wl_fixed_from_double(mx - wx);
+      c_wl_fixed hotspot_y = c_wl_fixed_from_double(my - wy);
 
-      if (client != comp->focused_client) {
-        if (comp->focused_client)
-          client_unfocus(comp->focused_client);
-        client_focus(client, hotspot_x, hotspot_y);
-        comp->focused_client_n = i;
-
-      } else if (client->wl_pointer_id) {
-        wl_pointer_motion(comp->focused_client->conn, client->wl_pointer_id, epoch_millis(), hotspot_x, hotspot_y);
+      if (focused_client == client) {
+        wl_pointer_motion(focused_client->conn, focused_client->wl_pointer_id, c_since_start_ms(), hotspot_x, hotspot_y);
+        wl_pointer_frame(focused_client->conn, focused_client->wl_pointer_id);
+        return 0;
       }
 
-      break;
+      if (focused_client)
+        client_unfocus(focused_client);
+      client_focus(client, hotspot_x, hotspot_y);
+      comp->focused_client_n = i;
+      return 0;
     }
     i++;
   }
@@ -267,12 +294,8 @@ void spawn_client(bind_args *args) {
 }
 
 void kill_client(bind_args *args) {
-  if (!comp->focused_client) {
-    c_log(C_LOG_WARNING, "no focused client"); 
-    return;
-  }
-  client_close(comp, comp->focused_client);
-  comp->focused_client = NULL;
+  if (comp->focused_client)
+    client_close(comp, comp->focused_client);
 }
 
 void focus(bind_args *args) {
@@ -331,7 +354,7 @@ int main() {
   c_signal_handler_add(SIGTERM, cleanup, &comp);
   c_signal_handler_add(SIGINT, cleanup, &comp);
 
-  c_log_set_level(C_LOG_INFO | C_LOG_ERROR | C_LOG_DEBUG | C_LOG_WARNING);
+  c_log_set_level(C_LOG_INFO | C_LOG_ERROR | C_LOG_DEBUG | C_LOG_WARNING | C_LOG_WAYLAND);
 
   struct c_wl_display *display = c_wl_display_init();
   if (!display) 
@@ -355,13 +378,15 @@ int main() {
 
   struct c_input_event_listener_mouse mouse_listener = {
     .on_mouse_movement = on_mouse_movement,
+    .on_mouse_button = on_mouse_button,
+    .on_mouse_scroll = on_mouse_scroll,
   };
   c_input_add_event_listener_mouse(backend->input, &mouse_listener, comp);
 
-  struct c_input_event_listener_kbd listener_kbd = {
-    .on_kbd_key = on_keyboard_key,
+  struct c_input_event_listener_keyboard listener_keyboard = {
+    .on_keyboard_key = on_keyboard_key,
   };
-  c_input_add_event_listener_kbd(backend->input, &listener_kbd, comp);
+  c_input_add_event_listener_keyboard(backend->input, &listener_keyboard, comp);
 
   for(size_t i = 0; i < LENGTH(binds); i++) {
     struct bind *b = &binds[i];

@@ -93,4 +93,9 @@ int  c_wl_connection_dispatch(struct c_wl_connection *conn);
 int  c_wl_connection_callback_add(struct c_wl_connection *conn, c_wl_object_id callback_id, c_wl_object_id target_id);
 void c_wl_connection_callback_done(struct c_wl_connection *conn, c_wl_object_id target_id);
 
+int c_wl_error_set(c_wl_object_id object_id, c_wl_int code, c_wl_string msg, ...);
+void c_wl_error_send(struct c_wl_connection *conn);
+
+int c_wl_serial();
+
 #endif

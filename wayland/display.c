@@ -4,7 +4,6 @@
 #include <unistd.h>
 #include <assert.h>
 
-#include "wayland/error.h"
 #include "wayland/display.h"
 
 #include "util/event_loop.h"
@@ -177,6 +176,7 @@ struct c_wl_display *c_wl_display_init() {
   c_wl_display_add_supported_interface(display, "wl_compositor", NULL, NULL);
   c_wl_display_add_supported_interface(display, "wl_subcompositor", NULL, NULL);
   c_wl_display_add_supported_interface(display, "xdg_wm_base", NULL, NULL);
+  c_wl_display_add_supported_interface(display, "zxdg_decoration_manager_v1", NULL, NULL);
 
   return display;
 

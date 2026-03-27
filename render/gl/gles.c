@@ -47,6 +47,7 @@ static GLuint compile_shader(GLenum type) {
 
   GLint success = 0;
   glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+
   if (success == GL_FALSE) {
     GLint err_size = 0;
     glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &err_size);
@@ -227,6 +228,7 @@ struct c_gles *c_gles_init() {
   glEnableVertexAttribArray(1);
 
   glEnable(GL_BLEND);
+	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
   return gl;
 

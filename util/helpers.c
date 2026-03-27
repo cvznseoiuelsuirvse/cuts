@@ -21,12 +21,6 @@ void print_buffer(char *buffer, size_t buffer_len) {
   }
 }
 
-float read_f32(char *buffer, uint32_t *offset) {
-  float val = *(float *)(buffer + *offset);
-  *offset += sizeof(float);
-  return val;
-}
-
 int32_t read_i32(char *buffer, uint32_t *offset) {
   int32_t val = *(int32_t *)(buffer + *offset);
   *offset += sizeof(int32_t);
@@ -60,12 +54,6 @@ void *read_array(char *buffer, uint32_t *offset, size_t size) {
   memcpy(out, buffer + *offset, array_size);
   *offset += PADDED4(array_size);
   return out;
-}
-
-
-void write_f32(char *buffer, uint32_t *offset, float val) {
-  *(float *)(buffer + *offset) = val;
-  *offset += sizeof(float);
 }
 
 void write_i32(char *buffer, uint32_t *offset, int32_t val) {

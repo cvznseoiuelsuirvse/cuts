@@ -6,9 +6,7 @@
 
 #include "wayland/types/wayland.h"
 #include "wayland/types/linux-dmabuf-v1.h"
-
 #include "wayland/server.h"
-#include "wayland/error.h"
 
 #include "render/render.h"
 
@@ -155,7 +153,7 @@ int zwp_linux_buffer_params_v1_create_immed(struct c_wl_connection *conn, union 
         return c_wl_error_set(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed");
 
   dma->drm_format = format;
-  dma->flags = flags;
+  // dma->flags = flags;
 
   c_wl_buffer->id = wl_buffer_id;
   c_wl_buffer->width = width;

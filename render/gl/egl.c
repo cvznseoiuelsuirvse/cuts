@@ -17,6 +17,28 @@
 #define EGL_DMA_BUF_PLANEX_PITCH_EXT(n)       EGL_DMA_BUF_PLANE0_FD_EXT + (n) * 3 + 2
 #define EGL_DMA_BUF_PLANEX_MODIFIER_LO_EXT(n) EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT + (n) * 2
 #define EGL_DMA_BUF_PLANEX_MODIFIER_HI_EXT(n) EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT + (n) * 2 + 1
+#define CASE_STR( value ) case value: return #value
+
+const char* egl_error_string(EGLint error) {
+    switch( error )
+    {
+    CASE_STR( EGL_NOT_INITIALIZED     );
+    CASE_STR( EGL_BAD_ACCESS          );
+    CASE_STR( EGL_BAD_ALLOC           );
+    CASE_STR( EGL_BAD_ATTRIBUTE       );
+    CASE_STR( EGL_BAD_CONTEXT         );
+    CASE_STR( EGL_BAD_CONFIG          );
+    CASE_STR( EGL_BAD_CURRENT_SURFACE );
+    CASE_STR( EGL_BAD_DISPLAY         );
+    CASE_STR( EGL_BAD_SURFACE         );
+    CASE_STR( EGL_BAD_MATCH           );
+    CASE_STR( EGL_BAD_PARAMETER       );
+    CASE_STR( EGL_BAD_NATIVE_PIXMAP   );
+    CASE_STR( EGL_BAD_NATIVE_WINDOW   );
+    CASE_STR( EGL_CONTEXT_LOST        );
+    default: return "Unknown";
+    }
+}
 
 
 static int has_ext_egl(const char *ext, const char *exts) {
@@ -181,7 +203,7 @@ struct c_format *c_egl_query_formats(struct c_egl *egl, size_t *n_entries) {
       struct c_format *entry = &table[i++];
       EGLuint64KHR modifier;
       if (no_modifiers_found)
-        modifier = DRM_FORMAT_MOD_INVALID;
+        modifier = DRM_FORMAT_MOD_LINEAR;
       else
         modifier = modifiers[m];
 
@@ -240,10 +262,11 @@ EGLImageKHR c_egl_create_image_from_dmabuf(struct c_egl *egl, struct c_dmabuf_pa
 
   EGLImageKHR image = egl->proc.eglCreateImageKHR(egl->display, EGL_NO_CONTEXT, 
                                                   EGL_LINUX_DMA_BUF_EXT, NULL, image_attribs);
+  if (!image)
+    c_log(C_LOG_ERROR, "eglCreateImageKHR failed: %s", egl_error_string(eglGetError()));
+
   return image;
 }
-
-EGLImageKHR c_egl_create_image_from_bo(struct c_egl *egl, struct gbm_bo *bo) { }
 
 void c_egl_free(struct c_egl *egl) {
   if (egl->display) {

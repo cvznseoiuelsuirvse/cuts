@@ -41,7 +41,7 @@ static int on_mouse_movement_cb(struct c_input_mouse_event *event, void *userdat
   return 0;
 }
 
-int c_drm_cursor_update(struct c_drm *drm, struct c_drm_cursor *cursor) {
+int c_cursor_update(struct c_drm *drm, struct c_cursor *cursor) {
   if (gbm_bo_write(cursor->gbm_bo, cursor->image, cursor->image_size) != 0) {
     c_log_errno(C_LOG_ERROR, "gbm_bo_write failed");
     return -1;
@@ -56,13 +56,14 @@ int c_drm_cursor_update(struct c_drm *drm, struct c_drm_cursor *cursor) {
   return 0;
 }
 
-void c_drm_cursor_free(struct c_drm_cursor *cursor) {
+void c_cursor_free(struct c_cursor *cursor) {
   if (cursor->gbm_bo) gbm_bo_destroy(cursor->gbm_bo);
+  if (cursor->image) free(cursor->image);
   free(cursor);
 }
 
-struct c_drm_cursor *c_drm_cursor_init(struct c_drm *drm, struct c_input *input) {
-  struct c_drm_cursor *cursor = calloc(1, sizeof(*cursor));
+struct c_cursor *c_cursor_init(struct c_drm *drm, struct c_input *input) {
+  struct c_cursor *cursor = calloc(1, sizeof(*cursor));
   if (!cursor) {
     c_log(C_LOG_ERROR, "calloc failed");
     return NULL;
@@ -96,6 +97,6 @@ struct c_drm_cursor *c_drm_cursor_init(struct c_drm *drm, struct c_input *input)
   return cursor;
 
 error:
-  c_drm_cursor_free(cursor);
+  c_cursor_free(cursor);
   return NULL;
 }

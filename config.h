@@ -7,7 +7,7 @@ static struct xkb_rule_names xkb_rules = {
     .options = "grp:toggle,caps:escape",
 };
 
-#define MOD_KEY C_MOD_ALT
+#define MOD_KEY C_KEYBOARD_MOD_ALT
 
 static struct bind binds[] = {
 	{MOD_KEY, XKB_KEY_q,		quit, 			{}},

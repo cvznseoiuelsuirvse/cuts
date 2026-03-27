@@ -4,7 +4,6 @@
 #include <sys/un.h>
 #include <stdarg.h>
 
-#include "wayland/error.h"
 #include "wayland/server.h"
 #include "wayland/types/wayland.h"
 
@@ -12,7 +11,12 @@
 #include "util/log.h"
 
 static struct c_wl_interface *__interface[C_WL_MAX_INTERFACES];
-static size_t __ninterfaces = 0;
+static size_t                 __ninterfaces = 0;
+
+static char            __error_msg[C_WL_STRING_SIZE] = {0};
+static c_wl_int        __error_code = 0;
+static c_wl_object_id  __error_object_id = 0;
+static uint32_t        __serial = 1;
 
 struct c_wl_recv_message {
   uint32_t object_id;
@@ -86,7 +90,7 @@ void c_wl_connection_callback_done(struct c_wl_connection *conn, c_wl_object_id 
   }
 
   if (callback) {
-    wl_callback_done(conn, callback->callback_id, CLOCK);
+    wl_callback_done(conn, callback->callback_id, c_wl_serial());
     c_wl_object_del(conn, callback->callback_id);
     wl_display_delete_id(conn, 1, callback->callback_id);
     c_list_remove_ptr(&conn->callback_queue, callback);
@@ -152,7 +156,7 @@ int c_wl_connection_send(struct c_wl_connection *conn, struct c_wl_message *msg,
       break;
 
     case 'f':
-      wl_args[i].f = (float)va_arg(args, double);
+      wl_args[i].f = va_arg(args, c_wl_fixed);
       write_i32(buffer, &offset, wl_args[i].f);
       break;
 
@@ -231,7 +235,7 @@ static int dispatch(struct c_wl_connection *conn,
         break;
 
       case 'f': 
-        args[i].f = read_f32(buffer, &offset);
+        args[i].f = read_u32(buffer, &offset);
         break;
 
       case 'o': 
@@ -403,14 +407,33 @@ struct c_wl_connection *c_wl_connection_init(int client_fd, struct c_wl_display 
 }
 
 int c_wl_connection_free(struct c_wl_connection *conn) {
-  // int key;
-  // struct c_wl_object *o;
-  // c_map_for_each(conn->objects, key, o)
-  //   if (o->data) free(o->data);
-  
   c_map_destroy(conn->objects);
   c_list_destroy(conn->callback_queue);
   c_bitmap_destroy(conn->client_id_pool);
   c_bitmap_destroy(conn->server_id_pool);
   return 0;
+}
+
+
+int c_wl_error_set(c_wl_object_id object_id, c_wl_int code, c_wl_string msg, ...) {
+  __error_code = code;
+  __error_object_id = object_id;
+  
+  va_list args;
+  va_start(args, msg);
+  vsnprintf(__error_msg, C_WL_STRING_SIZE, msg, args);
+  va_end(args);
+  return -1;
+}
+
+void c_wl_error_send(struct c_wl_connection *conn) {
+  wl_display_error(conn, 1, __error_object_id, __error_code, __error_msg);
+  *__error_msg = 0;
+  __error_code = 0;
+  __error_object_id = 0;
+}
+
+
+inline int c_wl_serial() {
+  return __serial++;
 }

@@ -5,7 +5,8 @@
 #include "wayland/server.h"
 #include "util/helpers.h"
 
-static int __log_mask = 0;
+static int     __log_mask = 0;
+static int64_t __start = 0;
 
 static const char *log_level_string(enum c_log_level level) {
 	switch (level) {
@@ -13,25 +14,41 @@ static const char *log_level_string(enum c_log_level level) {
 		case C_LOG_INFO: 	  return "INFO";
 		case C_LOG_DEBUG: 	return "DEBUG";
 		case C_LOG_WARNING: return "WARNING";
+		case C_LOG_WAYLAND: return "WAYLAND";
     default:            return "LOG";
 	}
 }
 
+void format_ms(int ms, char *buffer, size_t buffer_size) {
+  long long total_seconds = ms / 1000;
+  int msec = ms % 1000;
+  int sec = total_seconds % 60;
+  long long total_minutes = total_seconds / 60;
+  int min = total_minutes % 60;
+  long long hours = total_minutes / 60;
+  long long days = hours / 24;
+  snprintf(buffer, buffer_size, "%02lld:%02lld:%02d:%02d.%03d", days, hours, min, sec, msec);
+}
+
 void _c_log(enum c_log_level level, const char *file, int line, int insert_nl, const char *format, ...) {
   if (!(level & __log_mask)) return;
+
+
+  char time_format[64];
+  format_ms(c_since_start_ms(), time_format, sizeof(time_format));
 
   va_list args;
   va_start(args, format);
 
   switch (level) {
     case C_LOG_ERROR:
-      printf("\033[31m[%s %s:%d] ", log_level_string(level), file, line);
+      printf("\033[31m[%s] [%s %s:%d] ", time_format, log_level_string(level), file, line);
       break;
     case C_LOG_WARNING:
-      printf("\033[33m[%s %s:%d] ", log_level_string(level), file, line);
+      printf("\033[33m[%s] [%s %s:%d] ", time_format, log_level_string(level), file, line);
       break;
     default:
-      printf("[%s %s:%d] ", log_level_string(level), file, line);
+      printf("[%s] [%s %s:%d] ", time_format, log_level_string(level), file, line);
       break;
   }
 
@@ -45,10 +62,10 @@ void _c_log(enum c_log_level level, const char *file, int line, int insert_nl, c
 }
 
 void c_log_wl_request(struct c_wl_connection *conn, struct c_wl_object *object, struct c_wl_request *request, union c_wl_arg *args) {
-  if (!(C_LOG_DEBUG & __log_mask)) return;
+  if (!(C_LOG_WAYLAND & __log_mask)) return;
 
   const struct c_wl_interface *iface = object->iface;
-  c_log2(C_LOG_DEBUG, "[wayland] client (%p) %s#%lu.%s(", conn, iface->name, object->id, request->name);
+  c_log2(C_LOG_WAYLAND, "[wayland] client (%p) %s#%lu.%s(", conn, iface->name, object->id, request->name);
 
   c_wl_array *arr;
   for (size_t i = 1; i <= request->nargs; i++) {
@@ -64,7 +81,7 @@ void c_log_wl_request(struct c_wl_connection *conn, struct c_wl_object *object, 
         break;
 
       case 'f': 
-        printf("%f", args[i].f);
+        printf("%f", c_wl_fixed_to_double(args[i].f));
         break;
 
       case 'o': 
@@ -105,9 +122,9 @@ void c_log_wl_request(struct c_wl_connection *conn, struct c_wl_object *object, 
 
 void c_log_wl_event(struct c_wl_connection *conn, struct c_wl_object *object, const char *event_name, 
 					   union c_wl_arg *args, size_t nargs, const char *signature) {
-  if (!(C_LOG_DEBUG & __log_mask)) return;
+  if (!(C_LOG_WAYLAND & __log_mask)) return;
   const struct c_wl_interface *iface = object->iface;
-  c_log2(C_LOG_DEBUG, "[wayland] server (%p) %s#%lu.%s(", conn, iface->name, object->id, event_name);
+  c_log2(C_LOG_WAYLAND, "[wayland] server (%p) %s#%lu.%s(", conn, iface->name, object->id, event_name);
 
   c_wl_array *arr;
   for (size_t i = 0; i < nargs; i++) {
@@ -123,7 +140,7 @@ void c_log_wl_event(struct c_wl_connection *conn, struct c_wl_object *object, co
         break;
 
       case 'f': 
-        printf("%f", args[i].f);
+        printf("%f", c_wl_fixed_to_double(args[i].f));
         break;
 
       case 'o': 
@@ -164,3 +181,16 @@ inline void c_log_set_level(enum c_log_level n) {
   __log_mask |= n;
 }
 
+static int64_t now_ms() {
+  struct timespec ts;
+  clock_gettime(CLOCK_REALTIME, &ts);
+  return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+int c_since_start_ms() {
+  if (__start == 0)
+    __start = now_ms();
+
+  int64_t diff = now_ms() - __start;
+  return diff;
+}

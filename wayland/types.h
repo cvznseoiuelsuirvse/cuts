@@ -11,7 +11,7 @@
 
 typedef int32_t 	  		c_wl_int;
 typedef uint32_t	 		c_wl_uint;
-typedef float 				c_wl_fixed;
+typedef uint32_t			c_wl_fixed;
 typedef uint32_t			c_wl_object_id;
 typedef uint32_t			c_wl_new_id;
 typedef const char	   	   *c_wl_string;
@@ -41,6 +41,8 @@ struct c_wl_buffer {
 
 	c_wl_uint width;
 	c_wl_uint height;
+
+	struct c_wl_surface *surface;
 
 	enum c_wl_buffer_type type;	
 	union {
@@ -105,5 +107,8 @@ struct c_wl_linux_dmabuf_ctx {
 	int    ft_fd;
 	size_t n_ft_entries;
 };
+
+double c_wl_fixed_to_double(c_wl_fixed f);
+c_wl_fixed c_wl_fixed_from_double(double d);
 
 #endif
