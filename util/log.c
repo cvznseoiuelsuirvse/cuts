@@ -25,7 +25,7 @@ void format_ms(int ms, char *buffer, size_t buffer_size) {
   int sec = total_seconds % 60;
   long long total_minutes = total_seconds / 60;
   int min = total_minutes % 60;
-  long long hours = total_minutes / 60;
+  long long hours = total_minutes % 60;
   long long days = hours / 24;
   snprintf(buffer, buffer_size, "%02lld:%02lld:%02d:%02d.%03d", days, hours, min, sec, msec);
 }
@@ -55,9 +55,11 @@ void _c_log(enum c_log_level level, const char *file, int line, int insert_nl, c
   vprintf(format, args);
   if (level & (C_LOG_ERROR | C_LOG_WARNING))
     printf("\033[0m");
+
   if (insert_nl)
     printf("\n");
 
+  fflush(stdout);
   va_end(args);
 }
 

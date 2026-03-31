@@ -1,18 +1,18 @@
-cutseatd_sources = files(
+daemon_sources = files(
  '../../wayland/types.c',
- 'cutseat/daemon.c',
- 'cutseat/vt.c',
- 'cutseat/sock.c',
+ 'diazepam/daemon.c',
+ 'diazepam/vt.c',
+ 'diazepam/sock.c',
 )
 
 seat_sources = files(
   'seat.c', 
   'libseat.c', 
-  'cutseat/cutseat.c',
-  'cutseat/sock.c',
+  'diazepam/seat.c',
+  'diazepam/sock.c',
 )
 
-executable('cutseat', cutseatd_sources,
+executable('diazepam', daemon_sources,
   dependencies: [
     util_dep,
   ],

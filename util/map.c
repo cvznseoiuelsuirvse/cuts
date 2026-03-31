@@ -39,28 +39,39 @@ void c_map_destroy(c_map *m) {
   free(m);
 }
 
+int set_value(struct c_map_pair *pair, void *value, size_t value_size) {
+  if (value_size > 0) {
+    pair->value = malloc(value_size);
+    if (!pair) {
+      perror("malloc");
+      return -1;
+    }
+    memcpy(pair->value, value, value_size);
+    pair->copied = 1;
+
+  } else 
+    pair->value = value;
+
+  return 0;
+}
+
 void *c_map_set(c_map *m, uint64_t key, void *value, size_t value_size) {
   size_t n = key % m->size;
 
-  struct c_map_pair *new_pair = calloc(1, sizeof(struct c_map_pair));
   struct c_map_pair *current_pair = m->pairs[n];
 
+  if (current_pair && current_pair->key == key) {
+    current_pair->key = key;
+    set_value(current_pair, value, value_size);
+    return current_pair->value;
+  }
+
+  struct c_map_pair *new_pair = calloc(1, sizeof(struct c_map_pair));
   new_pair->prev = NULL;
   new_pair->next = current_pair;
   new_pair->key = key;
 
-  if (value_size > 0) {
-    new_pair->value = malloc(value_size);
-    if (!new_pair) {
-      perror("malloc");
-      return NULL;
-    }
-    memcpy(new_pair->value, value, value_size);
-    new_pair->copied = 1;
-
-  } else 
-    new_pair->value = value;
-  
+  set_value(new_pair, value, value_size);
   
   if (current_pair) {
     current_pair->prev = new_pair;

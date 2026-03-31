@@ -18,26 +18,26 @@
 #define EGL_DMA_BUF_PLANEX_MODIFIER_LO_EXT(n) EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT + (n) * 2
 #define EGL_DMA_BUF_PLANEX_MODIFIER_HI_EXT(n) EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT + (n) * 2 + 1
 #define CASE_STR( value ) case value: return #value
+#define egl_error(func) c_log(C_LOG_ERROR, func " failed: %s", egl_error_string(eglGetError()))
 
 const char* egl_error_string(EGLint error) {
-    switch( error )
-    {
-    CASE_STR( EGL_NOT_INITIALIZED     );
-    CASE_STR( EGL_BAD_ACCESS          );
-    CASE_STR( EGL_BAD_ALLOC           );
-    CASE_STR( EGL_BAD_ATTRIBUTE       );
-    CASE_STR( EGL_BAD_CONTEXT         );
-    CASE_STR( EGL_BAD_CONFIG          );
-    CASE_STR( EGL_BAD_CURRENT_SURFACE );
-    CASE_STR( EGL_BAD_DISPLAY         );
-    CASE_STR( EGL_BAD_SURFACE         );
-    CASE_STR( EGL_BAD_MATCH           );
-    CASE_STR( EGL_BAD_PARAMETER       );
-    CASE_STR( EGL_BAD_NATIVE_PIXMAP   );
-    CASE_STR( EGL_BAD_NATIVE_WINDOW   );
-    CASE_STR( EGL_CONTEXT_LOST        );
-    default: return "Unknown";
-    }
+  switch(error) {
+  CASE_STR( EGL_NOT_INITIALIZED     );
+  CASE_STR( EGL_BAD_ACCESS          );
+  CASE_STR( EGL_BAD_ALLOC           );
+  CASE_STR( EGL_BAD_ATTRIBUTE       );
+  CASE_STR( EGL_BAD_CONTEXT         );
+  CASE_STR( EGL_BAD_CONFIG          );
+  CASE_STR( EGL_BAD_CURRENT_SURFACE );
+  CASE_STR( EGL_BAD_DISPLAY         );
+  CASE_STR( EGL_BAD_SURFACE         );
+  CASE_STR( EGL_BAD_MATCH           );
+  CASE_STR( EGL_BAD_PARAMETER       );
+  CASE_STR( EGL_BAD_NATIVE_PIXMAP   );
+  CASE_STR( EGL_BAD_NATIVE_WINDOW   );
+  CASE_STR( EGL_CONTEXT_LOST        );
+  default: return "Unknown";
+  }
 }
 
 
@@ -94,7 +94,7 @@ static int c_egl_get_modifiers(struct c_egl *egl, EGLint format,
                                  EGLuint64KHR **modifiers, EGLBoolean **external_only) {
   EGLint num_modifiers;
   if (egl->proc.eglQueryDmaBufModifiersEXT(egl->display, format, 0, NULL, NULL, &num_modifiers) != EGL_TRUE) {
-    c_log(C_LOG_ERROR, "eglQueryDmaBufModifiersEXT(NULL) failed");
+    egl_error("eglQueryDmaBufModifiersEXT(NULL)");
     return -1;
   }
 
@@ -111,7 +111,7 @@ static int c_egl_get_modifiers(struct c_egl *egl, EGLint format,
 
   if (egl->proc.eglQueryDmaBufModifiersEXT(egl->display, format, num_modifiers, 
                                            *modifiers, *external_only, &num_modifiers) != EGL_TRUE) {
-    c_log(C_LOG_ERROR, "eglQueryDmaBufModifiersEXT failed");
+    egl_error("eglQueryDmaBufModifiersEXT");
     goto error;
   }
 
@@ -127,7 +127,7 @@ error:
 static int c_egl_get_formats(struct c_egl *egl, EGLint **formats) {
   EGLint num_formats;
   if (egl->proc.eglQueryDmaBufFormatsEXT(egl->display, 0, NULL, &num_formats) != EGL_TRUE) {
-    c_log(C_LOG_ERROR, "eglQueryDmaBufFormatsEXT(NULL) failed");
+    egl_error("eglQueryDmaBufFormatsEXT(NULL)");
     return -1;
   }
 
@@ -139,7 +139,7 @@ static int c_egl_get_formats(struct c_egl *egl, EGLint **formats) {
 
   if (egl->proc.eglQueryDmaBufFormatsEXT(egl->display, num_formats, *formats, &num_formats) != EGL_TRUE) {
     free(formats);
-    c_log(C_LOG_ERROR, "eglQueryDmaBufFormatsEXT failed");
+    egl_error("eglQueryDmaBufFormatsEXT");
     return -1;
   }
 
@@ -263,7 +263,7 @@ EGLImageKHR c_egl_create_image_from_dmabuf(struct c_egl *egl, struct c_dmabuf_pa
   EGLImageKHR image = egl->proc.eglCreateImageKHR(egl->display, EGL_NO_CONTEXT, 
                                                   EGL_LINUX_DMA_BUF_EXT, NULL, image_attribs);
   if (!image)
-    c_log(C_LOG_ERROR, "eglCreateImageKHR failed: %s", egl_error_string(eglGetError()));
+    egl_error("eglCreateImageKHR");
 
   return image;
 }
@@ -303,7 +303,7 @@ struct c_egl *c_egl_init(struct gbm_device *device) {
 
   int major, minor;
   if (!eglInitialize(display, &major, &minor)) {
-    c_log(C_LOG_ERROR, "eglInitialize failed");
+    egl_error("eglInitialize");
     free(egl);
     return NULL;
   }
@@ -333,7 +333,7 @@ struct c_egl *c_egl_init(struct gbm_device *device) {
   
   EGLint n_configs;
   if (!eglGetConfigs(display, NULL, 0, &n_configs)) {
-    c_log(C_LOG_ERROR, "eglGetConfigs failed");
+    egl_error("eglGetConfigs");
     c_egl_free(egl);
     return NULL;
   }
@@ -341,7 +341,7 @@ struct c_egl *c_egl_init(struct gbm_device *device) {
   EGLConfig configs[n_configs];
   EGLint matched;
   if (!eglChooseConfig(display, config_attribs, configs, n_configs, &matched)) {
-    c_log(C_LOG_ERROR, "eglChooseConfig failed");
+    egl_error("eglChooseConfig");
     goto err;
   }
 
@@ -368,12 +368,12 @@ struct c_egl *c_egl_init(struct gbm_device *device) {
 
   egl->context = eglCreateContext(display, selected_config, EGL_NO_CONTEXT, context_attribs);
   if (!egl->context) {
-    c_log_errno(C_LOG_ERROR, "eglCreateContext failed");
+    egl_error("eglCreateContext");
     goto err;
   }
 
   if (!eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, egl->context)) {
-    c_log(C_LOG_ERROR, "eglMakeCurrent failed");
+    egl_error("eglMakeCurrent");
     goto err;
   };
 

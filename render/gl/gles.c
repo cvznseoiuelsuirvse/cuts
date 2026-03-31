@@ -145,6 +145,7 @@ void c_gles_texture_from_shm(struct c_shm *buf, uint32_t width, uint32_t height)
 void c_gles_texture_from_dmabuf_image(struct c_gles *gl, struct c_dmabuf *buf) {
   glGenTextures(1, &buf->texture);
   glBindTexture(GL_TEXTURE_2D, buf->texture);
+
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);

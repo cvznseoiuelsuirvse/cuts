@@ -58,12 +58,12 @@ int wl_registry_bind(struct c_wl_connection *conn, union c_wl_arg *args) {
 
   c_wl_object_add(conn, new_id, interface->iface, NULL);
 
-  void *bind_data = NULL;
   if (interface->on_bind) {
-    bind_data = interface->on_bind(conn, new_id, version, interface->userdata);
+    void *bind_data = interface->on_bind(conn, new_id, version, interface->userdata);
+    if (bind_data)
+      c_wl_object_data_set(c_wl_object_get(conn, new_id), bind_data);
+    
   }
-
-  c_wl_object_get(conn, new_id)->data = bind_data;
 
   return 0;
 }
@@ -100,23 +100,25 @@ int wl_shm_create_pool(struct c_wl_connection *conn, union c_wl_arg *args) {
         break;
     }
 
-    perror("mmap");
     free(pool);
+    c_log_errno(C_LOG_ERROR, "mmap() failed");
     return c_wl_error_set(wl_shm_id, error_code, "failed to mmap");
   }
 
   pool->ptr = buffer;
   pool->size = buffer_size;
-  pool->supported_formats = c_wl_object_get(conn, wl_shm_id)->data;
+  struct c_wl_formats *supported_formats = c_wl_object_data_get(conn, wl_shm_id);
+  pool->supported_formats = supported_formats->formats;
+  pool->n_supported_formats = supported_formats->n_formats;
 
-  c_wl_object_add(conn, wl_shm_pool_id, c_wl_interface_get("wl_shm_pool"), pool);
+  struct c_wl_object_data *data = c_wl_object_data_create(pool);
+  c_wl_object_add(conn, wl_shm_pool_id, c_wl_interface_get("wl_shm_pool"), data);
   return 0;
 }
 
 int wl_shm_pool_create_buffer(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id wl_shm_pool_id = args[0].o;
-  struct c_wl_object *wl_shm_pool = c_wl_object_get(conn, wl_shm_pool_id);
-  struct c_wl_shm_pool *pool = wl_shm_pool->data;
+  struct c_wl_shm_pool *pool = c_wl_object_data_get(conn, wl_shm_pool_id);
 
   c_wl_new_id wl_buffer_id = args[1].n;
   struct c_wl_object *wl_buffer;
@@ -128,18 +130,13 @@ int wl_shm_pool_create_buffer(struct c_wl_connection *conn, union c_wl_arg *args
   c_wl_int stride = args[5].i;
   enum wl_shm_format_enum format = args[6].e;
 
-  int format_supported = 0;
-  int *fmt;
-  c_list_for_each(pool->supported_formats, fmt) {
-    if ((uint64_t)fmt == format) {
-      format_supported = 1;
-      break;
-    }
+  for (size_t i = 0; i < pool->n_supported_formats; i++) {
+    uint32_t format2 = pool->supported_formats[i];
+    if (format == format2) goto format_supported;
   }
+  return c_wl_error_set(wl_shm_pool_id, WL_SHM_ERROR_INVALID_FORMAT, "format not supported");
 
-  if (!format_supported)
-    return c_wl_error_set(wl_shm_pool_id, WL_SHM_ERROR_INVALID_FORMAT, "format not supported");
-
+format_supported:
   if (stride % 4 != 0)
     return c_wl_error_set(wl_shm_pool_id, WL_SHM_ERROR_INVALID_STRIDE, "invalid offset");
   
@@ -168,16 +165,15 @@ int wl_shm_pool_create_buffer(struct c_wl_connection *conn, union c_wl_arg *args
   c_shm->base_ptr = &pool->ptr;
   c_wl_buffer->shm = c_shm;
 
-  c_wl_object_add(conn, wl_buffer_id, c_wl_interface_get("wl_buffer"), c_wl_buffer);
+  struct c_wl_object_data *data = c_wl_object_data_create(c_wl_buffer);
+  c_wl_object_add(conn, wl_buffer_id, c_wl_interface_get("wl_buffer"), data);
   return 0;
 }
 
 int wl_shm_pool_resize(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id wl_shm_pool_id = args[0].o;
   c_wl_int new_size = args[1].i;
-
-  struct c_wl_object *wl_shm_pool = c_wl_object_get(conn, wl_shm_pool_id);
-  struct c_wl_shm_pool *pool = wl_shm_pool->data;
+  struct c_wl_shm_pool *pool = c_wl_object_data_get(conn, wl_shm_pool_id);
 
   uint8_t *new_buffer = mremap(pool->ptr, pool->size, new_size, MREMAP_MAYMOVE);
   if (new_buffer == MAP_FAILED) {
@@ -193,12 +189,9 @@ int wl_shm_pool_resize(struct c_wl_connection *conn, union c_wl_arg *args) {
 
 int wl_shm_pool_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id wl_shm_pool_id = args[0].o;
-
-  struct c_wl_object *wl_shm_pool = c_wl_object_get(conn, wl_shm_pool_id);
-  struct c_wl_shm_pool *pool = wl_shm_pool->data;
+  struct c_wl_shm_pool *pool = c_wl_object_data_get(conn, wl_shm_pool_id);
 
   munmap(pool->ptr, pool->size);
-  free(pool);
   c_wl_object_del(conn, wl_shm_pool_id);
 
   return 0;
@@ -211,9 +204,10 @@ int wl_surface_set_buffer_scale(struct c_wl_connection *conn, union c_wl_arg *ar
 int wl_buffer_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id wl_buffer_id = args[0].o;
 
-  struct c_wl_object *wl_buffer = c_wl_object_get(conn, wl_buffer_id);
-  struct c_wl_buffer *c_wl_buffer = wl_buffer->data;
+  struct c_wl_buffer *c_wl_buffer = c_wl_object_data_get(conn, wl_buffer_id);;
   struct c_wl_surface *c_wl_surface = c_wl_buffer->surface;
+
+  c_wl_display_notify(conn->dpy, c_wl_buffer, C_WL_DISPLAY_ON_BUFFER_DESTROY);
 
   if (c_wl_surface->pending == c_wl_buffer)
     c_wl_surface->pending = NULL;
@@ -221,7 +215,6 @@ int wl_buffer_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   if (c_wl_surface->active == c_wl_buffer)
     c_wl_surface->active = NULL;
 
-  free(c_wl_buffer);
   c_wl_object_del(conn, wl_buffer_id);
   return 0;
 }
@@ -237,14 +230,14 @@ int wl_compositor_create_region(struct c_wl_connection *conn, union c_wl_arg *ar
     return c_wl_error_set(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed");
   }
 
-  c_wl_object_add(conn, wl_region_id, c_wl_interface_get("wl_region"), c_wl_region);
+  struct c_wl_object_data *data = c_wl_object_data_create(c_wl_region);
+  c_wl_object_add(conn, wl_region_id, c_wl_interface_get("wl_region"), data);
   return 0;
 }
 
 int wl_region_add(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id wl_region_id = args[0].u;
-  struct c_wl_object *wl_region = c_wl_object_get(conn, wl_region_id);
-  struct c_wl_region *c_wl_region = wl_region->data;
+  struct c_wl_region *c_wl_region = c_wl_object_data_get(conn, wl_region_id);;
 
   c_wl_int x =      args[1].i;
   c_wl_int y =      args[2].i;
@@ -261,16 +254,13 @@ int wl_region_add(struct c_wl_connection *conn, union c_wl_arg *args) {
 
 int wl_region_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id wl_region_id = args[0].u;
-  struct c_wl_object *wl_region = c_wl_object_get(conn, wl_region_id);
-  free(wl_region->data);
   c_wl_object_del(conn, wl_region_id);
   return 0;
 }
 
 int wl_surface_damage(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id wl_surface_id = args[0].u;
-  struct c_wl_object *wl_surface = c_wl_object_get(conn, wl_surface_id);
-  struct c_wl_surface *c_wl_surface = wl_surface->data;
+  struct c_wl_surface *c_wl_surface = c_wl_object_data_get(conn, wl_surface_id);;
 
   damage_surface(c_wl_surface, args);
 
@@ -279,8 +269,7 @@ int wl_surface_damage(struct c_wl_connection *conn, union c_wl_arg *args) {
 
 int wl_surface_damage_buffer(struct c_wl_connection *conn, union c_wl_arg *args) {
     c_wl_object_id wl_surface_id = args[0].u;
-  struct c_wl_object *wl_surface = c_wl_object_get(conn, wl_surface_id);
-  struct c_wl_surface *c_wl_surface = wl_surface->data;
+  struct c_wl_surface *c_wl_surface = c_wl_object_data_get(conn, wl_surface_id);
 
   damage_surface(c_wl_surface, args);
 
@@ -299,17 +288,24 @@ int wl_surface_frame(struct c_wl_connection *conn, union c_wl_arg *args) {
 
 int wl_surface_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id wl_surface_id = args[0].o;
-  struct c_wl_object *wl_surface = c_wl_object_get(conn, wl_surface_id);
-  struct c_wl_surface *c_wl_surface = wl_surface->data;
+  struct c_wl_surface *c_wl_surface = c_wl_object_data_get(conn, wl_surface_id);
+
+  struct c_wl_surface *child_surface;
+  if (c_wl_surface->xdg.children) {
+    c_list_for_each(c_wl_surface->xdg.children, child_surface)
+      child_surface->xdg.parent = NULL;
+    c_list_destroy(c_wl_surface->xdg.children);
+  }
+
+  if (c_wl_surface->sub.children) {
+    c_list_for_each(c_wl_surface->sub.children, child_surface) {
+      child_surface->sub.parent = NULL;
+    }
+    c_list_destroy(c_wl_surface->sub.children);
+  }
 
   struct c_wl_display *dpy = conn->dpy;
   c_wl_display_notify(dpy, c_wl_surface, C_WL_DISPLAY_ON_SURFACE_DESTROY);
-
-  if (c_wl_surface->xdg.children)
-    c_list_destroy(c_wl_surface->xdg.children);
-
-  if (c_wl_surface->sub.children)
-    c_list_destroy(c_wl_surface->sub.children);
 
   c_wl_object_del(conn, wl_surface_id);
   return 0;
@@ -317,8 +313,7 @@ int wl_surface_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
 
 int wl_surface_set_opaque_region(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id wl_surface_id = args[0].o;
-  struct c_wl_object *c_wl_surface = c_wl_object_get(conn, wl_surface_id);
-  struct c_wl_surface *surface = c_wl_surface->data;
+  struct c_wl_surface *surface = c_wl_object_data_get(conn, wl_surface_id);
 
   c_wl_object_id wl_region_id = args[1].o;
   if (wl_region_id == 0) {
@@ -329,15 +324,14 @@ int wl_surface_set_opaque_region(struct c_wl_connection *conn, union c_wl_arg *a
   struct c_wl_object *c_wl_region;
   C_WL_CHECK_IF_REGISTERED(wl_region_id, c_wl_region);
 
-  memcpy(&surface->opaque, c_wl_region->data, sizeof(surface->opaque));
-
+  struct c_wl_region *region = c_wl_object_data_get2(c_wl_region);
+  memcpy(&surface->opaque, region, sizeof(surface->opaque));
   return 0;
 }
 
 int wl_surface_set_input_region(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id wl_surface_id = args[0].o;
-  struct c_wl_object *c_wl_surface = c_wl_object_get(conn, wl_surface_id);
-  struct c_wl_surface *surface = c_wl_surface->data;
+  struct c_wl_surface *surface = c_wl_object_data_get(conn, wl_surface_id);
 
   c_wl_object_id wl_region_id = args[1].o;
   if (wl_region_id == 0) {
@@ -348,15 +342,15 @@ int wl_surface_set_input_region(struct c_wl_connection *conn, union c_wl_arg *ar
   struct c_wl_object *c_wl_region;
   C_WL_CHECK_IF_REGISTERED(wl_region_id, c_wl_region);
 
-  memcpy(&surface->input, c_wl_region->data, sizeof(surface->input));
+  struct c_wl_region *region = c_wl_object_data_get2(c_wl_region);
+  memcpy(&surface->input, region, sizeof(surface->input));
 
   return 0;
 }
 
 int wl_surface_attach(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id wl_surface_id = args[0].u;
-  struct c_wl_object *wl_surface = c_wl_object_get(conn, wl_surface_id);
-  struct c_wl_surface *c_wl_surface = wl_surface->data;
+  struct c_wl_surface *c_wl_surface =c_wl_object_data_get(conn, wl_surface_id);
 
   c_wl_object_id wl_buffer_id = args[1].o;
   if (wl_buffer_id == 0) {
@@ -366,7 +360,8 @@ int wl_surface_attach(struct c_wl_connection *conn, union c_wl_arg *args) {
 
   struct c_wl_object *wl_buffer = c_wl_object_get(conn, wl_buffer_id);
   C_WL_CHECK_IF_REGISTERED(wl_buffer_id, wl_buffer);
-  struct c_wl_buffer *c_wl_buffer = wl_buffer->data;
+  struct c_wl_buffer *c_wl_buffer = c_wl_object_data_get2(wl_buffer);
+
   c_wl_buffer->surface = c_wl_surface;
   c_wl_surface->pending = c_wl_buffer;
 
@@ -375,8 +370,7 @@ int wl_surface_attach(struct c_wl_connection *conn, union c_wl_arg *args) {
 
 int wl_surface_commit(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id wl_surface_id = args[0].u;
-  struct c_wl_object *wl_surface = c_wl_object_get(conn, wl_surface_id);
-  struct c_wl_surface *c_wl_surface = wl_surface->data;
+  struct c_wl_surface *c_wl_surface = c_wl_object_data_get(conn, wl_surface_id);
   
   if (c_wl_surface->active) {
     wl_buffer_release(c_wl_surface->conn, c_wl_surface->active->id);
@@ -406,10 +400,11 @@ int wl_compositor_create_surface(struct c_wl_connection *conn, union c_wl_arg *a
 
   c_wl_surface->id = wl_surface_id;
   c_wl_surface->conn = conn;
-  c_wl_surface->sub.children = c_list_new();
   struct c_wl_display *dpy = conn->dpy;
   c_wl_display_notify(dpy, c_wl_surface,  C_WL_DISPLAY_ON_SURFACE_NEW);
-  c_wl_object_add(conn, wl_surface_id, c_wl_interface_get("wl_surface"), c_wl_surface);
+
+  struct c_wl_object_data *data = c_wl_object_data_create(c_wl_surface);
+  c_wl_object_add(conn, wl_surface_id, c_wl_interface_get("wl_surface"), data);
   return 0;
 }
 
@@ -424,8 +419,8 @@ int wl_subcompositor_get_subsurface(struct c_wl_connection *conn, union c_wl_arg
   C_WL_CHECK_IF_REGISTERED(args[2].o, wl_surface_child);
   C_WL_CHECK_IF_REGISTERED(args[3].o, wl_surface_parent);
 
-  struct c_wl_surface *surface_child = wl_surface_child->data;
-  struct c_wl_surface *surface_parent = wl_surface_parent->data;
+  struct c_wl_surface *surface_child = c_wl_object_data_get2(wl_surface_child);
+  struct c_wl_surface *surface_parent = c_wl_object_data_get2(wl_surface_parent);
 
   if (surface_child == surface_parent)
     return c_wl_error_set(args[0].o, WL_SUBCOMPOSITOR_ERROR_BAD_PARENT, "parent and child cannot be the same objects");
@@ -437,43 +432,46 @@ int wl_subcompositor_get_subsurface(struct c_wl_connection *conn, union c_wl_arg
     return c_wl_error_set(args[0].o, WL_SUBCOMPOSITOR_ERROR_BAD_SURFACE, "parent surface is one of the child's descendants,");
   c_log(C_LOG_DEBUG, "adding %p to %p", surface_child, surface_parent);
 
+  if (!surface_parent->sub.children)
+    surface_parent->sub.children = c_list_new();
+
   c_list_push(surface_parent->sub.children, surface_child, 0);
+
   surface_child->sub.parent = surface_parent;
   surface_child->role = C_WL_SURFACE_ROLE_SUBSURFACE;
 
-  c_wl_object_add(conn, wl_subsurface_id, c_wl_interface_get("wl_subsurface"), surface_child);
+  c_wl_object_add(conn, wl_subsurface_id, c_wl_interface_get("wl_subsurface"), wl_surface_child->data);
 
   return 0;
 }
 
 int wl_subsurface_set_position(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_wl_surface *surface = c_wl_object_get(conn, args[0].o)->data;
+  struct c_wl_surface *surface = c_wl_object_data_get(conn, args[0].o);
   surface->sub.x = args[1].i;
   surface->sub.y = args[2].i;
   return 0;
 }
 
 int wl_subsurface_set_sync(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_wl_surface *surface = c_wl_object_get(conn, args[0].o)->data;
+  struct c_wl_surface *surface = c_wl_object_data_get(conn, args[0].o);
   surface->sub.sync = 1;
   return 0;
 }
 
 int wl_subsurface_set_desync(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_wl_surface *surface = c_wl_object_get(conn, args[0].o)->data;
+  struct c_wl_surface *surface = c_wl_object_data_get(conn, args[0].o);
   surface->sub.sync = 0;
   return 0;
 }
 
 int wl_subsurface_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_wl_surface *surface_child = c_wl_object_get(conn, args[0].o)->data;
+  struct c_wl_surface *surface_child = c_wl_object_data_get(conn, args[0].o);
   struct c_wl_surface *surface_parent = surface_child->sub.parent;
 
   if (surface_parent)
     c_list_remove_ptr(&surface_parent->sub.children, surface_child);
 
   memset(&surface_child->sub, 0, sizeof(surface_child->sub));
-
   return 0;
 }
 
@@ -481,8 +479,8 @@ int wl_subsurface_place_above(struct c_wl_connection *conn, union c_wl_arg *args
   struct c_wl_object *wl_surface_sibling;
   C_WL_CHECK_IF_REGISTERED(args[1].o, wl_surface_sibling);
 
-  struct c_wl_surface *surface = c_wl_object_get(conn, args[0].o)->data;
-  struct c_wl_surface *sibling = wl_surface_sibling->data;
+  struct c_wl_surface *surface = c_wl_object_data_get(conn, args[0].o);
+  struct c_wl_surface *sibling = c_wl_object_data_get2(wl_surface_sibling);
   struct c_wl_surface *parent = surface->sub.parent;
 
   c_list_remove_ptr(&parent->sub.children, surface);
@@ -497,8 +495,8 @@ int wl_subsurface_place_below(struct c_wl_connection *conn, union c_wl_arg *args
   struct c_wl_object *wl_surface_sibling;
   C_WL_CHECK_IF_REGISTERED(args[1].o, wl_surface_sibling);
 
-  struct c_wl_surface *surface = c_wl_object_get(conn, args[0].o)->data;
-  struct c_wl_surface *sibling = wl_surface_sibling->data;
+  struct c_wl_surface *surface = c_wl_object_data_get(conn, args[0].o);
+  struct c_wl_surface *sibling = c_wl_object_data_get2(wl_surface_sibling);
   struct c_wl_surface *parent = surface->sub.parent;
 
   c_list_remove_ptr(&parent->sub.children, surface);
@@ -508,3 +506,7 @@ int wl_subsurface_place_below(struct c_wl_connection *conn, union c_wl_arg *args
   c_list_insert(&parent->sub.children, sibling_idx+1, surface, 0);
   return 0;
 };
+
+int wl_pointer_set_cursor(struct c_wl_connection *conn, union c_wl_arg *args) {
+  return 0;
+}

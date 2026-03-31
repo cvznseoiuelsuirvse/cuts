@@ -23,6 +23,30 @@
   glClearColor(CUTS_GL_COLOR); \
   glClear(GL_COLOR_BUFFER_BIT)
 
+#define DMA_VERT_POS_TOP_LEFT(vp)     vp.tl_x, vp.tl_y
+#define DMA_VERT_POS_BOTTOM_LEFT(vp)  vp.bl_x, vp.bl_y
+#define DMA_VERT_POS_TOP_RIGHT(vp)    vp.tr_x, vp.tr_y
+#define DMA_VERT_POS_BOTTOM_RIGHT(vp) vp.br_x, vp.br_y
+
+#define SHM_VERT_POS_TOP_LEFT(vp)     vp.tl_x, -(vp.tl_y)
+#define SHM_VERT_POS_BOTTOM_LEFT(vp)  vp.bl_x, -(vp.bl_y)
+#define SHM_VERT_POS_TOP_RIGHT(vp)    vp.tr_x, -(vp.tr_y)
+#define SHM_VERT_POS_BOTTOM_RIGHT(vp) vp.br_x, -(vp.br_y)
+
+#define DMA_VERT_TOP_LEFT(vp)     DMA_VERT_POS_TOP_LEFT(vp),     0.0f, 1.0f
+#define DMA_VERT_BOTTOM_LEFT(vp)  DMA_VERT_POS_BOTTOM_LEFT(vp),  0.0f, 0.0f
+#define DMA_VERT_BOTTOM_RIGHT(vp) DMA_VERT_POS_BOTTOM_RIGHT(vp), 1.0f, 0.0f
+#define DMA_VERT_TOP_RIGHT(vp)    DMA_VERT_POS_TOP_RIGHT(vp),    1.0f, 1.0f
+
+#define SHM_VERT_TOP_LEFT(vp)     SHM_VERT_POS_TOP_LEFT(vp),     0.0f, 0.0f
+#define SHM_VERT_BOTTOM_LEFT(vp)  SHM_VERT_POS_BOTTOM_LEFT(vp),  0.0f, 1.0f
+#define SHM_VERT_BOTTOM_RIGHT(vp) SHM_VERT_POS_BOTTOM_RIGHT(vp), 1.0f, 1.0f
+#define SHM_VERT_TOP_RIGHT(vp)    SHM_VERT_POS_TOP_RIGHT(vp),    1.0f, 0.0f
+
+#define DMA_VERTS(vp) {DMA_VERT_TOP_LEFT(vp), DMA_VERT_BOTTOM_LEFT(vp), DMA_VERT_BOTTOM_RIGHT(vp), DMA_VERT_TOP_LEFT(vp), DMA_VERT_BOTTOM_RIGHT(vp), DMA_VERT_TOP_RIGHT(vp)}
+
+#define SHM_VERTS(vp) {SHM_VERT_TOP_LEFT(vp), SHM_VERT_BOTTOM_LEFT(vp), SHM_VERT_BOTTOM_RIGHT(vp), SHM_VERT_TOP_LEFT(vp), SHM_VERT_BOTTOM_RIGHT(vp), SHM_VERT_TOP_RIGHT(vp)}
+
 struct vert_pos {
   float tl_x, tl_y;
   float bl_x, bl_y;
@@ -30,8 +54,9 @@ struct vert_pos {
   float tr_x, tr_y;
 };
 
-enum c_render_notifer {
+enum c_render_notifier {
 	C_RENDER_ON_WINDOW_NEW,
+	C_RENDER_ON_WINDOW_UPDATE,
 	C_RENDER_ON_WINDOW_CLOSE,
 };
 
@@ -42,22 +67,28 @@ struct __render_event_listener {
 
 static int __needs_redraw = 0;
 
-static void notify(struct c_render *render, struct c_window *window, enum c_render_notifer notifier) {
+static void notify(struct c_render *render, struct c_window *window, enum c_render_notifier notifier) {
   struct __render_event_listener *l;
 
   #define __notify(callback) \
     c_list_for_each(render->listeners, l) { \
       if (l->listener->callback) {\
+        c_log(C_LOG_DEBUG, #callback " %p", window); \
         l->listener->callback(window, l->userdata); \
       } \
     }
 
   switch (notifier) {
     case C_RENDER_ON_WINDOW_NEW:       __notify(on_window_new); break;
+    case C_RENDER_ON_WINDOW_UPDATE:    __notify(on_window_update); break;
     case C_RENDER_ON_WINDOW_CLOSE:     __notify(on_window_close); break;
     default: break;
   }
 
+}
+
+static int is_surface_decor(struct c_wl_surface *surface) {
+  return surface->xdg.x + surface->xdg.y + surface->xdg.width + surface->xdg.height > 0;
 }
 
 static void page_flip_handler(int fd, unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec, void *user_data) {
@@ -79,6 +110,7 @@ static void page_flip_handler(int fd, unsigned int sequence, unsigned int tv_sec
 static void *on_linux_dmabuf_bind(struct c_wl_connection *conn, c_wl_object_id new_id, c_wl_uint version, void *userdata) {
   struct c_render *render = userdata;
   struct c_wl_linux_dmabuf_ctx *ctx = malloc(sizeof(*ctx));
+
   if (!ctx) {
     c_log(C_LOG_ERROR, "malloc(c_wl_linux_dmabuf_ctx) failed");
     return NULL;
@@ -94,7 +126,7 @@ static void *on_linux_dmabuf_bind(struct c_wl_connection *conn, c_wl_object_id n
     c_log_errno(C_LOG_ERROR, "failed to get format table fd");
     goto error;
   }
-  ctx->n_ft_entries = render->formats.n_entries;
+  ctx->n_ft_entries = render->n_formats;
 
   return ctx;
 
@@ -106,12 +138,20 @@ error:
 
 static void *on_wl_shm_bind(struct c_wl_connection *conn, c_wl_object_id new_id, c_wl_uint version, void *userdata) {
   struct c_render *render = userdata;
-  int *fmt;
 
-  c_list_for_each(render->formats.wl_shm_formats, fmt)
-      wl_shm_format(conn, new_id, (uint64_t)fmt);
-  
-  return render->formats.wl_shm_formats;
+  struct c_wl_formats *wl_formats = calloc(1, sizeof(*wl_formats));
+  if (!wl_formats) {
+    c_log(C_LOG_ERROR, "calloc failed");
+    return NULL;
+  }
+
+  wl_formats->formats = render->wl_formats;
+  wl_formats->n_formats = render->n_formats;
+
+  for (size_t i = 0; i < wl_formats->n_formats; i++)
+    wl_shm_format(conn, new_id, wl_formats->formats[i]);
+
+  return wl_formats;
 }
 
 int c_render_handle_event(struct c_render *render) {
@@ -121,7 +161,7 @@ int c_render_handle_event(struct c_render *render) {
   };
 
   if (drmHandleEvent(render->drm->fd, &ctx) < 0) {
-    perror("c_drm_page_flip drmHandleEvent");
+    c_log_errno(C_LOG_ERROR, "drmHandleEvent failed");
     return -1;
   }
 
@@ -153,7 +193,8 @@ static void window_transform(struct c_window *window, struct vert_pos *vp,
 
 }
 
-static int draw_window(struct c_render *render, struct c_window *window, GLuint texture) {
+static int draw_window(struct c_render *render, struct c_window *window, 
+                       GLuint texture, enum c_wl_buffer_type buf_type) {
   struct c_gles *gl = render->gl;
   struct c_output_mode *preferred_mode = c_drm_get_preferred_mode(render->drm);
 
@@ -168,19 +209,15 @@ static int draw_window(struct c_render *render, struct c_window *window, GLuint 
   struct vert_pos vp = {0};
   window_transform(window, &vp, width, height);
 
-  float vertices[] = {
-  //positions          uv
-    vp.tl_x, vp.tl_y,  0.0f, 1.0f, // top left
-    vp.bl_x, vp.bl_y,  0.0f, 0.0f, // bottom left
-    vp.br_x, vp.br_y,  1.0f, 0.0f, // bottom right
-                            
-    vp.br_x, vp.br_y,  1.0f, 0.0f, // bottom right
-    vp.tr_x, vp.tr_y,  1.0f, 1.0f, // top right
-    vp.tl_x, vp.tl_y,  0.0f, 1.0f, // top left
-  };
 
   glBindBuffer(GL_ARRAY_BUFFER, gl->vbo);
-  glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
+  if (buf_type == C_WL_BUFFER_DMA) {
+    float dma_vertices[] = DMA_VERTS(vp);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(dma_vertices), dma_vertices);
+  } else {
+    float shm_vertices[] = SHM_VERTS(vp);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(shm_vertices), shm_vertices);
+  }
 
   glUniform1i(glGetUniformLocation(gl->program, "tex"), 0);
 
@@ -201,8 +238,8 @@ static int c_render_import_dmabuf(struct c_render *render, struct c_wl_buffer *b
   struct c_dmabuf *dmabuf = buf->dma;
 
   struct c_format *format = NULL;
-  for (size_t i = 0; i < render->formats.n_entries; i++) {
-    format = &render->formats.entries[i];
+  for (size_t i = 0; i < render->n_formats; i++) {
+    format = &render->formats[i];
     if (format->drm_format == dmabuf->drm_format && format->modifier == dmabuf->modifier) break;
   }
 
@@ -276,7 +313,7 @@ static GLuint ensure_buf_imported(struct c_render *render, struct c_wl_buffer *b
   assert(0);
 }
 
-static void draw_windows(struct c_render *render) {
+static int draw_windows(struct c_render *render) {
   struct c_window *window;
   size_t key;
   c_map_for_each(render->surfaces, key, window) {
@@ -285,103 +322,46 @@ static void draw_windows(struct c_render *render) {
       GLuint texture;
       if (surface->active) {
         texture = ensure_buf_imported(render, surface->active);
-        if (texture == 0) return;
-        // c_log(C_LOG_DEBUG, "surface %p (%p): width=%d height=%d x=%d y=%d", surface, surface->conn,
-        //       window->width, window->height, window->x, window->y);
-        draw_window(render, window, texture);
+        if (texture == 0) return -1;
+        c_log(C_LOG_DEBUG, "surface %p (%d %p): width=%d height=%d x=%d y=%d", surface, surface->id, surface->conn,
+              window->width, window->height, window->x, window->y);
+        draw_window(render, window, texture, surface->active->type);
       }
+
+      if (!surface->sub.children) continue;
 
       struct c_wl_surface *sub_surface;
       c_list_for_each(surface->sub.children, sub_surface) {
         if (!sub_surface->active) continue;
 
         texture = ensure_buf_imported(render, sub_surface->active);
-        if (texture == 0) return;
+        if (texture == 0) return -1;
 
         struct c_window *sub_window = c_map_get(render->surfaces, (uint64_t)sub_surface);
-        sub_window->x = window->x +sub_surface->sub.x;
-        sub_window->y = window->y + sub_surface->sub.y;
-        sub_window->width = sub_surface->active->width;
-        sub_window->height = sub_surface->active->height;
-        // c_log(C_LOG_DEBUG, "parent %p (%p) -> sub surface %p (%p): width=%d height=%d x=%d y=%d", surface, surface->conn, sub_surface, sub_surface->conn,
-        //       sub_window->width, sub_window->height, sub_window->x, sub_window->y);
 
-        draw_window(render, sub_window, texture);
+        c_log(C_LOG_DEBUG, "sub surface %p (%d %p): width=%d height=%d x=%d y=%d", sub_surface, sub_surface->id, sub_surface->conn, sub_window->width, sub_window->height, sub_window->x, sub_window->y);
+        // sub_window->x = window->x + sub_surface->sub.x;
+        // sub_window->y = window->y + sub_surface->sub.y;
+
+        draw_window(render, sub_window, texture, sub_surface->active->type);
       }
       
     }
   }
+
+  return 0;
 }
 
-static int c_render_destroy_buf(struct c_render *render, struct c_wl_buffer *buf) {
+static int destroy_wl_buffer(struct c_render *render, struct c_wl_buffer *buf) {
   if (buf->type == C_WL_BUFFER_DMA) {
     eglDestroyImage(render->egl->display, buf->dma->image);
     glDeleteTextures(1, &buf->dma->texture);
   } else if (buf->type == C_WL_BUFFER_SHM) {
     glDeleteTextures(1, &buf->shm->texture);
-  }
-  free(buf);
+  } else return 0;
+
+  free(buf->dma);
   return 0;
-}
-
-static int _on_surface_new_cb(struct c_wl_surface *surface, void *userdata) {
-  struct c_render *render = userdata;
-  struct c_window window = {0};
-  window.wl_surface = surface;
-  c_map_set(render->surfaces, (uint64_t)surface, &window, sizeof(window));
-  return 0;
-}
-
-static int _on_surface_destroy_cb(struct c_wl_surface *surface, void *userdata) {
-  struct c_render *render = userdata;
-  if (surface->active)
-    c_render_destroy_buf(render, surface->active);
-
-  if (surface->pending)
-    c_render_destroy_buf(render, surface->pending);
-
-  c_map_remove(render->surfaces, (uint64_t)surface);
-  c_render_redraw(render);
-  return 0;
-}
-
-static int _on_client_gone(struct c_wl_connection *connection, void *userdata) {
-  struct c_render *render = userdata;
-
-  size_t key;
-  struct c_window *window;
-  c_map_for_each(render->surfaces, key, window) {
-    struct c_wl_surface *surface = window->wl_surface;
-      if (surface->conn == connection) {
-        notify(render, window, C_RENDER_ON_WINDOW_CLOSE);
-        _on_surface_destroy_cb(surface, userdata);
-        break;
-    }
-  }
-  return 0;
-}
-
-static int _on_surface_update_cb(struct c_wl_surface *surface, void *userdata) {
-  c_render_redraw((struct c_render *)userdata);
-  return 0;
-}
-
-static int _on_toplevel_new(struct c_wl_surface *surface, void *userdata) {
-  struct c_render *render = userdata;
-  struct c_window *window = c_map_get(render->surfaces, (uint64_t)surface);
-  notify(render, window, C_RENDER_ON_WINDOW_NEW);
-  return 0;
-  
-}
-
-C_EVENT_CALLBACK render_callback(struct c_event_loop *loop, int fd, void *userdata) {
-  if (c_render_handle_event((struct c_render *)userdata) == -1) 
-    return C_EVENT_ERROR_FATAL;
-
-  if (__needs_redraw)
-    c_render_redraw((struct c_render *)userdata);
-
-  return C_EVENT_OK;
 }
 
 
@@ -390,8 +370,8 @@ int c_render_get_ft_fd(struct c_render *render) {
   if (!fd)
     return -1;
 
-  for (size_t i = 0; i < render->formats.n_entries; i++) {
-    struct c_format format = render->formats.entries[i];
+  for (size_t i = 0; i < render->n_formats; i++) {
+    struct c_format format = render->formats[i];
     struct {
       uint32_t format;
       uint32_t pad;
@@ -407,17 +387,17 @@ int c_render_get_ft_fd(struct c_render *render) {
 }
 
 
-void c_render_redraw(struct c_render *render) {
+static int redraw_scene(struct c_render *render) {
   if (render->drm->connector.waiting_for_flip) {
     __needs_redraw = 1;
-    return;
+    return 0;
   }
 
   struct c_render_buffer *back_buffer = render->swapchain.buffers[render->swapchain.front ^ 1];
 
   glBindFramebuffer(GL_FRAMEBUFFER, back_buffer->fbo);
   clear_color();
-  draw_windows(render);
+  if (draw_windows(render) == -1) return -1;
   glFlush();
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
@@ -426,6 +406,7 @@ void c_render_redraw(struct c_render *render) {
 
   render->drm->connector.waiting_for_flip = 1;
   __needs_redraw = 0;
+  return 0;
 }
 
 void c_render_add_listener(struct c_render *render, struct c_render_listener *listener, void *userdata) {
@@ -452,6 +433,93 @@ static int create_swapchain(struct c_render *render) {
   return 0;
 }
 
+static void destroy_surface(struct c_render *render, struct c_wl_surface *surface) {
+  if (surface->active) {
+    destroy_wl_buffer(render, surface->active);
+  }
+
+  if (surface->pending) {
+    destroy_wl_buffer(render, surface->pending);
+  }
+
+  memset(surface, 0, sizeof(*surface));
+}
+
+static int on_surface_new_cb(struct c_wl_surface *surface, void *userdata) {
+  struct c_render *render = userdata;
+  struct c_window window = {0};
+  window.wl_surface = surface;
+  c_map_set(render->surfaces, (uint64_t)surface, &window, sizeof(window));
+  return 0;
+}
+
+static int on_surface_destroy_cb(struct c_wl_surface *surface, void *userdata) {
+  struct c_render *render = userdata;
+  destroy_surface(render, surface);
+  c_map_remove(render->surfaces, (uint64_t)surface);
+  return redraw_scene(render);
+}
+
+static int on_client_gone(struct c_wl_connection *connection, void *userdata) {
+  struct c_render *render = userdata;
+
+  size_t key;
+  struct c_window *window;
+  c_map_for_each(render->surfaces, key, window) {
+    struct c_wl_surface *surface = (struct c_wl_surface *)key;
+      if (surface->conn == connection) {
+        if (window)
+          notify(render, window, C_RENDER_ON_WINDOW_CLOSE);
+
+        on_surface_destroy_cb(surface, userdata);
+        break;
+    }
+  }
+  return 0;
+}
+
+static int on_surface_update_cb(struct c_wl_surface *surface, void *userdata) {
+  struct c_render *render = userdata;
+  struct c_window *window = c_map_get(render->surfaces, (uint64_t)surface);
+
+  if (surface->active &&!(window->state & C_WINDOW)) {
+    struct c_output_mode *preferred_mode = c_drm_get_preferred_mode(render->drm);
+    if (
+      (0 < window->wl_surface->xdg.max_height && window->wl_surface->xdg.max_height < preferred_mode->height)
+      || (0 < window->wl_surface->xdg.max_width  && window->wl_surface->xdg.max_width < preferred_mode->width)
+    ) {
+      window->width = surface->active->width;
+      window->height = surface->active->height;
+      window->state |= C_WINDOW_FLOAT;
+
+      if (!(surface->role == C_WL_SURFACE_ROLE_SUBSURFACE)) {
+        window->x = preferred_mode->width / 2 - window->wl_surface->active->width / 2;
+        window->y = preferred_mode->height / 2 - window->wl_surface->active->height / 2;
+      }
+    }
+
+    window->state |= C_WINDOW;
+    notify(render, window, C_RENDER_ON_WINDOW_NEW);
+  }
+  return redraw_scene((struct c_render *)userdata);
+}
+
+static int on_buffer_destroy(struct c_wl_buffer *buffer, void *userdata) {
+  struct c_render *render = userdata;
+  destroy_wl_buffer(render, buffer);
+  return 0;
+}
+
+C_EVENT_CALLBACK render_callback(struct c_event_loop *loop, int fd, void *userdata) {
+  if (c_render_handle_event((struct c_render *)userdata) == -1) 
+    return C_EVENT_ERROR_FATAL;
+
+  if (__needs_redraw)
+    if (redraw_scene((struct c_render *)userdata) == -1) return C_EVENT_ERROR_FATAL;
+
+  return C_EVENT_OK;
+}
+
 struct c_render *c_render_init(struct c_wl_display *display, struct c_drm *drm) {
   struct c_render *render = calloc(1, sizeof(struct c_render));
   if (!render) 
@@ -469,12 +537,13 @@ struct c_render *c_render_init(struct c_wl_display *display, struct c_drm *drm) 
 
   if (create_swapchain(render) < 0) goto error;
 
-  render->formats.entries = c_egl_query_formats(render->egl, &render->formats.n_entries);
-  render->formats.wl_shm_formats = c_list_new();
+  render->formats = c_egl_query_formats(render->egl, &render->n_formats);
+  render->wl_formats = malloc(sizeof(uint32_t) * render->n_formats);
 
-  for (size_t i = 0; i < render->formats.n_entries; i++) {
-    struct c_format format = render->formats.entries[i];
-    c_list_push(render->formats.wl_shm_formats, (void *)drm_to_wl_shm_format(format.drm_format), 0);
+
+  for (size_t i = 0; i < render->n_formats; i++) {
+    uint32_t wl_format = drm_to_wl_shm_format(render->formats[i].drm_format);
+    render->wl_formats[i] = wl_format;
   }
 
   struct c_output_mode *preferred_mode = c_drm_get_preferred_mode(drm);
@@ -486,15 +555,15 @@ struct c_render *c_render_init(struct c_wl_display *display, struct c_drm *drm) 
   }
 
   glViewport(0, 0, preferred_mode->width, preferred_mode->height);
-  c_render_redraw(render);
+  if (redraw_scene(render) == -1) return NULL;
   c_event_loop_add(display->loop, drm->fd, render_callback, render);
 
   struct c_wl_display_listener dpy_listeners = {
-    .on_client_gone = _on_client_gone,
-    .on_surface_new = _on_surface_new_cb,
-    .on_surface_update = _on_surface_update_cb,
-    .on_surface_destroy = _on_surface_destroy_cb,
-    .on_toplevel_new = _on_toplevel_new,
+    .on_client_gone = on_client_gone,
+    .on_surface_new = on_surface_new_cb,
+    .on_surface_update = on_surface_update_cb,
+    .on_surface_destroy = on_surface_destroy_cb,
+    .on_buffer_destroy = on_buffer_destroy,
   };
 
   c_wl_display_add_listener(display, &dpy_listeners, render);
@@ -517,11 +586,8 @@ void c_render_free(struct c_render *render) {
     struct c_window *window;
     c_map_for_each(render->surfaces, key, window) {
       struct c_wl_surface *surface = (struct c_wl_surface *)key;
-      if (surface->active)
-        c_render_destroy_buf(render, surface->active);
-
-      if (surface->pending)
-        c_render_destroy_buf(render, surface->pending);
+      if (surface->role != C_WL_SURFACE_ROLE_SUBSURFACE)
+        destroy_surface(render, surface);
     }
     c_map_destroy(render->surfaces);
   }
@@ -532,11 +598,11 @@ void c_render_free(struct c_render *render) {
   if (render->swapchain.buffers[1])
     c_render_buffer_destroy(render, render->swapchain.buffers[1]);
 
-  if (render->egl)              c_egl_free(render->egl);
+  if (render->egl)             c_egl_free(render->egl);
   if (render->gl)              c_gles_free(render->gl);
 
-  if (render->formats.entries)        free(render->formats.entries);
-  if (render->formats.wl_shm_formats) free(render->formats.wl_shm_formats);
+  if (render->formats)        free(render->formats);
+  if (render->wl_formats)     free(render->wl_formats);
 
   if (render->listeners) {
     struct __render_event_listener *l;

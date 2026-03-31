@@ -46,7 +46,6 @@ int zwp_linux_dmabuf_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *ar
   struct c_wl_object *zwp_linux_buffer_v1;
   C_WL_CHECK_IF_REGISTERED(zwp_linux_buffer_v1_id, zwp_linux_buffer_v1);
   
-  free(zwp_linux_buffer_v1->data);
   c_wl_object_del(conn, zwp_linux_buffer_v1_id);
 
   return 0;
@@ -57,7 +56,7 @@ int zwp_linux_dmabuf_v1_get_surface_feedback(struct c_wl_connection *conn, union
   struct c_wl_object *zwp_linux_buffer_feedback_v1;
   C_WL_CHECK_IF_NOT_REGISTERED(zwp_linux_buffer_feedback_v1_id, zwp_linux_buffer_feedback_v1);
 
-  struct c_wl_linux_dmabuf_ctx *ctx = c_wl_object_get(conn, args[0].o)->data;
+  struct c_wl_linux_dmabuf_ctx *ctx = c_wl_object_data_get(conn, args[0].o);
   c_wl_object_add(conn, zwp_linux_buffer_feedback_v1_id, c_wl_interface_get("zwp_linux_dmabuf_feedback_v1"), NULL);
   return send_feedback(conn, args[0].o, zwp_linux_buffer_feedback_v1_id, ctx);
 }
@@ -68,7 +67,7 @@ int zwp_linux_dmabuf_v1_get_default_feedback(struct c_wl_connection *conn, union
   struct c_wl_object *zwp_linux_buffer_feedback_v1;
   C_WL_CHECK_IF_NOT_REGISTERED(zwp_linux_buffer_feedback_v1_id, zwp_linux_buffer_feedback_v1);
 
-  struct c_wl_linux_dmabuf_ctx *ctx = c_wl_object_get(conn, args[0].o)->data;
+  struct c_wl_linux_dmabuf_ctx *ctx = c_wl_object_data_get(conn, args[0].o);
   c_wl_object_add(conn, zwp_linux_buffer_feedback_v1_id, c_wl_interface_get("zwp_linux_dmabuf_feedback_v1"), NULL);
   return send_feedback(conn, args[0].o, zwp_linux_buffer_feedback_v1_id, ctx);
 }
@@ -93,15 +92,15 @@ int zwp_linux_dmabuf_v1_create_params(struct c_wl_connection *conn, union c_wl_a
     return c_wl_error_set(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed");
   }
 
-  c_wl_object_add(conn, zwp_linux_buffer_params_v1_id, c_wl_interface_get("zwp_linux_buffer_params_v1"), dma);
+  struct c_wl_object_data *data = c_wl_object_data_create(dma);
+  c_wl_object_add(conn, zwp_linux_buffer_params_v1_id, c_wl_interface_get("zwp_linux_buffer_params_v1"), data);
 
   return 0;
 }
 
 int zwp_linux_buffer_params_v1_add(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id zwp_linux_buffer_params_v1_id = args[0].o;
-  struct c_wl_object *zwp_linux_buffer_params_v1 = c_wl_object_get(conn, zwp_linux_buffer_params_v1_id);
-  struct c_dmabuf *dma = zwp_linux_buffer_params_v1->data;
+  struct c_dmabuf *dma = c_wl_object_data_get(conn, zwp_linux_buffer_params_v1_id);
 
   c_wl_fd   fd =          args[1].F;
   c_wl_uint plane_idx =   args[2].u;
@@ -134,13 +133,13 @@ int zwp_linux_buffer_params_v1_add(struct c_wl_connection *conn, union c_wl_arg 
 int zwp_linux_buffer_params_v1_create_immed(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id zwp_linux_buffer_params_v1_id = args[0].o;
   struct c_wl_object *zwp_linux_buffer_params_v1 = c_wl_object_get(conn, zwp_linux_buffer_params_v1_id);
-  struct c_dmabuf *dma = zwp_linux_buffer_params_v1->data;
+  struct c_dmabuf *dma = c_wl_object_data_get2(zwp_linux_buffer_params_v1);
 
   c_wl_new_id wl_buffer_id = args[1].n;
   c_wl_int    width =        args[2].i;
   c_wl_int    height =       args[3].i;
   c_wl_uint   format =       args[4].u;
-  enum zwp_linux_buffer_params_v1_flags_enum flags = args[5].e;
+  // enum zwp_linux_buffer_params_v1_flags_enum flags = args[5].e;
 
   if (width <= 0)
     return c_wl_error_set(args[0].o, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_INVALID_DIMENSIONS, "invalid width");
@@ -158,20 +157,18 @@ int zwp_linux_buffer_params_v1_create_immed(struct c_wl_connection *conn, union 
   c_wl_buffer->id = wl_buffer_id;
   c_wl_buffer->width = width;
   c_wl_buffer->height = height;
-  c_wl_buffer->dma = dma;
   c_wl_buffer->type = C_WL_BUFFER_DMA;
+  c_wl_buffer->dma = calloc(1, sizeof(*c_wl_buffer->dma));
+  memcpy(c_wl_buffer->dma, dma, sizeof(*dma));
 
-  c_wl_object_add(conn, wl_buffer_id, c_wl_interface_get("wl_buffer"), c_wl_buffer);
+  struct c_wl_object_data *data = c_wl_object_data_create(c_wl_buffer);
+  c_wl_object_add(conn, wl_buffer_id, c_wl_interface_get("wl_buffer"), data);
   return 0;
 }
 
 int zwp_linux_buffer_params_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_new_id zwp_linux_buffer_params_v1_id = args[0].n;
-  struct c_wl_object *zwp_linux_buffer_params_v1;
-  C_WL_CHECK_IF_REGISTERED(zwp_linux_buffer_params_v1_id, zwp_linux_buffer_params_v1);
-  
   c_wl_object_del(conn, zwp_linux_buffer_params_v1_id);
-
   return 0;
 }
 

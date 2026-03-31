@@ -19,8 +19,7 @@ int zxdg_decoration_manager_v1_destroy(struct c_wl_connection *conn, union c_wl_
 
 
 int zxdg_toplevel_decoration_v1_set_mode(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_wl_object *toplevel_dec = c_wl_object_get(conn, args[0].o);
-  struct c_wl_surface *surface = toplevel_dec->data;
+  struct c_wl_surface *surface = c_wl_object_data_get(conn, args[0].o);
 
   if (!(args[1].e & (ZXDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE | ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE)))
     return c_wl_error_set(args[0].o, ZXDG_TOPLEVEL_DECORATION_V1_ERROR_INVALID_MODE, "invalid mode");

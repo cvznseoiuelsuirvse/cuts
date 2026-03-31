@@ -39,10 +39,11 @@ struct c_wl_connection {
 	struct c_wl_display *dpy;
 };
 
+struct c_wl_object_data;
 struct c_wl_object {
 	c_wl_object_id id;
 	const struct c_wl_interface *iface;
-	void *data;
+	struct c_wl_object_data *data;
 };
 
 union c_wl_arg {
@@ -82,9 +83,16 @@ struct c_wl_interface {
 void c_wl_interface_add(struct c_wl_interface *interface);
 struct c_wl_interface *c_wl_interface_get(const char *interface_name);
 
-int c_wl_object_add(struct c_wl_connection *conn, c_wl_new_id id, const struct c_wl_interface *interface, void *data);
+int c_wl_object_add(struct c_wl_connection *conn, 
+					c_wl_new_id id, const struct c_wl_interface *interface, struct c_wl_object_data *data);
 struct c_wl_object *c_wl_object_get(struct c_wl_connection *conn, c_wl_object_id id);
 int c_wl_object_del(struct c_wl_connection *conn, c_wl_object_id id);
+void                    *c_wl_object_data_get(struct c_wl_connection *conn, c_wl_object_id id);
+void                    *c_wl_object_data_get2(struct c_wl_object *object);
+void                     c_wl_object_data_set(struct c_wl_object *object, void *data);
+struct c_wl_object_data *c_wl_object_data_create(void *data);
+void c_wl_object_data_ref(struct c_wl_object *object);
+void c_wl_object_data_unref(struct c_wl_object *object);
 
 struct c_wl_connection *c_wl_connection_init(int client_fd, struct c_wl_display *display);
 int  c_wl_connection_free(struct c_wl_connection *conn);

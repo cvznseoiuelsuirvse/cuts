@@ -7,6 +7,8 @@
 
 #define STREQ(s1, s2) (strcmp((s1), (s2)) == 0)
 #define LENGTH(s) (sizeof((s)) /  sizeof(*(s)))
+#define MAX(v1, v2) ((v1) > (v2)) ? (v1) : (v2)
+#define MIN(v1, v2) ((v1) > (v2)) ? (v2) : (v1)
 
 void print_buffer(char *buffer, size_t buffer_len);
 int32_t read_i32(char *buffer, uint32_t *offset);

@@ -41,7 +41,7 @@ struct cuts {
   struct client *focused_client;
   int           focused_client_n;
 
-  size_t        n_stacked_windows;
+  // size_t        n_stacked_windows;
   size_t        curr_layout;
   struct layout *layouts;
 };
@@ -66,49 +66,41 @@ struct client *get_client_from_window(struct c_window *window) {
   return NULL;
 }
 
+
+size_t count_stacked_windows() {
+  size_t i = 0;
+  struct client *c;
+  c_list_for_each(comp->clients, c) {
+    if (c->window) {
+      if (c->window->state & C_WINDOW_FLOAT) continue;
+      i++;
+    }
+  }
+  return i;
+}
+
 void client_focus(struct client *client, double mx, double my) {
   struct c_window *window = client->window;
-
-  c_wl_array arr = {0};
-  if (client->wl_keyboard_id)
-    wl_keyboard_enter(window->wl_surface->conn, client->wl_keyboard_id, c_wl_serial(), window->wl_surface->id, &arr);
-  if (client->wl_pointer_id) {
-    wl_pointer_enter(window->wl_surface->conn, client->wl_pointer_id, c_wl_serial(), window->wl_surface->id, mx, my);
-    wl_pointer_frame(client->conn, client->wl_pointer_id);
-  }
-  c_window_activate(window);
+  c_window_focus(window, client->wl_keyboard_id, client->wl_pointer_id);
   comp->focused_client = client;
 };
 
 void client_unfocus(struct client *client) {
   struct c_window *window = client->window;
-
-  if (client->wl_keyboard_id)
-    wl_keyboard_leave(window->wl_surface->conn, client->wl_keyboard_id, c_wl_serial(), window->wl_surface->id);
-  if (client->wl_pointer_id) {
-    wl_pointer_leave(window->wl_surface->conn, client->wl_pointer_id, c_wl_serial(), window->wl_surface->id);
-    wl_pointer_frame(client->conn, client->wl_pointer_id);
-  }
-
-  c_window_deactivate(window);
+  c_window_unfocus(window, client->wl_keyboard_id, client->wl_pointer_id);
   comp->focused_client = NULL;
 };
 
 void client_close(struct cuts *comp, struct client *client) {
-  if (client->window && !(client->window->state & C_WINDOW_FLOAT))
-    comp->n_stacked_windows--;
-
   if (comp->focused_client == client) {
     client_unfocus(client);
     comp->focused_client = NULL;
   }
 
-  if (client->window)
-    c_window_close(client->window);
-
+  struct c_window *window = client->window;
   c_list_remove_ptr(&comp->clients, client);
 
-  LAYOUT(comp);
+  if (window) LAYOUT(comp);
 }
 
 int on_client_new(struct c_wl_connection *conn, void *userdata) {
@@ -126,22 +118,19 @@ int on_client_gone(struct c_wl_connection *conn, void *userdata) {
   return 0;
 }
 
-int on_window_new_cb(struct c_window *window, void *userdata) {
-  struct client *client = get_client_from_connection(window->wl_surface->conn);
-  client->window = window;
+int on_window_update_cb(struct c_window *window, void *userdata) {
+  if (window->width > 0) return 0;
 
-  if (!(window->state & C_WINDOW_FLOAT))
-    comp->n_stacked_windows++;
 
   LAYOUT(comp);
   return 0;
 }
 
-int on_window_close_cb(struct c_window *window, void *userdata) {
-  struct client *client = get_client_from_window(window);
-  if (!client) return 0;
+int on_window_new_cb(struct c_window *window, void *userdata) {
+  struct client *client = get_client_from_connection(window->wl_surface->conn);
+  client->window = window;
 
-  client_close(comp, client);
+  LAYOUT(comp);
   return 0;
 }
 
@@ -166,35 +155,21 @@ int on_keyboard_key(struct c_input_keyboard_event *event, void *userdata) {
 int on_mouse_scroll(struct c_input_mouse_event *event, void *userdata) {
   if (!comp->focused_client) return 0;
   struct client *client = comp->focused_client;
-  if (!client->wl_pointer_id) return 0;
-  
-  if (!event->axis) {
-    c_log(C_LOG_WARNING, "axis value is 0");
-    return 0;
-  }
-
-  wl_pointer_axis_source(client->conn, client->wl_pointer_id, event->axis_source - 1);
-  wl_pointer_axis_discrete(client->conn, client->wl_pointer_id, WL_POINTER_AXIS_VERTICAL_SCROLL, event->axis_discrete);
-  // wl_pointer_axis_relative_direction(client->conn, client->wl_pointer_id, WL_POINTER_AXIS_VERTICAL_SCROLL, WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);
-  wl_pointer_axis(client->conn, client->wl_pointer_id, c_since_start_ms(), WL_POINTER_AXIS_VERTICAL_SCROLL, (float)event->axis);
-  wl_pointer_frame(client->conn, client->wl_pointer_id);
+  c_window_pointer_scroll(client->window, client->wl_pointer_id, event->axis, event->axis_source - 1, event->axis_discrete);
   return 0;
 }
 
 int on_mouse_button(struct c_input_mouse_event *event, void *userdata) {
   if (!comp->focused_client) return 0;
   struct client *client = comp->focused_client;
-  if (!client->wl_pointer_id) return 0;
-
-  wl_pointer_button(client->conn, client->wl_pointer_id, c_wl_serial(), c_since_start_ms(), event->button, event->button_pressed);
-  wl_pointer_frame(client->conn, client->wl_pointer_id);
+  c_window_pointer_button(client->window, client->wl_pointer_id, event->button, event->button_pressed);
   return 0;
 }
 
 int on_mouse_movement(struct c_input_mouse_event *event, void *userdata) {
   double mx = event->x;
   double my = event->y;
-  uint32_t wx, wy, ww, wh;
+  uint32_t wx, wy;
 
   struct client *focused_client = comp->focused_client;
   struct client *client;
@@ -204,17 +179,13 @@ int on_mouse_movement(struct c_input_mouse_event *event, void *userdata) {
     if (!w) continue;
     wx = w->x;
     wy = w->y;
-    ww = w->width;
-    wh = w->height;
 
-    if (wx <= mx && mx <= wx + ww &&
-        wy <= my && my <= wy + wh) {
-      c_wl_fixed hotspot_x = c_wl_fixed_from_double(mx - wx);
-      c_wl_fixed hotspot_y = c_wl_fixed_from_double(my - wy);
+    if (POINTER_INSIDE(mx, my, w)) {
+      double hotspot_x = mx - wx;
+      double hotspot_y = my - wy;
 
       if (focused_client == client) {
-        wl_pointer_motion(focused_client->conn, focused_client->wl_pointer_id, c_since_start_ms(), hotspot_x, hotspot_y);
-        wl_pointer_frame(focused_client->conn, focused_client->wl_pointer_id);
+        c_window_pointer_move(client->window, client->wl_pointer_id, hotspot_x, hotspot_y);
         return 0;
       }
 
@@ -276,9 +247,15 @@ int wl_seat_get_pointer(struct c_wl_connection *conn, union c_wl_arg *args) {
 void cleanup(int err, void *userdata) {
   if (comp->render)  c_render_free(comp->render);
   if (comp->backend) c_backend_free(comp->backend);
+
+  struct client *c;
+  c_list_for_each(comp->clients, c)
+    c_wl_connection_free(c->conn);
+  
+  c_list_destroy(comp->clients);
+
   if (comp->display) c_wl_display_free(comp->display);
 
-  c_list_destroy(comp->clients);
   exit(err);
 }
 
@@ -294,8 +271,19 @@ void spawn_client(bind_args *args) {
 }
 
 void kill_client(bind_args *args) {
-  if (comp->focused_client)
-    client_close(comp, comp->focused_client);
+  if (comp->focused_client) {
+    struct client *client = comp->focused_client;
+    struct c_window *window = client->window;
+
+    c_list_remove_ptr(&comp->clients, client);
+
+    if (window) { 
+      c_window_close(window);
+      LAYOUT(comp);
+    }
+
+    comp->focused_client = NULL;
+  }
 }
 
 void focus(bind_args *args) {
@@ -316,23 +304,21 @@ void quit(bind_args *args) {
 void tile() {
   struct c_render *render = comp->render;
   c_list *clients = comp->clients;
-  if (comp->n_stacked_windows == 0) return;
+  size_t n_stacked_windows = count_stacked_windows();
+  if (n_stacked_windows == 0) return;
 
   struct c_output_mode *preferred_mode = c_drm_get_preferred_mode(render->drm);
   uint32_t mon_width =  preferred_mode->width;
   uint32_t mon_height = preferred_mode->height;
 
-  mon_width -= (comp->n_stacked_windows + 1) * gap;
-  uint32_t one_window_width = mon_width / comp->n_stacked_windows;
+  mon_width -= (n_stacked_windows + 1) * gap;
+  uint32_t one_window_width = mon_width / n_stacked_windows;
 
   int i = 0;
   struct client *client;
   c_list_for_each(clients, client) {
     struct c_window *window = client->window;
-    if (!window) {
-      c_log(C_LOG_ERROR, "%p client (conn %p) has no window", client, client->conn);
-      cleanup(1, NULL);
-    }
+    if (!window) continue;
     if (window->state & C_WINDOW_FLOAT) continue;
 
     window->x = i++ * one_window_width;
@@ -341,7 +327,8 @@ void tile() {
 
     window->width = one_window_width;
     window->height = mon_height - gap * 2;
-    c_window_resize(window, window->width, window->height, client == comp->focused_client);
+    if (window->wl_surface->role == C_WL_SURFACE_ROLE_XDG_TOPLEVEL)
+      c_window_resize(window, window->width, window->height, client == comp->focused_client);
   }
 }
 
@@ -359,12 +346,6 @@ int main() {
   struct c_wl_display *display = c_wl_display_init();
   if (!display) 
     goto out;
-
-  struct c_wl_display_listener display_listener = {
-    .on_client_new = on_client_new,
-    .on_client_gone = on_client_gone,
-  };
-  c_wl_display_add_listener(display, &display_listener, &_comp);
 
   comp->display = display;
   comp->clients = c_list_new();
@@ -395,17 +376,22 @@ int main() {
 
   comp->backend = backend;
 
+  struct c_wl_display_listener display_listener = {
+    .on_client_new = on_client_new,
+    .on_client_gone = on_client_gone,
+  };
+  c_wl_display_add_listener(display, &display_listener, &_comp);
+
   struct c_render *render = c_render_init(display, backend->drm);
   if (!render) goto out;
 
   struct c_render_listener render_listener = {
     .on_window_new = on_window_new_cb,
-    .on_window_close = on_window_close_cb,
+    // .on_window_update = on_window_update_cb,
   };
   c_render_add_listener(render, &render_listener, comp);
 
   comp->render = render;
-
 
   ret = c_event_loop_run(display->loop);
 

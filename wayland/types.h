@@ -24,11 +24,18 @@ typedef struct c_wl_array {
 } c_wl_array;
 
 
+struct c_wl_formats {
+	size_t    n_formats;
+	uint32_t *formats;
+};
+
 struct c_wl_shm_pool {
 	int 	   fd;
 	uint8_t	  *ptr;
 	uint32_t   size;
-	c_list 	  *supported_formats;
+
+	size_t    n_supported_formats;
+	uint32_t *supported_formats;
 };
 
 enum c_wl_buffer_type {
@@ -66,6 +73,7 @@ enum c_wl_surface_roles {
 struct c_wl_surface {
 	c_wl_object_id  id;
 	enum c_wl_surface_roles role;
+	int decoration;
 
 	struct {
 		c_wl_int width,  x;
@@ -76,6 +84,11 @@ struct c_wl_surface {
 	struct {
 		c_wl_object_id  surface_id;
 		c_wl_object_id  toplevel_id;
+		c_wl_int x,      	 y;
+		c_wl_int width,      height;
+		c_wl_int max_width,  max_height;
+		c_wl_int min_width,  min_height;
+
 		char title[256];
 		char app_id[256];
 		c_wl_uint 		serial;

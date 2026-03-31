@@ -157,10 +157,15 @@ struct c_drm *c_drm_init(int drm_fd, struct c_input *input) {
   drm->output->cursor = cursor;
 
   memset(cursor->image, 0, cursor->image_size);
+  int size = 20;
 
-  for (int y = 0; y < 10; y++) {
-    for (int x = 0; x < 10; x++) {
-      cursor->image[y * cursor->height + x] = 0xFFFFFFFF;
+  for (int y = 0; y < size; y++) {
+    for (int x = 0; x < size; x++) {
+      // if (y == 0 || y == (size - 1) || x == 0 || x == (size - 1)) { 
+      //   cursor->image[y * cursor->height + x] = 0xFF0000FF;
+      // } else {
+        cursor->image[y * cursor->height + x] = 0xFFFFFFFF;
+      // }
     }
   }
   c_cursor_update(drm, cursor);

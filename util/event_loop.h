@@ -22,7 +22,6 @@ typedef enum c_event_callback_status {
 struct c_event_loop {
 	int 		 epfd;
 	c_list	*resources;
-	c_list	*connections;
 	struct epoll_event events[CUTS_MAX_EPOLL_EVENTS];
 };
 

@@ -47,6 +47,7 @@ error:
 
 void c_seat_close(struct c_seat *seat) {
   seat->impl->close(seat->backend);
+  free(seat);
 }
 
 int c_seat_dispatch(struct c_seat *seat) {

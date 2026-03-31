@@ -10,6 +10,8 @@
 #include "util/helpers.h"
 #include "util/log.h"
 
+#define MAX_CMSG_FDS 32
+
 static struct c_wl_interface *__interface[C_WL_MAX_INTERFACES];
 static size_t                 __ninterfaces = 0;
 
@@ -30,6 +32,11 @@ struct c_wl_callback {
 	c_wl_object_id target_id;
 };
 
+struct c_wl_object_data {
+  void *data;
+  size_t ref_count;
+};
+
 inline void c_wl_interface_add(struct c_wl_interface *interface) {
   assert(__ninterfaces < C_WL_MAX_INTERFACES);
   __interface[__ninterfaces++] = interface; 
@@ -43,8 +50,9 @@ inline struct c_wl_interface *c_wl_interface_get(const char *interface_name) {
   return NULL;
 }
 
-static int c_wl_connection_read(struct c_wl_connection *conn, char *buffer, size_t buffer_size, int *req_fd) {
-  char cmsg[CMSG_SPACE(sizeof(int))];
+static int c_wl_connection_read(struct c_wl_connection *conn, char *buffer, size_t buffer_size, 
+                                int req_fds[MAX_CMSG_FDS], size_t *n_req_fds) {
+  char cmsg[CMSG_SPACE(sizeof(int) * MAX_CMSG_FDS)];
 
   struct iovec e[1];
   e[0].iov_base = buffer;
@@ -56,12 +64,20 @@ static int c_wl_connection_read(struct c_wl_connection *conn, char *buffer, size
   m.msg_control = cmsg; 
   m.msg_controllen = sizeof(cmsg); 
 
+  struct cmsghdr *cmsghdr;
   ssize_t n = recvmsg(conn->client_fd, &m, 0);
-  struct cmsghdr *c = CMSG_FIRSTHDR(&m);
-  if (c != NULL){
-    *req_fd = *(int *)CMSG_DATA(c);
-  }
+  for (cmsghdr = CMSG_FIRSTHDR(&m); 
+       cmsghdr != NULL;
+       cmsghdr = CMSG_NXTHDR(&m, cmsghdr)) {
+    if (cmsghdr->cmsg_len == 0) continue;
 
+    int *fds = (int *)CMSG_DATA(cmsghdr);
+    size_t n_fds = (cmsghdr->cmsg_len - CMSG_LEN(0)) / sizeof(int);
+
+    for (size_t i = 0; i < n_fds; i++) {
+      req_fds[(*n_req_fds)++] = fds[i];
+    }
+  }
   return n;
 }
 
@@ -203,7 +219,7 @@ int c_wl_connection_send(struct c_wl_connection *conn, struct c_wl_message *msg,
 
 static int dispatch(struct c_wl_connection *conn, 
                     c_wl_object_id object_id, uint16_t op, uint16_t message_size, 
-                    char *buffer, int req_fd) {
+                    char *buffer, int **req_fds) {
 
   struct c_wl_object *object = c_wl_object_get(conn, object_id);
   if (!object) return c_wl_error_set(object_id, WL_DISPLAY_ERROR_INVALID_OBJECT, "object not registered");
@@ -255,7 +271,8 @@ static int dispatch(struct c_wl_connection *conn,
         break;
 
       case 'F':
-        args[i].F = req_fd;
+        args[i].F = **req_fds;
+        (*req_fds)++;
         break;
 
       case 'a':
@@ -287,8 +304,9 @@ int c_wl_connection_dispatch(struct c_wl_connection *conn) {
   int ret;
   char buffer[C_WL_BUFFER_SIZE];
 
-  int req_fd = 0;
-  int received = c_wl_connection_read(conn, buffer, C_WL_BUFFER_SIZE, &req_fd);
+  int req_fds[MAX_CMSG_FDS];
+  size_t n_req_fds = 0;
+  int received = c_wl_connection_read(conn, buffer, C_WL_BUFFER_SIZE, req_fds, &n_req_fds);
   if (received <= 0) return 1;
 
   size_t msg_count = 0;
@@ -333,9 +351,10 @@ int c_wl_connection_dispatch(struct c_wl_connection *conn) {
     buffer_offset+=message_size;
   }
 
+  int *req_fds_ptr = req_fds;
   for (size_t i = 0; i < msg_count; i++) {
     struct c_wl_recv_message msg = msgs[i];
-    ret = dispatch(conn, msg.object_id, msg.op, msg.message_size, msg.buffer, req_fd);
+    ret = dispatch(conn, msg.object_id, msg.op, msg.message_size, msg.buffer, &req_fds_ptr);
     if (ret != 0) 
       break;
   }
@@ -346,9 +365,12 @@ int c_wl_connection_dispatch(struct c_wl_connection *conn) {
   return ret;
 }
 
-int c_wl_object_add(struct c_wl_connection *conn, c_wl_new_id id, const struct c_wl_interface *interface, void *data) {
+int c_wl_object_add(struct c_wl_connection *conn, c_wl_new_id id, const struct c_wl_interface *interface, struct c_wl_object_data *data) {
   if (c_wl_object_get(conn, id)) return -1;
   assert(interface);
+
+  if (data)
+    data->ref_count++;
 
   struct c_wl_object new_object = {
     .id = id,
@@ -370,12 +392,51 @@ int c_wl_object_add(struct c_wl_connection *conn, c_wl_new_id id, const struct c
   return id;
 }
 
+struct c_wl_object_data *c_wl_object_data_create(void *data) {
+  struct c_wl_object_data *odata = calloc(1, sizeof(*odata));
+  if (!odata) return NULL;
+  odata->data = data;
+  return odata;
+}
+
+void *c_wl_object_data_get(struct c_wl_connection *conn, c_wl_object_id id) {
+  struct c_wl_object *o = c_map_get(conn->objects, id);
+  if (!o) return NULL;
+  return o->data->data;
+}
+
+void *c_wl_object_data_get2(struct c_wl_object *object) {
+  return object->data->data;
+}
+
+void c_wl_object_data_set(struct c_wl_object *object, void *data) {
+  struct c_wl_object_data *odata = c_wl_object_data_create(data);
+  odata->ref_count++;
+  object->data = odata;
+}
+
+void c_wl_object_data_unref(struct c_wl_object *object) {
+  object->data->ref_count--;
+}
+
+void c_wl_object_data_ref(struct c_wl_object *object) {
+  object->data->ref_count++;
+}
+
 inline struct c_wl_object *c_wl_object_get(struct c_wl_connection *conn, c_wl_object_id id) {
   return c_map_get(conn->objects, id);
 }
 
 int c_wl_object_del(struct c_wl_connection *conn, c_wl_object_id id) {
-  if (!c_map_get(conn->objects, id)) return 1;
+  struct c_wl_object *o = c_map_get(conn->objects, id);
+  if (!o) return 1;
+  
+  if (o->data) {
+    if (--o->data->ref_count == 0) {
+      free(o->data->data);
+      free(o->data);
+    }
+  }
 
   c_map_remove(conn->objects, id);
   if (id < 0xFF000000) 
@@ -390,7 +451,7 @@ int c_wl_object_del(struct c_wl_connection *conn, c_wl_object_id id) {
 struct c_wl_connection *c_wl_connection_init(int client_fd, struct c_wl_display *display) {
   struct c_wl_connection *conn = calloc(1, sizeof(struct c_wl_connection));
   if (!conn) {
-    perror("calloc");
+    c_log(C_LOG_ERROR, "calloc failed");
     return NULL;
   }
 
@@ -407,10 +468,22 @@ struct c_wl_connection *c_wl_connection_init(int client_fd, struct c_wl_display 
 }
 
 int c_wl_connection_free(struct c_wl_connection *conn) {
+  c_wl_object_id id;
+  struct c_wl_object *o;
+  c_map_for_each(conn->objects, id, o)
+    if (o->data) {
+      c_log(C_LOG_DEBUG, "%-30s %d %p", o->iface->name, o->data->ref_count, o->data);
+      if (--o->data->ref_count == 0) {
+        free(o->data->data);
+        free(o->data);
+      }
+  }
   c_map_destroy(conn->objects);
+
   c_list_destroy(conn->callback_queue);
   c_bitmap_destroy(conn->client_id_pool);
   c_bitmap_destroy(conn->server_id_pool);
+  free(conn);
   return 0;
 }
 

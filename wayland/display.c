@@ -123,7 +123,7 @@ void c_wl_display_add_listener(struct c_wl_display *display, struct c_wl_display
   c_list_push(display->listeners, &l, sizeof(l)); 
 }
 
-void c_wl_display_notify(struct c_wl_display *display, void *data, enum c_wl_display_notifer notifier) {
+void c_wl_display_notify(struct c_wl_display *display, void *data, enum c_wl_display_notifier notifier) {
   struct __display_event_listener *l;
 
   #define notify(callback) \
@@ -141,6 +141,8 @@ void c_wl_display_notify(struct c_wl_display *display, void *data, enum c_wl_dis
     case C_WL_DISPLAY_ON_SURFACE_NEW:     notify(on_surface_new); break;
     case C_WL_DISPLAY_ON_SURFACE_UPDATE:  notify(on_surface_update); break;
     case C_WL_DISPLAY_ON_SURFACE_DESTROY: notify(on_surface_destroy); break;
+
+    case C_WL_DISPLAY_ON_BUFFER_DESTROY:  notify(on_buffer_destroy); break;
     case C_WL_DISPLAY_ON_TOPLEVEL_NEW:    notify(on_toplevel_new); break;
     default: break;
   }

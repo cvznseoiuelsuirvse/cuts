@@ -68,21 +68,18 @@ struct c_shm_params {
 
 struct c_render_listener {
 	int (*on_window_new)	 (struct c_window *, void *);
+	int (*on_window_update)	 (struct c_window *, void *);
 	int (*on_window_close)	 (struct c_window *, void *);
 };
 
 struct c_render {
-
 	struct c_drm  *drm;
 	struct c_egl *egl;
 	struct c_gles *gl;
 
-	struct {
-		size_t n_entries;
-		struct c_format *entries;
-		c_list *wl_shm_formats;
-	} formats;
-
+	size_t n_formats;
+	struct c_format *formats;
+	uint32_t *wl_formats;
 
 	struct {
 		int front;
@@ -97,8 +94,5 @@ struct c_render {
 struct c_render *c_render_init(struct c_wl_display *dpy, struct c_drm *drm);
 void c_render_free(struct c_render *render);
 void c_render_add_listener(struct c_render *render, struct c_render_listener *listener, void *userdata);
-
-int c_render_get_ft_fd(struct c_render *render);
-
-void c_render_redraw(struct c_render *render);
+int  c_render_get_ft_fd(struct c_render *render);
 #endif

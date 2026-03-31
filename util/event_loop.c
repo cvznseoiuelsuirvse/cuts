@@ -18,7 +18,6 @@ struct c_event_loop * c_event_loop_init() {
   }
 
   loop->resources = c_list_new();
-  loop->connections = c_list_new();
   return loop;
 }
 
@@ -54,8 +53,6 @@ void c_event_loop_free(struct c_event_loop *loop) {
   }
   
   c_list_destroy(loop->resources);
-  c_list_destroy(loop->connections);
-
   free(loop);
 }
 

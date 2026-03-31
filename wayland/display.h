@@ -3,14 +3,16 @@
 
 #include "wayland/server.h"
 
-enum c_wl_display_notifer {
+enum c_wl_display_notifier {
 	C_WL_DISPLAY_ON_CLIENT_NEW,
 	C_WL_DISPLAY_ON_CLIENT_GONE,
 
 	C_WL_DISPLAY_ON_SURFACE_NEW,
-	C_WL_DISPLAY_ON_SURFACE_DESTROY,
 	C_WL_DISPLAY_ON_SURFACE_UPDATE,
+	C_WL_DISPLAY_ON_SURFACE_DESTROY,
+
 	C_WL_DISPLAY_ON_TOPLEVEL_NEW,
+	C_WL_DISPLAY_ON_BUFFER_DESTROY,
 };
 
 struct c_wl_display_listener {
@@ -18,9 +20,12 @@ struct c_wl_display_listener {
 	int (*on_client_gone)    (struct c_wl_connection *, void *);
 
 	int (*on_surface_new)    (struct c_wl_surface *, void *);
-	int (*on_surface_destroy)(struct c_wl_surface *, void *);
 	int (*on_surface_update) (struct c_wl_surface *, void *);
+	int (*on_surface_destroy)(struct c_wl_surface *, void *);
+
 	int (*on_toplevel_new) 	 (struct c_wl_surface *, void *);
+
+	int (*on_buffer_destroy) (struct c_wl_buffer *, void*);
 };
 
 typedef void*(*c_wl_display_on_bind)(struct c_wl_connection *, c_wl_object_id, c_wl_uint, void *);
@@ -44,6 +49,6 @@ void c_wl_display_free(struct c_wl_display *display);
 struct c_wl_display *c_wl_display_init();
 void c_wl_display_add_supported_interface(struct c_wl_display *display, const char *name, c_wl_display_on_bind on_bind, void *userdata);
 void c_wl_display_add_listener(struct c_wl_display *display, struct c_wl_display_listener *listener, void *userdata);
-void c_wl_display_notify(struct c_wl_display *display, void *data, enum c_wl_display_notifer notifier);
+void c_wl_display_notify(struct c_wl_display *display, void *data, enum c_wl_display_notifier notifier);
 
 #endif
