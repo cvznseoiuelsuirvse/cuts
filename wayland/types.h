@@ -9,6 +9,11 @@
 #define C_WL_REQUEST __attribute__((weak)) int
 #define C_WL_EVENT int
 
+#define C_WL_MAX_INTERFACES 2048
+#define C_WL_HEADER_SIZE 8
+#define C_WL_BUFFER_SIZE 4096
+#define C_WL_STRING_SIZE (C_WL_BUFFER_SIZE - C_WL_HEADER_SIZE - 4) // 4 -> string prefix size
+
 typedef int32_t 	  		c_wl_int;
 typedef uint32_t	 		c_wl_uint;
 typedef uint32_t			c_wl_fixed;
@@ -30,7 +35,7 @@ struct c_wl_formats {
 };
 
 struct c_wl_shm_pool {
-	int 	   fd;
+	int 	     fd;
 	uint8_t	  *ptr;
 	uint32_t   size;
 
@@ -54,7 +59,7 @@ struct c_wl_buffer {
 	enum c_wl_buffer_type type;	
 	union {
 		struct c_dmabuf *dma;
-		struct c_shm *shm;
+		struct c_shm    *shm;
 	};
 };
 
@@ -72,8 +77,11 @@ enum c_wl_surface_roles {
 
 struct c_wl_surface {
 	c_wl_object_id  id;
+  c_wl_int scale;
+	struct c_wl_connection *conn;
+
+  c_wl_object_id frame_id;
 	enum c_wl_surface_roles role;
-	int decoration;
 
 	struct {
 		c_wl_int width,  x;
@@ -89,8 +97,8 @@ struct c_wl_surface {
 		c_wl_int max_width,  max_height;
 		c_wl_int min_width,  min_height;
 
-		char title[256];
-		char app_id[256];
+		char title[C_WL_STRING_SIZE];
+		char app_id[C_WL_STRING_SIZE];
 		c_wl_uint 		serial;
 
 		struct c_wl_surface *parent;
@@ -111,14 +119,12 @@ struct c_wl_surface {
 
 	struct c_wl_buffer 	*pending;
 	struct c_wl_buffer 	*active;
-
-	struct c_wl_connection *conn;
 };
 
 struct c_wl_linux_dmabuf_ctx {
-	dev_t  drm_dev_id;	
-	int    ft_fd;
-	size_t n_ft_entries;
+	dev_t    drm_dev_id;	
+	int      ft_fd;
+	size_t   n_ft_entries;
 };
 
 double c_wl_fixed_to_double(c_wl_fixed f);

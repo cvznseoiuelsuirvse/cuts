@@ -45,7 +45,9 @@ int zwp_linux_dmabuf_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *ar
   c_wl_new_id zwp_linux_buffer_v1_id = args[0].n;
   struct c_wl_object *zwp_linux_buffer_v1;
   C_WL_CHECK_IF_REGISTERED(zwp_linux_buffer_v1_id, zwp_linux_buffer_v1);
-  
+
+  struct c_wl_linux_dmabuf_ctx *ctx = c_wl_object_data_get(conn, args[0].o);
+  close(ctx->ft_fd);
   c_wl_object_del(conn, zwp_linux_buffer_v1_id);
 
   return 0;

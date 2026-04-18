@@ -8,6 +8,7 @@
 
 #include "backend/input.h"
 #include "util/log.h"
+#include "util/shm.h"
 
 enum __input_event_listener_type {
   INPUT_EVENT_LISTENER_MOUSE = 1 << 5,
@@ -301,8 +302,7 @@ void c_input_add_shortcut_handler(struct c_input *input, uint32_t mod_mask, xkb_
 }
 
 int c_input_init_xkb_state(struct c_input *input, struct xkb_rule_names *rule_names) {
-  input->xkb.keymap = xkb_keymap_new_from_names2(input->xkb.ctx, rule_names, 
-                                                        XKB_KEYMAP_FORMAT_TEXT_V1, XKB_KEYMAP_COMPILE_NO_FLAGS);
+  input->xkb.keymap = xkb_keymap_new_from_names(input->xkb.ctx, rule_names, XKB_KEYMAP_COMPILE_NO_FLAGS);
   if (!input->xkb.keymap) {
     c_log(C_LOG_ERROR, "xkb_keymap_new_from_names2 failed");
     return -1;
@@ -324,21 +324,34 @@ int c_input_get_xkb_keymap_fd(struct c_input *input, int *fd) {
   struct xkb_keymap *keymap = get_xkb_keymap(input);
   if (!keymap) return -1;
 
-  char *keymap_string = xkb_keymap_get_as_string2(keymap, XKB_KEYMAP_USE_ORIGINAL_FORMAT, XKB_KEYMAP_SERIALIZE_NO_FLAGS);
-
-  size_t keymap_string_len = strlen(keymap_string) + 1;
-  *fd = memfd_create("keymap", MFD_CLOEXEC);
-  if (*fd < 0) {
-    c_log_errno(C_LOG_ERROR, "memfd_create failed");
-    keymap_string_len = -1;
-    goto out;
+  char *keymap_string = xkb_keymap_get_as_string(keymap, XKB_KEYMAP_FORMAT_TEXT_V1);
+  if (!keymap_string) {
+    c_log(C_LOG_ERROR, "xkb_keymap_get_as_string failed");
+    return -1;
   }
 
-  write(*fd, keymap_string, keymap_string_len);
+  int keymap_string_len = strlen(keymap_string) + 1;
+
+  int rfd, rwfd;
+  if (new_shm(keymap_string_len, &rfd, &rwfd) < 0) {
+    c_log(C_LOG_ERROR, "failed to create new shm file");
+    keymap_string_len = -1;
+    goto error;
+  }
+
+  write(rwfd, keymap_string, keymap_string_len);
+  close(rwfd);
+
+  *fd = rfd;
 
 out:
   free(keymap_string);
   return keymap_string_len; 
+
+error:
+  close(rwfd);
+  close(rfd);
+  goto out;
 }
 
 void c_input_free(struct c_input *input) {

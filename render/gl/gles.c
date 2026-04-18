@@ -109,8 +109,17 @@ static int load_gl_exts(struct c_gles *gl) {
 
   if (has_ext_gles("GL_OES_EGL_image_external", exts)) {
     load_gl_proc(glEGLImageTargetTexture2DOES);
+    gl->ext_support.OES_EGL_image_external = 1;
+
   } else {
     c_log(C_LOG_ERROR, "GL_OES_EGL_image_external not supported");
+    return -1;
+  }
+
+  if (has_ext_gles("GL_OES_EGL_image", exts)) {
+    load_gl_proc(glEGLImageTargetRenderbufferStorageOES);
+  } else {
+    c_log(C_LOG_ERROR, "GL_OES_EGL_image not supported");
     return -1;
   }
 
@@ -122,7 +131,6 @@ static int load_gl_exts(struct c_gles *gl) {
     load_gl_proc(glDebugMessageCallbackKHR);
 
     gl->proc.glDebugMessageCallbackKHR(gl_log, NULL);
-
   }
 
   return 0;

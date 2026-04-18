@@ -11,10 +11,15 @@ struct c_gles {
 	GLuint vbo;
 	GLuint vao;
 	struct {
-		PFNGLEGLIMAGETARGETTEXTURE2DOESPROC glEGLImageTargetTexture2DOES;
-		PFNGLDEBUGMESSAGECONTROLKHRPROC 	glDebugMessageControlKHR;
-		PFNGLDEBUGMESSAGECALLBACKKHRPROC 	glDebugMessageCallbackKHR;
+		PFNGLEGLIMAGETARGETTEXTURE2DOESPROC 		  glEGLImageTargetTexture2DOES;
+		PFNGLEGLIMAGETARGETRENDERBUFFERSTORAGEOESPROC glEGLImageTargetRenderbufferStorageOES;
+		PFNGLDEBUGMESSAGECONTROLKHRPROC 			  glDebugMessageControlKHR;
+		PFNGLDEBUGMESSAGECALLBACKKHRPROC 			  glDebugMessageCallbackKHR;
 	} proc;
+
+	struct {
+		int OES_EGL_image_external;
+	} ext_support;
 };
 
 struct c_gles *c_gles_init();

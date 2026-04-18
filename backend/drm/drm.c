@@ -106,7 +106,7 @@ void c_drm_free(struct c_drm *drm) {
   if (drm->output) {
     if (drm->output->cursor) {
       memset(drm->output->cursor->image, 0, drm->output->cursor->image_size);
-      c_cursor_update(drm, drm->output->cursor);
+      // c_cursor_update(drm, drm->output->cursor);
       c_cursor_free(drm->output->cursor);
     }
     c_list_destroy(drm->output->modes);
@@ -161,13 +161,14 @@ struct c_drm *c_drm_init(int drm_fd, struct c_input *input) {
 
   for (int y = 0; y < size; y++) {
     for (int x = 0; x < size; x++) {
-      // if (y == 0 || y == (size - 1) || x == 0 || x == (size - 1)) { 
-      //   cursor->image[y * cursor->height + x] = 0xFF0000FF;
-      // } else {
+      if (y == 0 || y == (size - 1) || x == 0 || x == (size - 1)) { 
+        cursor->image[y * cursor->height + x] = 0xFF000000;
+      } else {
         cursor->image[y * cursor->height + x] = 0xFFFFFFFF;
-      // }
+      }
     }
   }
+
   c_cursor_update(drm, cursor);
 
   drmModeFreeResources(resource);

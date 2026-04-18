@@ -21,7 +21,6 @@ void    c_list_destroy(c_list *l);
 void   *c_list_push(c_list *l, void *data, size_t data_size);
 void 	c_list_remove_ptr(c_list **head, void *data);
 void   *c_list_get(c_list *l, uint32_t i);
-void   *c_list_get_last(c_list *l);
 size_t  c_list_len(c_list *l);
 int     c_list_idx(c_list *l, void *data);
 void   *c_list_insert(c_list **head, uint32_t i, void *data, size_t data_size);

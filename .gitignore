@@ -7,7 +7,5 @@ ref/
 Makefile
 send.sh
 cmd
-runvm.sh
 cuts.log
-genprotos.sh
 asan.supp

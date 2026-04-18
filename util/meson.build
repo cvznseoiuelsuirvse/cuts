@@ -6,6 +6,7 @@ util_sources = files(
   'bitmap.c',
   'log.c',
   'signal.c',
+  'shm.c',
 )
 util_include = include_directories('..')
 util_dep = declare_dependency(

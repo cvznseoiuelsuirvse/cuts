@@ -19,7 +19,9 @@ enum c_window_states {
 };
 
 struct c_window {
-  struct c_wl_surface *wl_surface;
+  struct c_wl_connection *conn;
+
+  c_list *surfaces;
   uint32_t width, height;
   int32_t x, y;
 
@@ -33,14 +35,18 @@ void c_window_resize(struct c_window *window, uint32_t width, uint32_t height, i
 void c_window_move(struct c_window *window);
 void c_window_hide(struct c_window *window);
 void c_window_activate(struct c_window *window);
-void c_window_focus(struct c_window *window, c_wl_object_id wl_keyboard, c_wl_object_id wl_pointer);
+void c_window_focus(struct c_window *window, double hotspot_x, double hotspot_y);
 void c_window_deactivate(struct c_window *window);
-void c_window_unfocus(struct c_window *window, c_wl_object_id wl_keyboard, c_wl_object_id wl_pointer);
+void c_window_unfocus(struct c_window *window);
 void c_window_close(struct c_window *window);
 
-void c_window_pointer_move(struct c_window *window, c_wl_object_id wl_pointer, double px, double py);
-void c_window_pointer_button(struct c_window *window, c_wl_object_id wl_pointer, enum c_input_mouse_buttons button, int pressed);
-void c_window_pointer_scroll(struct c_window *window, c_wl_object_id wl_pointer, double axis,
+void c_window_pointer_move(struct c_window *window, double x, double y);
+void c_window_pointer_button(struct c_window *window, enum c_input_mouse_buttons button, int pressed);
+void c_window_pointer_scroll(struct c_window *window, double axis,
                            enum wl_pointer_axis_source_enum axis_source, int axis_discrete);
+
+void c_window_keyboard_key(struct c_window *window, int32_t key, int pressed, 
+		xkb_mod_mask_t mods_depressed, xkb_mod_mask_t mods_latched, xkb_mod_mask_t mods_locked, 
+		xkb_layout_index_t group, int send_mods);
 
 #endif

@@ -87,12 +87,11 @@ struct c_render {
 	} swapchain;
 
 	c_list *listeners;
-	c_map  *surfaces;
+	c_map  *windows;
 
 };
 
 struct c_render *c_render_init(struct c_wl_display *dpy, struct c_drm *drm);
 void c_render_free(struct c_render *render);
 void c_render_add_listener(struct c_render *render, struct c_render_listener *listener, void *userdata);
-int  c_render_get_ft_fd(struct c_render *render);
 #endif

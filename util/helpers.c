@@ -86,10 +86,12 @@ void write_array(char *buffer, uint32_t *offset, const void *array, size_t array
     uint32_t padded_array_size = PADDED4(array_size);
 
     write_u32(buffer, offset, array_size);
-    memset(buffer + *offset, 0, padded_array_size);
-    memcpy(buffer + *offset, array, array_size);
+    if (array_size > 0) {
+      memset(buffer + *offset, 0, padded_array_size);
+      memcpy(buffer + *offset, array, array_size);
+    }
 
-    *offset += padded_array_size ? padded_array_size : sizeof(uint32_t);
+    *offset += padded_array_size;
 }
 
 int set_nonblocking(int fd) {

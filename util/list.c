@@ -138,9 +138,3 @@ int c_list_idx(c_list *l, void *data) {
 
   return -1;
 }
-
-void *c_list_get_last(c_list *l) {
-  void *data = NULL;
-  for (size_t i = 0; l->next; l = l->next, i++) data = l->data;
-  return data;
-}

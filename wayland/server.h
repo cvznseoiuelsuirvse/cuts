@@ -4,15 +4,8 @@
 #include <time.h>
 
 #include "wayland/types.h"
-
 #include "util/map.h"
-#include "util/list.h"
-#include "util/bitmap.h"
 
-#define C_WL_MAX_INTERFACES 2048
-#define C_WL_HEADER_SIZE 8
-#define C_WL_BUFFER_SIZE 4096
-#define C_WL_STRING_SIZE (C_WL_BUFFER_SIZE - C_WL_HEADER_SIZE - 4) // 4 -> string prefix size
   
 #define C_WL_INTERFACE_REGISTER(name, interface, version, nrequests, ...)                       \
   struct c_wl_interface name = {interface, version, nrequests, { __VA_ARGS__ }}; \
@@ -27,17 +20,13 @@
   (object) = c_wl_object_get(conn, (id)); \
   if ((object)) return c_wl_error_set(args[0].u, 0, "object %d already registered", (id))
 
-struct c_wl_connection {
-	int 	client_fd;
+#define c_wl_objects_for_each(conn, obj) \
+	__attribute__((unused)) uint64_t __key; \
+	c_map_for_each(c_wl_connection_get_objects(conn), __key, obj) \
+	
 
-	c_map  *objects;
-	c_list *callback_queue;
-
-	c_bitmap 	*client_id_pool;
-	c_bitmap 	*server_id_pool;
-
-	struct c_wl_display *dpy;
-};
+struct c_wl_display;
+struct c_wl_connection;
 
 struct c_wl_object_data;
 struct c_wl_object {
@@ -91,15 +80,14 @@ void                    *c_wl_object_data_get(struct c_wl_connection *conn, c_wl
 void                    *c_wl_object_data_get2(struct c_wl_object *object);
 void                     c_wl_object_data_set(struct c_wl_object *object, void *data);
 struct c_wl_object_data *c_wl_object_data_create(void *data);
-void c_wl_object_data_ref(struct c_wl_object *object);
-void c_wl_object_data_unref(struct c_wl_object *object);
 
 struct c_wl_connection *c_wl_connection_init(int client_fd, struct c_wl_display *display);
 int  c_wl_connection_free(struct c_wl_connection *conn);
 int  c_wl_connection_send(struct c_wl_connection *conn, struct c_wl_message *msg, size_t nargs, ...);
 int  c_wl_connection_dispatch(struct c_wl_connection *conn);
-int  c_wl_connection_callback_add(struct c_wl_connection *conn, c_wl_object_id callback_id, c_wl_object_id target_id);
-void c_wl_connection_callback_done(struct c_wl_connection *conn, c_wl_object_id target_id);
+void c_wl_connection_callback_done(struct c_wl_connection *conn, c_wl_object_id id);
+struct c_wl_display *c_wl_connection_get_dpy(struct c_wl_connection *conn);
+struct c_map *c_wl_connection_get_objects(struct c_wl_connection *conn);
 
 int c_wl_error_set(c_wl_object_id object_id, c_wl_int code, c_wl_string msg, ...);
 void c_wl_error_send(struct c_wl_connection *conn);

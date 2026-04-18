@@ -22,6 +22,16 @@ typedef struct c_map {
   for (size_t __i = 0; __i < m->size; __i++)                      \
     for (struct c_map_pair *p = m->pairs[__i]; p && ((k = p->key), 1) && ((v = p->value), 1); p = p->next)
 
+#define c_map_for_each_values(m, v)                                     \
+  __attribute__((unused)) size_t __key; \
+  for (size_t __i = 0; __i < m->size; __i++)                      \
+    for (struct c_map_pair *p = m->pairs[__i]; p && ((__key = p->key), 1) && ((v = p->value), 1); p = p->next)
+
+#define c_map_for_each_keys(m, k)                                     \
+  __attribute__((unused)) size_t __value; \
+  for (size_t __i = 0; __i < m->size; __i++)                      \
+    for (struct c_map_pair *p = m->pairs[__i]; p && ((k = p->key), 1) && ((__value = p->value), 1); p = p->next)
+
 c_map *c_map_new(size_t size);
 void   c_map_destroy(c_map *m);
 void  *c_map_set(c_map *m, uint64_t key, void *value, size_t value_size);

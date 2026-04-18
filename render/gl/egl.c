@@ -1,4 +1,5 @@
 #include <unistd.h>
+#include <inttypes.h>
 #include <gbm.h>
 
 #include <GLES2/gl2.h>
@@ -17,25 +18,25 @@
 #define EGL_DMA_BUF_PLANEX_PITCH_EXT(n)       EGL_DMA_BUF_PLANE0_FD_EXT + (n) * 3 + 2
 #define EGL_DMA_BUF_PLANEX_MODIFIER_LO_EXT(n) EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT + (n) * 2
 #define EGL_DMA_BUF_PLANEX_MODIFIER_HI_EXT(n) EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT + (n) * 2 + 1
-#define CASE_STR( value ) case value: return #value
 #define egl_error(func) c_log(C_LOG_ERROR, func " failed: %s", egl_error_string(eglGetError()))
+#define egl_case_str( value ) case value: return #value
 
 const char* egl_error_string(EGLint error) {
   switch(error) {
-  CASE_STR( EGL_NOT_INITIALIZED     );
-  CASE_STR( EGL_BAD_ACCESS          );
-  CASE_STR( EGL_BAD_ALLOC           );
-  CASE_STR( EGL_BAD_ATTRIBUTE       );
-  CASE_STR( EGL_BAD_CONTEXT         );
-  CASE_STR( EGL_BAD_CONFIG          );
-  CASE_STR( EGL_BAD_CURRENT_SURFACE );
-  CASE_STR( EGL_BAD_DISPLAY         );
-  CASE_STR( EGL_BAD_SURFACE         );
-  CASE_STR( EGL_BAD_MATCH           );
-  CASE_STR( EGL_BAD_PARAMETER       );
-  CASE_STR( EGL_BAD_NATIVE_PIXMAP   );
-  CASE_STR( EGL_BAD_NATIVE_WINDOW   );
-  CASE_STR( EGL_CONTEXT_LOST        );
+  egl_case_str( EGL_NOT_INITIALIZED     );
+  egl_case_str( EGL_BAD_ACCESS          );
+  egl_case_str( EGL_BAD_ALLOC           );
+  egl_case_str( EGL_BAD_ATTRIBUTE       );
+  egl_case_str( EGL_BAD_CONTEXT         );
+  egl_case_str( EGL_BAD_CONFIG          );
+  egl_case_str( EGL_BAD_CURRENT_SURFACE );
+  egl_case_str( EGL_BAD_DISPLAY         );
+  egl_case_str( EGL_BAD_SURFACE         );
+  egl_case_str( EGL_BAD_MATCH           );
+  egl_case_str( EGL_BAD_PARAMETER       );
+  egl_case_str( EGL_BAD_NATIVE_PIXMAP   );
+  egl_case_str( EGL_BAD_NATIVE_WINDOW   );
+  egl_case_str( EGL_CONTEXT_LOST        );
   default: return "Unknown";
   }
 }
@@ -196,7 +197,7 @@ struct c_format *c_egl_query_formats(struct c_egl *egl, size_t *n_entries) {
     if (num_modifiers < 0)  continue;
 
     char *format_name = drmGetFormatName(format);
-    c_log(C_LOG_DEBUG, "format=%4s", format_name, num_modifiers);
+    c_log(C_LOG_DEBUG, "format=0x%"PRIX32" %4s", format, format_name, num_modifiers);
     free(format_name);
 
     for (int m = 0; m < num_modifiers; m++) {
@@ -219,9 +220,9 @@ struct c_format *c_egl_query_formats(struct c_egl *egl, size_t *n_entries) {
      
       char *modifier_name = drmGetFormatModifierName(modifier);
       if (!no_modifiers_found && external_only[m])
-        c_log(C_LOG_DEBUG, "   modifier=%s external_only", modifier_name);
+        c_log(C_LOG_DEBUG, "   modifier=0x%"PRIX64" %s", modifier, modifier_name);
       else
-        c_log(C_LOG_DEBUG, "   modifier=%s", modifier_name);
+        c_log(C_LOG_DEBUG, "   modifier=0x%"PRIX64" %s (render)", modifier, modifier_name);
       free(modifier_name);
     }
 

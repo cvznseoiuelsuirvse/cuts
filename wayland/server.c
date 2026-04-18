@@ -4,11 +4,13 @@
 #include <sys/un.h>
 #include <stdarg.h>
 
+#include "wayland/display.h"
 #include "wayland/server.h"
 #include "wayland/types/wayland.h"
 
 #include "util/helpers.h"
 #include "util/log.h"
+#include "util/bitmap.h"
 
 #define MAX_CMSG_FDS 32
 
@@ -19,6 +21,14 @@ static char            __error_msg[C_WL_STRING_SIZE] = {0};
 static c_wl_int        __error_code = 0;
 static c_wl_object_id  __error_object_id = 0;
 static uint32_t        __serial = 1;
+
+struct c_wl_connection {
+	int 	     client_fd;
+	c_map     *objects;
+	c_bitmap 	*client_id_pool;
+	c_bitmap 	*server_id_pool;
+	struct c_wl_display *dpy;
+};
 
 struct c_wl_recv_message {
   uint32_t object_id;
@@ -81,38 +91,11 @@ static int c_wl_connection_read(struct c_wl_connection *conn, char *buffer, size
   return n;
 }
 
-int c_wl_connection_callback_add(struct c_wl_connection *conn, c_wl_object_id callback_id, c_wl_object_id target_id) {
-  if (c_wl_object_get(conn, callback_id)) return -1;
-
-  struct c_wl_callback callback = {callback_id, target_id};
-  c_list_push(conn->callback_queue, &callback, sizeof(struct c_wl_callback));
-  c_wl_object_add(conn, callback_id, c_wl_interface_get("wl_callback"), NULL);
-  return 0;
+void c_wl_connection_callback_done(struct c_wl_connection *conn, c_wl_object_id id) {
+    wl_callback_done(conn, id, c_wl_serial());
+    wl_display_delete_id(conn, 1, id);
+    c_wl_object_del(conn, id);
 }
-
-void c_wl_connection_callback_done(struct c_wl_connection *conn, c_wl_object_id target_id) {
-  struct c_wl_callback *callback = NULL;
-
-  if (!target_id)
-    callback = c_list_get_last(conn->callback_queue);
-  else {
-    struct c_wl_callback *c;
-    c_list_for_each(conn->callback_queue, c) {
-      if (c->target_id == target_id) {
-        callback = c;
-        break;
-      }
-    }
-  }
-
-  if (callback) {
-    wl_callback_done(conn, callback->callback_id, c_wl_serial());
-    c_wl_object_del(conn, callback->callback_id);
-    wl_display_delete_id(conn, 1, callback->callback_id);
-    c_list_remove_ptr(&conn->callback_queue, callback);
-  }
-}
-
 
 static int c_wl_connection_write(struct c_wl_connection *conn, char *buffer, size_t buffer_size, int event_fd) {
   if (event_fd > 0) {
@@ -285,13 +268,13 @@ static int dispatch(struct c_wl_connection *conn,
   }
 
 
+  c_log_wl_request(conn, object, &request, args);
   if (!request.handler) {
     c_wl_error_set(object_id, WL_DISPLAY_ERROR_IMPLEMENTATION, 
                    "%s.%s method not implemented", iface->name, request.name);
     return -1;
   }
 
-  c_log_wl_request(conn, object, &request, args);
   int ret = request.handler(conn, args);
 
   if (arr.data) free(arr.data);
@@ -313,9 +296,9 @@ int c_wl_connection_dispatch(struct c_wl_connection *conn) {
   struct c_wl_recv_message msgs[1024];
 
   int buffer_offset = 0;
-  c_wl_object_id last_object = 0;
 
-  int sync_requested = 0;
+  size_t n_sync_requests = 0;
+  c_wl_object_id sync_requests[4] = {0};
 
   while (buffer_offset < received) {
     if ((received - buffer_offset) < C_WL_HEADER_SIZE) return -1;
@@ -331,12 +314,14 @@ int c_wl_connection_dispatch(struct c_wl_connection *conn) {
 
 
     if (object_id == 1 && op == 0 && message_size == C_WL_HEADER_SIZE + sizeof(uint32_t)) {
-      c_wl_object_id c_wl_callback_id = read_u32(buffer+buffer_offset, &tmp);
-      sync_requested = 1;
-      if (c_wl_connection_callback_add(conn, c_wl_callback_id, last_object) == -1) {
-        c_wl_error_set(1, WL_DISPLAY_ERROR_INVALID_OBJECT, "object %d already registered", c_wl_callback_id);
+      c_wl_object_id wl_callback_id = read_u32(buffer+buffer_offset, &tmp);
+      if (c_wl_object_get(conn, wl_callback_id)) {
+        c_wl_error_set(1, WL_DISPLAY_ERROR_INVALID_OBJECT, "object %d already registered", wl_callback_id);
         return -1;
       }
+
+      c_wl_object_add(conn, wl_callback_id, c_wl_interface_get("wl_callback"), NULL);
+      sync_requests[n_sync_requests++] = wl_callback_id;
       dispatch(conn, object_id, op, message_size, buffer+buffer_offset, 0);
 
     } else {
@@ -347,7 +332,6 @@ int c_wl_connection_dispatch(struct c_wl_connection *conn) {
       msg->buffer = buffer+buffer_offset;
     }
 
-    last_object = object_id;
     buffer_offset+=message_size;
   }
 
@@ -359,8 +343,8 @@ int c_wl_connection_dispatch(struct c_wl_connection *conn) {
       break;
   }
 
-  if (sync_requested)
-    c_wl_connection_callback_done(conn, 0);
+  for (size_t i = 0; i < n_sync_requests; i++)
+    c_wl_connection_callback_done(conn, sync_requests[i]);
 
   return ret;
 }
@@ -456,7 +440,6 @@ struct c_wl_connection *c_wl_connection_init(int client_fd, struct c_wl_display 
   }
 
   conn->objects = c_map_new(512);
-  conn->callback_queue = c_list_new();
   conn->client_id_pool = c_bitmap_new(4096);
   conn->server_id_pool = c_bitmap_new(4096);
   conn->client_fd = client_fd;
@@ -467,6 +450,14 @@ struct c_wl_connection *c_wl_connection_init(int client_fd, struct c_wl_display 
   return conn;
 }
 
+struct c_wl_display *c_wl_connection_get_dpy(struct c_wl_connection *conn) {
+  return conn->dpy;
+}
+
+struct c_map *c_wl_connection_get_objects(struct c_wl_connection *conn) {
+  return conn->objects;
+}
+
 int c_wl_connection_free(struct c_wl_connection *conn) {
   c_wl_object_id id;
   struct c_wl_object *o;
@@ -474,13 +465,26 @@ int c_wl_connection_free(struct c_wl_connection *conn) {
     if (o->data) {
       c_log(C_LOG_DEBUG, "%-30s %d %p", o->iface->name, o->data->ref_count, o->data);
       if (--o->data->ref_count == 0) {
+        SWITCH_STR(o->iface->name);
+          CASE_STR("wl_buffer") {
+            c_wl_display_notify(conn->dpy, o->data->data, C_WL_DISPLAY_ON_BUFFER_DESTROY);
+            SWITCH_STR_BREAK;
+          }
+
+          CASE_STR("xdg_toplevel") {
+            struct c_wl_surface *toplevel = o->data->data;
+            free(toplevel->xdg.children);
+            SWITCH_STR_BREAK;
+          }
+
+        SWITCH_STR_END
+
         free(o->data->data);
         free(o->data);
       }
   }
   c_map_destroy(conn->objects);
 
-  c_list_destroy(conn->callback_queue);
   c_bitmap_destroy(conn->client_id_pool);
   c_bitmap_destroy(conn->server_id_pool);
   free(conn);

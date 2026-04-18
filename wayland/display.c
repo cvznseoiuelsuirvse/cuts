@@ -76,8 +76,8 @@ C_EVENT_CALLBACK client_epoll_callback(struct c_event_loop *loop, int fd, void *
   struct c_wl_connection *connection = data;
   int ret = c_wl_connection_dispatch(connection);
   if (ret == 1) {
-    c_log(C_LOG_DEBUG, "client %d gone (conn %p)", connection->client_fd, connection);
-    c_wl_display_notify(connection->dpy, connection, C_WL_DISPLAY_ON_CLIENT_GONE);
+    struct c_wl_display *dpy = c_wl_connection_get_dpy(connection);
+    c_wl_display_notify(dpy, connection, C_WL_DISPLAY_ON_CLIENT_GONE);
     c_wl_connection_free(connection);
     ret = C_EVENT_ERROR_FD_GONE;
   } else if (ret == -1) {
@@ -138,12 +138,10 @@ void c_wl_display_notify(struct c_wl_display *display, void *data, enum c_wl_dis
     case C_WL_DISPLAY_ON_CLIENT_NEW:      notify(on_client_new); break;
     case C_WL_DISPLAY_ON_CLIENT_GONE:     notify(on_client_gone); break;
 
-    case C_WL_DISPLAY_ON_SURFACE_NEW:     notify(on_surface_new); break;
     case C_WL_DISPLAY_ON_SURFACE_UPDATE:  notify(on_surface_update); break;
     case C_WL_DISPLAY_ON_SURFACE_DESTROY: notify(on_surface_destroy); break;
 
     case C_WL_DISPLAY_ON_BUFFER_DESTROY:  notify(on_buffer_destroy); break;
-    case C_WL_DISPLAY_ON_TOPLEVEL_NEW:    notify(on_toplevel_new); break;
     default: break;
   }
 
@@ -179,6 +177,7 @@ struct c_wl_display *c_wl_display_init() {
   c_wl_display_add_supported_interface(display, "wl_subcompositor", NULL, NULL);
   c_wl_display_add_supported_interface(display, "xdg_wm_base", NULL, NULL);
   c_wl_display_add_supported_interface(display, "zxdg_decoration_manager_v1", NULL, NULL);
+  c_wl_display_add_supported_interface(display, "wl_data_device_manager", NULL, NULL);
 
   return display;
 

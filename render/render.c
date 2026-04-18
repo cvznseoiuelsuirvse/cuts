@@ -1,22 +1,15 @@
-#include <string.h>
 #include <assert.h>
-#include <sys/mman.h>
 #include <unistd.h>
 #include <inttypes.h>
-#include <stdlib.h>
-#include <gbm.h>
 
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
 
-#include "render/render.h"
 #include "render/gl/egl.h"
 #include "render/gl/gles.h"
 
-#include "backend/drm/drm.h"
-
 #include "util/log.h"
-#include "util/event_loop.h"
+#include "util/shm.h"
 
 #define CUTS_GL_COLOR 0.8f, 0.1f, 0.2f, 1.0f
 #define clear_color()   \
@@ -54,6 +47,13 @@ struct vert_pos {
   float tr_x, tr_y;
 };
 
+struct texture {
+  GLuint gl_texture;
+  uint32_t width, height;
+  int32_t x, y;
+  enum c_wl_buffer_type buf_type;
+};
+
 enum c_render_notifier {
 	C_RENDER_ON_WINDOW_NEW,
 	C_RENDER_ON_WINDOW_UPDATE,
@@ -87,24 +87,48 @@ static void notify(struct c_render *render, struct c_window *window, enum c_rend
 
 }
 
-static int is_surface_decor(struct c_wl_surface *surface) {
-  return surface->xdg.x + surface->xdg.y + surface->xdg.width + surface->xdg.height > 0;
-}
-
 static void page_flip_handler(int fd, unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec, void *user_data) {
   struct c_render *render = user_data;
 
   render->swapchain.front ^= 1;
   render->drm->connector.waiting_for_flip = 0;
 
-  size_t key;
   struct c_window *window;
-  c_map_for_each(render->surfaces, key, window) {
-    struct c_wl_surface *surface = (struct c_wl_surface *)key;
-      c_wl_connection_callback_done(surface->conn, surface->id);
-    
+  c_map_for_each_values(render->windows, window) {
+    struct c_wl_surface *surface;
+    c_list_for_each(window->surfaces, surface)
+      if (surface->frame_id) {
+        c_wl_connection_callback_done(surface->conn, surface->frame_id);
+        surface->frame_id = 0;
+      }
   }
 
+}
+
+static int get_ft_fd(struct c_render *render) {
+  int rfd, rwfd;
+  size_t table_size = render->n_formats * sizeof(*render->formats); 
+
+  if (new_shm(table_size, &rfd, &rwfd) < 0) {
+    c_log(C_LOG_ERROR, "failed to create new shm file");
+    return -1;
+  }
+
+  for (size_t i = 0; i < render->n_formats; i++) {
+    struct c_format format = render->formats[i];
+    struct {
+      uint32_t format;
+      uint32_t pad;
+      uint64_t modifier;
+    } entry = {
+      .format = format.drm_format,
+      .modifier = format.modifier
+    };
+    write(rwfd, &entry, sizeof(entry));
+  }
+
+  close(rwfd);
+  return rfd;
 }
 
 static void *on_linux_dmabuf_bind(struct c_wl_connection *conn, c_wl_object_id new_id, c_wl_uint version, void *userdata) {
@@ -121,11 +145,12 @@ static void *on_linux_dmabuf_bind(struct c_wl_connection *conn, c_wl_object_id n
     goto error;
   }
 
-  ctx->ft_fd = c_render_get_ft_fd(render);
+  ctx->ft_fd = get_ft_fd(render);
   if (ctx->ft_fd == -1) {
-    c_log_errno(C_LOG_ERROR, "failed to get format table fd");
+    c_log(C_LOG_ERROR, "failed to get format table fd");
     goto error;
   }
+
   ctx->n_ft_entries = render->n_formats;
 
   return ctx;
@@ -148,8 +173,10 @@ static void *on_wl_shm_bind(struct c_wl_connection *conn, c_wl_object_id new_id,
   wl_formats->formats = render->wl_formats;
   wl_formats->n_formats = render->n_formats;
 
-  for (size_t i = 0; i < wl_formats->n_formats; i++)
-    wl_shm_format(conn, new_id, wl_formats->formats[i]);
+  for (size_t i = 0; i < wl_formats->n_formats; i++) {
+    if (i > 0 && wl_formats->formats[i-1] != wl_formats->formats[i])
+      wl_shm_format(conn, new_id, wl_formats->formats[i]);
+  }
 
   return wl_formats;
 }
@@ -176,42 +203,41 @@ static inline float value_transform_y(int value, int max_value) {
   return 1 + (float)value/max_value * -2;
 }
 
-static void window_transform(struct c_window *window, struct vert_pos *vp, 
-                              uint32_t max_width, uint32_t max_height) {
+static void create_verts(uint32_t width, uint32_t height, int32_t x, int32_t y, 
+    struct vert_pos *vp, uint32_t max_width, uint32_t max_height) {
 
-  vp->tl_x = value_transform_x(window->x, max_width);
-  vp->tl_y = value_transform_y(window->y, max_height);
+  vp->tl_x = value_transform_x(x, max_width);
+  vp->tl_y = value_transform_y(y, max_height);
 
-  vp->bl_x = value_transform_x(window->x, max_width);
-  vp->bl_y = value_transform_y(window->y + window->height, max_height);
+  vp->bl_x = value_transform_x(x, max_width);
+  vp->bl_y = value_transform_y(y + height, max_height);
 
-  vp->br_x = value_transform_x(window->x + window->width, max_width);
-  vp->br_y = value_transform_y(window->y + window->height, max_height);
+  vp->br_x = value_transform_x(x + width, max_width);
+  vp->br_y = value_transform_y(y + height, max_height);
 
-  vp->tr_x = value_transform_x(window->x + window->width, max_width);
-  vp->tr_y = value_transform_y(window->y, max_height);
+  vp->tr_x = value_transform_x(x + width, max_width);
+  vp->tr_y = value_transform_y(y, max_height);
 
 }
 
-static int draw_window(struct c_render *render, struct c_window *window, 
-                       GLuint texture, enum c_wl_buffer_type buf_type) {
+static int render_texture(struct c_render *render, struct texture *texture) {
   struct c_gles *gl = render->gl;
   struct c_output_mode *preferred_mode = c_drm_get_preferred_mode(render->drm);
 
   glUseProgram(gl->program);
 
   glActiveTexture(GL_TEXTURE0);
-  glBindTexture(GL_TEXTURE_2D, texture);
+  glBindTexture(GL_TEXTURE_2D, texture->gl_texture);
 
-  uint32_t width =  preferred_mode->width;
-  uint32_t height = preferred_mode->height;
+  uint32_t mon_width =  preferred_mode->width;
+  uint32_t mon_height = preferred_mode->height;
 
   struct vert_pos vp = {0};
-  window_transform(window, &vp, width, height);
+  create_verts(texture->width, texture->height, texture->x, texture->y, &vp, mon_width, mon_height);
 
 
   glBindBuffer(GL_ARRAY_BUFFER, gl->vbo);
-  if (buf_type == C_WL_BUFFER_DMA) {
+  if (texture->buf_type == C_WL_BUFFER_DMA) {
     float dma_vertices[] = DMA_VERTS(vp);
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(dma_vertices), dma_vertices);
   } else {
@@ -229,7 +255,7 @@ static int draw_window(struct c_render *render, struct c_window *window,
 
 static int c_render_import_shm(struct c_render *render, struct c_wl_buffer *buf) {
   struct c_shm *shm = buf->shm;
-  c_gles_texture_from_shm(shm, buf->width, buf->height);
+  c_gles_texture_from_shm(shm, buf->width / buf->surface->scale, buf->height / buf->surface->scale);
   return 0;
 }
 
@@ -268,8 +294,8 @@ static int c_render_import_dmabuf(struct c_render *render, struct c_wl_buffer *b
   };
 
   struct c_dmabuf_params params = {
-    .width = buf->width,
-    .height = buf->height,
+    .width = buf->width / buf->surface->scale,
+    .height = buf->height / buf->surface->scale,
     .modifier = dmabuf->modifier,
     .drm_format = dmabuf->drm_format,
     .n_planes = dmabuf->n_planes,
@@ -315,37 +341,53 @@ static GLuint ensure_buf_imported(struct c_render *render, struct c_wl_buffer *b
 
 static int draw_windows(struct c_render *render) {
   struct c_window *window;
-  size_t key;
-  c_map_for_each(render->surfaces, key, window) {
+  uint64_t key;
+  c_map_for_each(render->windows, key, window) {
     struct c_wl_surface *surface = (struct c_wl_surface *)key;
-    if (surface->role != C_WL_SURFACE_ROLE_SUBSURFACE) {
-      GLuint texture;
-      if (surface->active) {
-        texture = ensure_buf_imported(render, surface->active);
-        if (texture == 0) return -1;
-        c_log(C_LOG_DEBUG, "surface %p (%d %p): width=%d height=%d x=%d y=%d", surface, surface->id, surface->conn,
-              window->width, window->height, window->x, window->y);
-        draw_window(render, window, texture, surface->active->type);
+
+    c_log(C_LOG_DEBUG, "window->surfaces->size=%d", window->surfaces->size);
+
+    if (window->surfaces->size == 1 && surface->active) {
+      struct texture texture  = {
+        .gl_texture = ensure_buf_imported(render, surface->active),
+        .width =  window->state & C_WINDOW_FLOAT ? surface->active->width : window->width,
+        .height = window->state & C_WINDOW_FLOAT ? surface->active->height : window->height,
+        .x = window->x,
+        .y = window->y,
+      };
+
+      c_log(C_LOG_DEBUG, "%p: surface(0) %p width=%d height=%d x=%d y=%d", 
+          surface->conn, surface, texture.width, texture.height, texture.x, texture.y);
+      render_texture(render, &texture);
+
+    } else {
+      int i = -1;
+      c_list_for_each(window->surfaces, surface) {
+        i++;
+        /* most likely the first surface created is a surface for decor */
+        if (i == 0 || !surface->active) continue; 
+  
+        struct texture texture  = {0};
+        texture.gl_texture = ensure_buf_imported(render, surface->active);
+        assert(texture.gl_texture > 0);
+        if (i == 1) {
+          texture.width =  window->state & C_WINDOW_FLOAT ? surface->active->width : window->width;
+          texture.height = window->state & C_WINDOW_FLOAT ? surface->active->height : window->height;
+          texture.x = window->x;
+          texture.y = window->y;
+
+        } else {
+          texture.width = surface->active->width;
+          texture.height = surface->active->height;
+          texture.x = window->x + surface->sub.x;
+          texture.y = window->y + surface->sub.y;
+        }
+
+        c_log(C_LOG_DEBUG, "%p: surface(%d) %p width=%d height=%d x=%d y=%d", 
+            surface->conn, i, surface, texture.width, texture.height, texture.x, texture.y);
+        render_texture(render, &texture);
+
       }
-
-      if (!surface->sub.children) continue;
-
-      struct c_wl_surface *sub_surface;
-      c_list_for_each(surface->sub.children, sub_surface) {
-        if (!sub_surface->active) continue;
-
-        texture = ensure_buf_imported(render, sub_surface->active);
-        if (texture == 0) return -1;
-
-        struct c_window *sub_window = c_map_get(render->surfaces, (uint64_t)sub_surface);
-
-        c_log(C_LOG_DEBUG, "sub surface %p (%d %p): width=%d height=%d x=%d y=%d", sub_surface, sub_surface->id, sub_surface->conn, sub_window->width, sub_window->height, sub_window->x, sub_window->y);
-        // sub_window->x = window->x + sub_surface->sub.x;
-        // sub_window->y = window->y + sub_surface->sub.y;
-
-        draw_window(render, sub_window, texture, sub_surface->active->type);
-      }
-      
     }
   }
 
@@ -360,30 +402,10 @@ static int destroy_wl_buffer(struct c_render *render, struct c_wl_buffer *buf) {
     glDeleteTextures(1, &buf->shm->texture);
   } else return 0;
 
+  /* buf->dma and buf->shm are union, so if buf if C_WL_BUFFER_SHM its still
+   * gonna be destroyed */
   free(buf->dma);
   return 0;
-}
-
-
-int c_render_get_ft_fd(struct c_render *render) {
-  int fd = memfd_create("format_table", MFD_CLOEXEC);
-  if (!fd)
-    return -1;
-
-  for (size_t i = 0; i < render->n_formats; i++) {
-    struct c_format format = render->formats[i];
-    struct {
-      uint32_t format;
-      uint32_t pad;
-      uint64_t modifier;
-    } entry = {
-      .format = format.drm_format,
-      .modifier = format.modifier
-    };
-    write(fd, &entry, sizeof(entry));
-  }
-
-  return fd;
 }
 
 
@@ -399,10 +421,11 @@ static int redraw_scene(struct c_render *render) {
   clear_color();
   if (draw_windows(render) == -1) return -1;
   glFlush();
+  glFinish();
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-  drmModePageFlip(render->drm->fd, 
-                  render->drm->connector.crtc_id, back_buffer->drm_fb_id, DRM_MODE_PAGE_FLIP_EVENT, render);
+  drmModePageFlip(render->drm->fd, render->drm->connector.crtc_id,
+                  back_buffer->drm_fb_id, DRM_MODE_PAGE_FLIP_EVENT, render);
 
   render->drm->connector.waiting_for_flip = 1;
   __needs_redraw = 0;
@@ -424,9 +447,15 @@ static int create_swapchain(struct c_render *render) {
   uint32_t width = preferred_mode->width;
   uint32_t height = preferred_mode->height;
 
-  render->swapchain.buffers[0] = c_render_buffer_create(render, width, height, DRM_FORMAT_XRGB8888, NULL, 0);
-  render->swapchain.buffers[1] = c_render_buffer_create(render, width, height, DRM_FORMAT_XRGB8888, NULL, 0);
-  if (!(uint64_t)(render->swapchain.buffers[0] || render->swapchain.buffers[1])) return -1;
+  if (!(render->swapchain.buffers[0] = c_render_buffer_create(render, width, height))) {
+    c_log(C_LOG_ERROR, "failed to create swapchain buffer(0)");
+    return -1;
+  }
+
+  if (!(render->swapchain.buffers[1] = c_render_buffer_create(render, width, height))) {
+    c_log(C_LOG_ERROR, "failed to create swapchain buffer(1)");
+    return -1;
+  }
 
   render->swapchain.front = 0;
 
@@ -442,21 +471,23 @@ static void destroy_surface(struct c_render *render, struct c_wl_surface *surfac
     destroy_wl_buffer(render, surface->pending);
   }
 
-  memset(surface, 0, sizeof(*surface));
-}
-
-static int on_surface_new_cb(struct c_wl_surface *surface, void *userdata) {
-  struct c_render *render = userdata;
-  struct c_window window = {0};
-  window.wl_surface = surface;
-  c_map_set(render->surfaces, (uint64_t)surface, &window, sizeof(window));
-  return 0;
 }
 
 static int on_surface_destroy_cb(struct c_wl_surface *surface, void *userdata) {
   struct c_render *render = userdata;
-  destroy_surface(render, surface);
-  c_map_remove(render->surfaces, (uint64_t)surface);
+
+  uint64_t window_key = (uint64_t)(surface->sub.parent ? surface->sub.parent : surface);
+  struct c_window *window = c_map_get(render->windows, window_key);
+
+  if (!window) return 0;
+
+  struct c_wl_surface *s;
+  c_list_for_each(window->surfaces, s) {
+    if (s == surface) {
+      c_list_remove_ptr(&window->surfaces, s);
+      break;
+    }
+  }
   return redraw_scene(render);
 }
 
@@ -465,43 +496,72 @@ static int on_client_gone(struct c_wl_connection *connection, void *userdata) {
 
   size_t key;
   struct c_window *window;
-  c_map_for_each(render->surfaces, key, window) {
-    struct c_wl_surface *surface = (struct c_wl_surface *)key;
-      if (surface->conn == connection) {
-        if (window)
-          notify(render, window, C_RENDER_ON_WINDOW_CLOSE);
+  c_map_for_each(render->windows, key, window) {
+    if (window->conn == connection) {
+      notify(render, window, C_RENDER_ON_WINDOW_CLOSE);
 
-        on_surface_destroy_cb(surface, userdata);
-        break;
+      struct c_wl_surface *surface;
+      c_list_for_each(window->surfaces, surface)
+        destroy_surface(render, surface);
+      
+
+      c_list_destroy(window->surfaces);
+      c_map_remove(render->windows, key);
+      break;
     }
   }
   return 0;
 }
 
+static struct c_window *add_new_window(struct c_render *render, struct c_wl_surface *surface) {
+    struct c_window new_window = {0}; 
+
+    new_window.surfaces = c_list_new();
+    new_window.state |= C_WINDOW;
+    new_window.conn = surface->conn;
+
+    c_list_push(new_window.surfaces, surface, 0);
+    return c_map_set(render->windows, (uint64_t)surface, &new_window, sizeof(new_window));
+}
+
 static int on_surface_update_cb(struct c_wl_surface *surface, void *userdata) {
   struct c_render *render = userdata;
-  struct c_window *window = c_map_get(render->surfaces, (uint64_t)surface);
+  struct c_wl_surface *parent = surface->sub.parent;
+  struct c_window *window;
 
-  if (surface->active &&!(window->state & C_WINDOW)) {
-    struct c_output_mode *preferred_mode = c_drm_get_preferred_mode(render->drm);
-    if (
-      (0 < window->wl_surface->xdg.max_height && window->wl_surface->xdg.max_height < preferred_mode->height)
-      || (0 < window->wl_surface->xdg.max_width  && window->wl_surface->xdg.max_width < preferred_mode->width)
-    ) {
-      window->width = surface->active->width;
-      window->height = surface->active->height;
-      window->state |= C_WINDOW_FLOAT;
+  uint64_t window_key;
 
-      if (!(surface->role == C_WL_SURFACE_ROLE_SUBSURFACE)) {
-        window->x = preferred_mode->width / 2 - window->wl_surface->active->width / 2;
-        window->y = preferred_mode->height / 2 - window->wl_surface->active->height / 2;
-      }
+  if (surface->role == 0) return 0;
+
+  if (surface->role == C_WL_SURFACE_ROLE_SUBSURFACE) {
+    window_key = (uint64_t)parent;
+    window = c_map_get(render->windows, window_key);
+
+    if (!window)
+      window = add_new_window(render, parent);
+
+    if (c_list_idx(window->surfaces, surface) == -1)
+      c_list_push(window->surfaces, surface, 0);
+
+  } else {
+    window_key = (uint64_t)surface;
+    window = c_map_get(render->windows, window_key);
+
+    if (!window) {
+      window = add_new_window(render, surface);
+      // struct c_output_mode *preferred_mode = c_drm_get_preferred_mode(render->drm);
+      // if (surface->xdg.max_height < preferred_mode->height 
+      //     || surface->xdg.max_width < preferred_mode->width) {
+      //   window->x = (uint32_t)preferred_mode->width / 2;
+      //   window->y = (uint32_t)preferred_mode->height / 2;
+      //   window->state |= C_WINDOW_FLOAT;
+      // }
+      notify(render, window, C_RENDER_ON_WINDOW_NEW);
     }
-
-    window->state |= C_WINDOW;
-    notify(render, window, C_RENDER_ON_WINDOW_NEW);
+    
   }
-  return redraw_scene((struct c_render *)userdata);
+
+  return redraw_scene(render);
 }
 
 static int on_buffer_destroy(struct c_wl_buffer *buffer, void *userdata) {
@@ -525,7 +585,7 @@ struct c_render *c_render_init(struct c_wl_display *display, struct c_drm *drm) 
   if (!render) 
     return NULL;
 
-  render->surfaces = c_map_new(1024);
+  render->windows = c_map_new(1024);
   render->drm = drm;
 
 
@@ -535,11 +595,10 @@ struct c_render *c_render_init(struct c_wl_display *display, struct c_drm *drm) 
   render->gl = c_gles_init();
   if (!render->gl) goto error;
 
-  if (create_swapchain(render) < 0) goto error;
-
   render->formats = c_egl_query_formats(render->egl, &render->n_formats);
   render->wl_formats = malloc(sizeof(uint32_t) * render->n_formats);
 
+  if (create_swapchain(render) < 0) goto error;
 
   for (size_t i = 0; i < render->n_formats; i++) {
     uint32_t wl_format = drm_to_wl_shm_format(render->formats[i].drm_format);
@@ -560,7 +619,6 @@ struct c_render *c_render_init(struct c_wl_display *display, struct c_drm *drm) 
 
   struct c_wl_display_listener dpy_listeners = {
     .on_client_gone = on_client_gone,
-    .on_surface_new = on_surface_new_cb,
     .on_surface_update = on_surface_update_cb,
     .on_surface_destroy = on_surface_destroy_cb,
     .on_buffer_destroy = on_buffer_destroy,
@@ -581,15 +639,14 @@ error:
 }
 
 void c_render_free(struct c_render *render) {
-  if (render->surfaces) {
-    size_t key;
+  if (render->windows) {
     struct c_window *window;
-    c_map_for_each(render->surfaces, key, window) {
-      struct c_wl_surface *surface = (struct c_wl_surface *)key;
-      if (surface->role != C_WL_SURFACE_ROLE_SUBSURFACE)
-        destroy_surface(render, surface);
+    c_map_for_each_values(render->windows, window) {
+      c_wl_connection_free(window->conn);
+      free(window->surfaces);
     }
-    c_map_destroy(render->surfaces);
+    
+    c_map_destroy(render->windows);
   }
 
   if (render->swapchain.buffers[0])

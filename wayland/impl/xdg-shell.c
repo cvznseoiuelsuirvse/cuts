@@ -3,7 +3,6 @@
 #include <string.h>
 
 #include "wayland/types/xdg-shell.h"
-#include "wayland/display.h"
 
 int xdg_wm_base_get_xdg_surface(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_new_id xdg_surface_id = args[1].n;
@@ -81,11 +80,10 @@ int xdg_surface_get_toplevel(struct c_wl_connection *conn, union c_wl_arg *args)
 
   c_wl_object_add(conn, xdg_toplevel_id, c_wl_interface_get("xdg_toplevel"), xdg_surface->data);
 
-  struct c_wl_display *dpy = conn->dpy;
   struct c_wl_array arr = {0};
+
   xdg_toplevel_configure(conn, xdg_toplevel_id, 0, 0, &arr);
   xdg_surface_configure(conn, xdg_surface_id, c_wl_serial());
-  c_wl_display_notify(dpy, c_wl_surface, C_WL_DISPLAY_ON_TOPLEVEL_NEW);
 
   return 0;
 }
@@ -156,6 +154,13 @@ int xdg_toplevel_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_wl_surface *wl_surface = c_wl_object_data_get(conn, xdg_toplevel_id);
 
   wl_surface->role = 0;
+  if (wl_surface->xdg.children) {
+    struct c_wl_surface *child_surface;
+    c_list_for_each(wl_surface->xdg.children, child_surface)
+      child_surface->xdg.parent = NULL;
+    c_list_destroy(wl_surface->xdg.children);
+  }
+
   c_wl_object_del(conn, xdg_toplevel_id);
   return 0;
 }
