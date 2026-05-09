@@ -10,7 +10,7 @@ struct c_seat {
   void *backend;
 };
 
-extern const struct c_seat_impl cutseat_impl;
+extern const struct c_seat_impl diazepam_impl;
 extern const struct c_seat_impl libseat_impl;
 
 
@@ -26,14 +26,14 @@ struct c_seat *c_seat_open(struct c_seat_listener *listener, void *listener_data
     if (STREQ(backend_type, "libseat")) {
       seat->impl = &libseat_impl;
     } else if (STREQ("cuts", backend_type)) {
-      seat->impl = &cutseat_impl;
+      seat->impl = &diazepam_impl;
     } else {
       c_log(C_LOG_ERROR, "invalid CUTS_SEAT_BACKEND value: %s. expected 'cuts' or 'libinput'", backend_type);
       goto error;
     }
     c_log(C_LOG_INFO, "using '%s' seat backend", backend_type);
   } else {
-    seat->impl = &cutseat_impl;
+    seat->impl = &diazepam_impl;
     c_log(C_LOG_INFO, "using 'cuts' seat backend", backend_type);
   }
 

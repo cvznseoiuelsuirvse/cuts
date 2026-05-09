@@ -76,49 +76,98 @@ enum c_wl_surface_roles {
 
 
 struct c_wl_surface {
-	c_wl_object_id  id;
-  c_wl_int scale;
+	c_wl_object_id          id;
 	struct c_wl_connection *conn;
 
-  c_wl_object_id frame_id;
-	enum c_wl_surface_roles role;
 
+  c_wl_object_id frame_id;
+  c_wl_object_id frames[4];
+  size_t         n_frames;
+
+	enum c_wl_surface_roles role;
+  c_wl_int         scale;
 	struct {
 		c_wl_int width,  x;
 		c_wl_int height, y;
 		int		 damaged;
 	} damage;
 
-	struct {
-		c_wl_object_id  surface_id;
-		c_wl_object_id  toplevel_id;
-		c_wl_int x,      	 y;
-		c_wl_int width,      height;
-		c_wl_int max_width,  max_height;
-		c_wl_int min_width,  min_height;
+  struct c_xdg_surface *xdg_surface;
 
-		char title[C_WL_STRING_SIZE];
-		char app_id[C_WL_STRING_SIZE];
-		c_wl_uint 		serial;
-
-		struct c_wl_surface *parent;
-		c_list *children;
-	} xdg;
-
-	struct {
-		c_wl_object_id  surface_id;
-		c_wl_int x, y;
-		int sync;
-
-		struct c_wl_surface *parent;
-		c_list *children;
-	} sub;
+  struct {
+    struct c_wl_subsurface *surface;
+    c_list *children;
+  } sub;
 
 	struct c_wl_region opaque;
 	struct c_wl_region input;
 
 	struct c_wl_buffer 	*pending;
 	struct c_wl_buffer 	*active;
+};
+
+struct c_wl_subsurface {
+  c_wl_object_id id;
+
+  c_wl_int x;
+  c_wl_int y;
+  int      sync;
+
+  struct c_wl_surface *surface;
+  struct c_wl_surface *parent;
+};
+
+struct c_xdg_positioner {
+  c_wl_object_id id;
+
+  c_wl_int x; 
+  c_wl_int y; 
+
+  c_wl_int width;
+  c_wl_int height;
+
+  c_wl_uint gravity;
+  c_wl_uint anchor;
+  c_wl_uint constraint_adjustment;
+
+  struct {
+    c_wl_int x; 
+    c_wl_int y; 
+
+    c_wl_int width;
+    c_wl_int height;
+  } anchor_rect;
+};
+
+struct c_xdg_surface {
+  c_wl_object_id  id;
+
+  c_wl_int x;
+  c_wl_int y;
+  c_wl_int width;
+  c_wl_int height;
+  
+  struct {
+    c_wl_object_id id;
+
+    c_wl_int max_width;
+    c_wl_int max_height;
+    c_wl_int min_width;
+    c_wl_int min_height;
+
+    char *title;
+    char *app_id;
+
+    c_list *children; // struct c_xdg_surface.toplevel
+  } toplevel;
+
+  struct c_wl_surface *surface;
+  struct {
+    c_wl_object_id id;
+    struct c_xdg_positioner positioner;
+  } popup;
+
+  struct c_xdg_surface *parent;
 };
 
 struct c_wl_linux_dmabuf_ctx {

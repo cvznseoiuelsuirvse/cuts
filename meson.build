@@ -23,7 +23,7 @@ sources = [
   'cuts.c',
 ]
 
-executable('main',
+executable('cuts',
   sources,
   c_args: c_args,
   dependencies: [

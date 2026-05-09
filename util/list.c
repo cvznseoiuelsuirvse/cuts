@@ -91,7 +91,6 @@ void *c_list_insert(c_list **head, uint32_t i, void *data, size_t data_size) {
 
 void c_list_remove_ptr(c_list **head, void *data) {
   c_list *l = *head;
-  l->size--;
 
   for (size_t i = 0; l; l = l->next, i++) {
     if (l->data == data) {
@@ -111,6 +110,7 @@ void c_list_remove_ptr(c_list **head, void *data) {
       if (l->copied)
         free(l->data);
 
+      (*head)->size--;
       free(l);
 
       break;

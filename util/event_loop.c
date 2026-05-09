@@ -84,7 +84,6 @@ int c_event_loop_run(struct c_event_loop *loop) {
             goto out;
 
           case C_EVENT_ERROR_FD_GONE:
-          case C_EVENT_ERROR_WL_PROTO:
             c_event_loop_del(loop, resource);
             break;
         }
@@ -96,6 +95,6 @@ int c_event_loop_run(struct c_event_loop *loop) {
   }
 
 out:
-  return -ret;
+  return ret;
 }
 

@@ -1,7 +1,6 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <sys/socket.h>
-#include <sys/un.h>
 #include <stdarg.h>
 
 #include "wayland/display.h"
@@ -129,6 +128,10 @@ int c_wl_connection_send(struct c_wl_connection *conn, struct c_wl_message *msg,
   va_start(args, nargs);
 
   struct c_wl_object *object = c_wl_object_get(conn, msg->id);
+  // if (!object) {
+  //   c_log(C_LOG_ERROR, "object with id %d not registered", msg->id);
+  //   abort();
+  // }
 
   char buffer[C_WL_BUFFER_SIZE] = {0};
   uint32_t offset = 0;
@@ -205,11 +208,11 @@ static int dispatch(struct c_wl_connection *conn,
                     char *buffer, int **req_fds) {
 
   struct c_wl_object *object = c_wl_object_get(conn, object_id);
-  if (!object) return c_wl_error_set(object_id, WL_DISPLAY_ERROR_INVALID_OBJECT, "object not registered");
+  if (!object) c_wl_error_set_and_return(object_id, WL_DISPLAY_ERROR_INVALID_OBJECT, "object not registered");
 
   const struct c_wl_interface *iface = object->iface;
   if (op > iface->nrequests) 
-    return c_wl_error_set(object_id, WL_DISPLAY_ERROR_INVALID_METHOD, "method does not exist", 
+    c_wl_error_set_and_return(object_id, WL_DISPLAY_ERROR_INVALID_METHOD, "method does not exist", 
                        iface->name, op, op, iface->nrequests);
 
   
@@ -270,9 +273,8 @@ static int dispatch(struct c_wl_connection *conn,
 
   c_log_wl_request(conn, object, &request, args);
   if (!request.handler) {
-    c_wl_error_set(object_id, WL_DISPLAY_ERROR_IMPLEMENTATION, 
-                   "%s.%s method not implemented", iface->name, request.name);
-    return -1;
+    c_log(C_LOG_ERROR, "%s.%s method not implemented", iface->name, request.name);
+    return DISPATCH_FATAL_ERR;
   }
 
   int ret = request.handler(conn, args);
@@ -289,8 +291,9 @@ int c_wl_connection_dispatch(struct c_wl_connection *conn) {
 
   int req_fds[MAX_CMSG_FDS];
   size_t n_req_fds = 0;
+
   int received = c_wl_connection_read(conn, buffer, C_WL_BUFFER_SIZE, req_fds, &n_req_fds);
-  if (received <= 0) return 1;
+  if (received <= 0) return DISPATCH_CLIENT_ERR;
 
   size_t msg_count = 0;
   struct c_wl_recv_message msgs[1024];
@@ -315,12 +318,13 @@ int c_wl_connection_dispatch(struct c_wl_connection *conn) {
 
     if (object_id == 1 && op == 0 && message_size == C_WL_HEADER_SIZE + sizeof(uint32_t)) {
       c_wl_object_id wl_callback_id = read_u32(buffer+buffer_offset, &tmp);
-      if (c_wl_object_get(conn, wl_callback_id)) {
-        c_wl_error_set(1, WL_DISPLAY_ERROR_INVALID_OBJECT, "object %d already registered", wl_callback_id);
-        return -1;
-      }
+      if (c_wl_object_get(conn, wl_callback_id))
+        c_wl_error_set_and_return(1, WL_DISPLAY_ERROR_INVALID_OBJECT,
+                                  "object %d already registered",
+                                  wl_callback_id);
 
-      c_wl_object_add(conn, wl_callback_id, c_wl_interface_get("wl_callback"), NULL);
+      struct c_wl_interface *iface = c_wl_interface_get("wl_callback"); 
+      c_wl_object_add(conn, wl_callback_id, iface->version, iface, NULL);
       sync_requests[n_sync_requests++] = wl_callback_id;
       dispatch(conn, object_id, op, message_size, buffer+buffer_offset, 0);
 
@@ -339,17 +343,21 @@ int c_wl_connection_dispatch(struct c_wl_connection *conn) {
   for (size_t i = 0; i < msg_count; i++) {
     struct c_wl_recv_message msg = msgs[i];
     ret = dispatch(conn, msg.object_id, msg.op, msg.message_size, msg.buffer, &req_fds_ptr);
-    if (ret != 0) 
+    if (ret == DISPATCH_PROTO_ERR) 
       break;
+
+    if (ret == DISPATCH_FATAL_ERR)
+      goto out;
   }
 
   for (size_t i = 0; i < n_sync_requests; i++)
     c_wl_connection_callback_done(conn, sync_requests[i]);
 
+out:
   return ret;
 }
 
-int c_wl_object_add(struct c_wl_connection *conn, c_wl_new_id id, const struct c_wl_interface *interface, struct c_wl_object_data *data) {
+int c_wl_object_add(struct c_wl_connection *conn, c_wl_new_id id, uint32_t version, const struct c_wl_interface *interface, struct c_wl_object_data *data) {
   if (c_wl_object_get(conn, id)) return -1;
   assert(interface);
 
@@ -358,6 +366,7 @@ int c_wl_object_add(struct c_wl_connection *conn, c_wl_new_id id, const struct c
 
   struct c_wl_object new_object = {
     .id = id,
+    .version = version,
     .iface = interface,
     .data = data,
   };
@@ -445,7 +454,8 @@ struct c_wl_connection *c_wl_connection_init(int client_fd, struct c_wl_display 
   conn->client_fd = client_fd;
   conn->dpy = display;
 
-  c_wl_object_add(conn, 1, (struct c_wl_interface *)c_wl_interface_get("wl_display"), NULL);
+  struct c_wl_interface *iface = c_wl_interface_get("wl_display");
+  c_wl_object_add(conn, 1, iface->version, iface, NULL);
 
   return conn;
 }
@@ -463,7 +473,7 @@ int c_wl_connection_free(struct c_wl_connection *conn) {
   struct c_wl_object *o;
   c_map_for_each(conn->objects, id, o)
     if (o->data) {
-      c_log(C_LOG_DEBUG, "%-30s %d %p", o->iface->name, o->data->ref_count, o->data);
+      c_log(C_LOG_DEBUG, "%4d # %-30s %d %p", o->id, o->iface->name, o->data->ref_count, o->data);
       if (--o->data->ref_count == 0) {
         SWITCH_STR(o->iface->name);
           CASE_STR("wl_buffer") {
@@ -472,8 +482,21 @@ int c_wl_connection_free(struct c_wl_connection *conn) {
           }
 
           CASE_STR("xdg_toplevel") {
-            struct c_wl_surface *toplevel = o->data->data;
-            free(toplevel->xdg.children);
+            struct c_xdg_surface *xdg_surface = o->data->data;
+            if (xdg_surface->toplevel.title)  free(xdg_surface->toplevel.title);
+            if (xdg_surface->toplevel.app_id) free(xdg_surface->toplevel.app_id);
+            SWITCH_STR_BREAK;
+          }
+
+          CASE_STR("wl_surface") { 
+            struct c_wl_surface *surface = o->data->data;
+            c_wl_display_notify(conn->dpy, o->data->data, C_WL_DISPLAY_ON_SURFACE_DESTROY);
+            if (surface->sub.children) {
+              struct c_wl_subsurface *ss;
+              c_list_for_each(surface->sub.children, ss)
+                ss->parent = NULL;
+              c_list_destroy(surface->sub.children);
+            }
             SWITCH_STR_BREAK;
           }
 
@@ -492,7 +515,7 @@ int c_wl_connection_free(struct c_wl_connection *conn) {
 }
 
 
-int c_wl_error_set(c_wl_object_id object_id, c_wl_int code, c_wl_string msg, ...) {
+int _c_wl_error_set(c_wl_object_id object_id, c_wl_int code, c_wl_string msg, ...) {
   __error_code = code;
   __error_object_id = object_id;
   
@@ -512,5 +535,8 @@ void c_wl_error_send(struct c_wl_connection *conn) {
 
 
 inline int c_wl_serial() {
+  if (__serial > (1 << 31))
+    __serial = 0;
+
   return __serial++;
 }

@@ -4,21 +4,17 @@
 #include "wayland/server.h"
 
 enum c_wl_display_notifier {
-	C_WL_DISPLAY_ON_CLIENT_NEW,
-	C_WL_DISPLAY_ON_CLIENT_GONE,
-
 	C_WL_DISPLAY_ON_SURFACE_UPDATE,
 	C_WL_DISPLAY_ON_SURFACE_DESTROY,
-
+	C_WL_DISPLAY_ON_SUBSURFACE_DESTROY,
 	C_WL_DISPLAY_ON_BUFFER_DESTROY,
 };
 
 struct c_wl_display_listener {
-	int (*on_client_new)     (struct c_wl_connection *, void *);
-	int (*on_client_gone)    (struct c_wl_connection *, void *);
+	int (*on_surface_update)    (struct c_wl_surface *, void *);
+	int (*on_surface_destroy)   (struct c_wl_surface *, void *);
+	int (*on_subsurface_destroy)(struct c_wl_surface *, void *);
 
-	int (*on_surface_update) (struct c_wl_surface *, void *);
-	int (*on_surface_destroy)(struct c_wl_surface *, void *);
 	int (*on_buffer_destroy) (struct c_wl_buffer *, void *);
 };
 

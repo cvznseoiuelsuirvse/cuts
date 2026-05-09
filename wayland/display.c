@@ -75,17 +75,22 @@ error:
 C_EVENT_CALLBACK client_epoll_callback(struct c_event_loop *loop, int fd, void *data) {
   struct c_wl_connection *connection = data;
   int ret = c_wl_connection_dispatch(connection);
-  if (ret == 1) {
-    struct c_wl_display *dpy = c_wl_connection_get_dpy(connection);
-    c_wl_display_notify(dpy, connection, C_WL_DISPLAY_ON_CLIENT_GONE);
-    c_wl_connection_free(connection);
-    ret = C_EVENT_ERROR_FD_GONE;
-  } else if (ret == -1) {
-    c_wl_error_send(connection);
-    ret = C_EVENT_ERROR_WL_PROTO;
+
+  switch (ret) {
+    case DISPATCH_FATAL_ERR:
+      c_wl_connection_free(connection);
+      return C_EVENT_ERROR_FATAL;
+
+    case DISPATCH_PROTO_ERR:
+      c_wl_error_send(connection);
+      return C_EVENT_OK;
+
+    case DISPATCH_CLIENT_ERR:
+      c_wl_connection_free(connection);
+      return C_EVENT_ERROR_FD_GONE;
   }
 
-  return ret;
+  return C_EVENT_OK;
 
 }
 
@@ -108,8 +113,6 @@ C_EVENT_CALLBACK server_epoll_callback(struct c_event_loop *loop, int fd, void *
     c_log(C_LOG_ERROR, "c_event_loop_add failed");
     return C_EVENT_ERROR_FATAL;
   }
-
-  c_wl_display_notify(display, connection, C_WL_DISPLAY_ON_CLIENT_NEW);
 
   return C_EVENT_OK;
 }
@@ -135,12 +138,9 @@ void c_wl_display_notify(struct c_wl_display *display, void *data, enum c_wl_dis
     }
 
   switch (notifier) {
-    case C_WL_DISPLAY_ON_CLIENT_NEW:      notify(on_client_new); break;
-    case C_WL_DISPLAY_ON_CLIENT_GONE:     notify(on_client_gone); break;
-
     case C_WL_DISPLAY_ON_SURFACE_UPDATE:  notify(on_surface_update); break;
     case C_WL_DISPLAY_ON_SURFACE_DESTROY: notify(on_surface_destroy); break;
-
+    case C_WL_DISPLAY_ON_SUBSURFACE_DESTROY: notify(on_subsurface_destroy); break;
     case C_WL_DISPLAY_ON_BUFFER_DESTROY:  notify(on_buffer_destroy); break;
     default: break;
   }

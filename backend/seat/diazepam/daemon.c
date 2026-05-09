@@ -301,6 +301,7 @@ C_EVENT_CALLBACK seat_client_callback(struct c_event_loop *loop, int fd, void *u
   struct c_seat_msg_params params;
   int n = seat_recv(fd, &params);
   if (n <= 0) {
+    c_log(C_LOG_DEBUG, "client %d gone. closing seat", fd);
     seat_close_seat(fd);
     return C_EVENT_ERROR_FD_GONE;
   }

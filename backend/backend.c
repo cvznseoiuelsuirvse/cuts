@@ -141,13 +141,12 @@ struct c_backend_device *c_backend_device_open(struct c_backend *backend, const 
       break;
   }
 
-  c_log(C_LOG_INFO, "opened new %s device: %s", dev_type_str, path);
+  c_log(C_LOG_DEBUG, "opened new %s device: %s", dev_type_str, path);
 
   return c_list_push(backend->devices, &dev, sizeof(dev));
 }
 
 void c_backend_free(struct c_backend *backend) {
-  struct c_backend_device *dev;
   c_list *l = backend->devices;
   while(l->next) {
     c_list *next = l->next;

@@ -9,7 +9,6 @@
 #define LENGTH(s) (sizeof((s)) /  sizeof(*(s)))
 #define MAX(v1, v2) ((v1) > (v2)) ? (v1) : (v2)
 #define MIN(v1, v2) ((v1) > (v2)) ? (v2) : (v1)
-#define SET_AND_GET(var, val) (var) ? (var) : ((var) = (val))
 #define SWITCH_STR(var) const char *__switch_var = (var);
 #define SWITCH_STR_BREAK goto __switch_str_end
 #define SWITCH_STR_END __switch_str_end:

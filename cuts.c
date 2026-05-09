@@ -70,7 +70,7 @@ void window_unfocus(struct c_window *window) {
 
 void window_close(struct c_window *window) {
   if (comp->focused_window == window) {
-    window_unfocus(window);
+    c_window_close(window);
     comp->focused_window = NULL;
   }
 
@@ -78,18 +78,21 @@ void window_close(struct c_window *window) {
   LAYOUT(comp);
 }
 
-int on_client_gone(struct c_wl_connection *conn, void *userdata) {
-  struct c_window *window = get_window_from_connection(conn);
-  if (!window) return 0;
+int on_window_close(struct c_window *window, void *userdata) {
+  if (comp->focused_window)
+    window_unfocus(comp->focused_window);
 
-  window_close(window);
-  if (comp->windows->size > 0) 
-    window_focus(c_list_get(comp->windows, comp->windows->size-1), 0, 0);
+  if (comp->windows->size > 0) {
+    struct c_window *last_window = c_list_get(comp->windows, comp->windows->size-1);
+    window_focus(last_window, 0, 0);
+  }
 
+  LAYOUT(comp);
+  c_list_remove_ptr(&comp->windows, window);
   return 0;
 }
 
-int on_window_new_cb(struct c_window *window, void *userdata) {
+int on_window_new(struct c_window *window, void *userdata) {
   c_list_push(comp->windows, window, 0);
 
   if (comp->focused_window)
@@ -161,6 +164,8 @@ int on_mouse_movement(struct c_input_mouse_event *event, void *userdata) {
 }
 
 int wl_seat_get_keyboard(struct c_wl_connection *conn, union c_wl_arg *args) {
+  struct c_wl_object *self = c_wl_self(conn, args);
+
   c_wl_object_id wl_keyboard_id = args[1].o;
   struct c_wl_object *wl_keyboard;
   C_WL_CHECK_IF_NOT_REGISTERED(wl_keyboard_id, wl_keyboard);
@@ -168,14 +173,14 @@ int wl_seat_get_keyboard(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_input *input = comp->backend->input;
 
   if (!(input->capabilities & WL_SEAT_CAPABILITY_KEYBOARD))
-    return c_wl_error_set(args[0].o, WL_SEAT_ERROR_MISSING_CAPABILITY, "pointer device not supported");
+    c_wl_error_set_and_return(args[0].o, WL_SEAT_ERROR_MISSING_CAPABILITY, "pointer device not supported");
 
-  c_wl_object_add(conn, wl_keyboard_id, c_wl_interface_get("wl_keyboard"), NULL);
+  c_wl_object_add(conn, wl_keyboard_id, self->version, c_wl_interface_get("wl_keyboard"), NULL);
 
   int keymap_fd;
   int keymap_len = c_input_get_xkb_keymap_fd(comp->backend->input, &keymap_fd);
   if (keymap_len < 0)
-    return c_wl_error_set(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "failed ot get xkb_keymap");
+    c_wl_error_set_and_return(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "failed ot get xkb_keymap");
 
   wl_keyboard_keymap(conn, wl_keyboard_id, WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1, keymap_fd, keymap_len);
   wl_keyboard_repeat_info(conn, wl_keyboard_id, keyboard_repeat_rate, keyboard_repeat_delay);
@@ -185,6 +190,8 @@ int wl_seat_get_keyboard(struct c_wl_connection *conn, union c_wl_arg *args) {
 }
 
 int wl_seat_get_pointer(struct c_wl_connection *conn, union c_wl_arg *args) {
+  struct c_wl_object *self = c_wl_self(conn, args);
+
   c_wl_object_id wl_pointer_id = args[1].o;
   struct c_wl_object *wl_pointer;
   C_WL_CHECK_IF_NOT_REGISTERED(wl_pointer_id, wl_pointer);
@@ -192,9 +199,9 @@ int wl_seat_get_pointer(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_input *input = comp->backend->input;
 
   if (!(input->capabilities & WL_SEAT_CAPABILITY_POINTER))
-    return c_wl_error_set(args[0].o, WL_SEAT_ERROR_MISSING_CAPABILITY, "pointer device not supported");
+    c_wl_error_set_and_return(args[0].o, WL_SEAT_ERROR_MISSING_CAPABILITY, "pointer device not supported");
 
-  c_wl_object_add(conn, wl_pointer_id, c_wl_interface_get("wl_pointer"), NULL);
+  c_wl_object_add(conn, wl_pointer_id, self->version, c_wl_interface_get("wl_pointer"), NULL);
 
   return 0;
 }
@@ -290,10 +297,11 @@ int main() {
   struct cuts _comp = {0};
   comp = &_comp;
 
-  c_signal_handler_add(SIGTERM, cleanup, &comp);
-  c_signal_handler_add(SIGINT, cleanup, &comp);
+  c_signal_handler_add(SIGTERM, cleanup, NULL);
+  c_signal_handler_add(SIGINT, cleanup, NULL);
 
-  c_log_set_level(C_LOG_INFO | C_LOG_ERROR | C_LOG_DEBUG | C_LOG_WARNING | C_LOG_WAYLAND);
+  c_log_set_level(C_LOG_INFO | C_LOG_ERROR | C_LOG_DEBUG | C_LOG_WARNING);
+  c_log_set_level(C_LOG_WAYLAND);
 
   struct c_wl_display *display = c_wl_display_init();
   if (!display) 
@@ -328,16 +336,12 @@ int main() {
 
   comp->backend = backend;
 
-  struct c_wl_display_listener display_listener = {
-    .on_client_gone = on_client_gone,
-  };
-  c_wl_display_add_listener(display, &display_listener, &_comp);
-
   struct c_render *render = c_render_init(display, backend->drm);
   if (!render) goto out;
 
   struct c_render_listener render_listener = {
-    .on_window_new = on_window_new_cb,
+    .on_window_new = on_window_new,
+    .on_window_close = on_window_close,
   };
   c_render_add_listener(render, &render_listener, comp);
 

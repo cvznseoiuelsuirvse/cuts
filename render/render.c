@@ -40,6 +40,7 @@
 
 #define SHM_VERTS(vp) {SHM_VERT_TOP_LEFT(vp), SHM_VERT_BOTTOM_LEFT(vp), SHM_VERT_BOTTOM_RIGHT(vp), SHM_VERT_TOP_LEFT(vp), SHM_VERT_BOTTOM_RIGHT(vp), SHM_VERT_TOP_RIGHT(vp)}
 
+
 struct vert_pos {
   float tl_x, tl_y;
   float bl_x, bl_y;
@@ -80,30 +81,31 @@ static void notify(struct c_render *render, struct c_window *window, enum c_rend
 
   switch (notifier) {
     case C_RENDER_ON_WINDOW_NEW:       __notify(on_window_new); break;
-    case C_RENDER_ON_WINDOW_UPDATE:    __notify(on_window_update); break;
     case C_RENDER_ON_WINDOW_CLOSE:     __notify(on_window_close); break;
     default: break;
   }
 
 }
 
-static void page_flip_handler(int fd, unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec, void *user_data) {
-  struct c_render *render = user_data;
+static void page_flip_handler(int fd, unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec, void *userdata) {
+  struct c_render *render = userdata;
 
   render->swapchain.front ^= 1;
   render->drm->connector.waiting_for_flip = 0;
 
-  struct c_window *window;
-  c_map_for_each_values(render->windows, window) {
-    struct c_wl_surface *surface;
-    c_list_for_each(window->surfaces, surface)
-      if (surface->frame_id) {
-        c_wl_connection_callback_done(surface->conn, surface->frame_id);
-        surface->frame_id = 0;
-      }
+}
+
+static struct c_wl_surface *find_root_surface(struct c_render *render, struct c_wl_surface *surface) {
+  while (surface->sub.surface && surface->sub.surface->parent) {
+    surface = surface->sub.surface->parent;
   }
 
+  while (surface->xdg_surface && surface->xdg_surface->parent) {
+    surface = surface->xdg_surface->parent->surface;
+  }
+  return surface;
 }
+
 
 static int get_ft_fd(struct c_render *render) {
   int rfd, rwfd;
@@ -321,7 +323,6 @@ out:
 
 }
 
-
 static GLuint ensure_buf_imported(struct c_render *render, struct c_wl_buffer *buf) {
   if (buf->type == C_WL_BUFFER_DMA) {
     if (buf->dma->texture == 0)
@@ -339,56 +340,82 @@ static GLuint ensure_buf_imported(struct c_render *render, struct c_wl_buffer *b
   assert(0);
 }
 
-static int draw_windows(struct c_render *render) {
-  struct c_window *window;
-  uint64_t key;
-  c_map_for_each(render->windows, key, window) {
-    struct c_wl_surface *surface = (struct c_wl_surface *)key;
+static void draw_surface_tree(struct c_render *render, struct c_window *window,
+                              struct c_wl_surface *surface, int depth) {
+  int is_float = window->state & C_WINDOW_FLOAT;
 
-    c_log(C_LOG_DEBUG, "window->surfaces->size=%d", window->surfaces->size);
+  if (!(surface->role == C_WL_SURFACE_ROLE_XDG_TOPLEVEL) 
+      || !surface->sub.children 
+      || surface->sub.children->size == 0) {
+    struct texture texture  = {
+      .gl_texture = ensure_buf_imported(render, surface->active),
+      .width =  is_float ? surface->active->width : window->width,
+      .height = is_float ? surface->active->height : window->height,
+      .x = window->x,
+      .y = window->y,
+    };
+        
+    c_log(C_LOG_DEBUG, "%-*s 0(depth:%d) surface %p width=%d height=%d x=%d y=%d",
+          depth*3, " ", depth, surface, texture.width, texture.height, texture.x, texture.y);
+    render_texture(render, &texture);
+  }
 
-    if (window->surfaces->size == 1 && surface->active) {
-      struct texture texture  = {
-        .gl_texture = ensure_buf_imported(render, surface->active),
-        .width =  window->state & C_WINDOW_FLOAT ? surface->active->width : window->width,
-        .height = window->state & C_WINDOW_FLOAT ? surface->active->height : window->height,
-        .x = window->x,
-        .y = window->y,
-      };
+  if (!surface->sub.children) return;
 
-      c_log(C_LOG_DEBUG, "%p: surface(0) %p width=%d height=%d x=%d y=%d", 
-          surface->conn, surface, texture.width, texture.height, texture.x, texture.y);
-      render_texture(render, &texture);
+  int i = 0;
+  struct c_wl_subsurface *ss;
+  c_list_for_each(surface->sub.children, ss) {
+    if (!ss->surface->active) continue;
+    struct texture texture = {
+      .gl_texture = ensure_buf_imported(render, ss->surface->active),
+    };
+    assert(texture.gl_texture > 0);
+
+    // if (surface->role == C_WL_SURFACE_ROLE_XDG_POPUP) {
+    //   struct c_xdg_positioner *positioner = ss->
+    //   texture.width =  ss->width;
+    //   texture.height = window->height;
+    //   texture.x = window->x;
+    //   texture.y = window->y;
+    //   goto render;
+
+    if (i == 0 && depth == 0) {
+      texture.width =  window->width;
+      texture.height = window->height;
+      texture.x = window->x;
+      texture.y = window->y;
 
     } else {
-      int i = -1;
-      c_list_for_each(window->surfaces, surface) {
-        i++;
-        /* most likely the first surface created is a surface for decor */
-        if (i == 0 || !surface->active) continue; 
-  
-        struct texture texture  = {0};
-        texture.gl_texture = ensure_buf_imported(render, surface->active);
-        assert(texture.gl_texture > 0);
-        if (i == 1) {
-          texture.width =  window->state & C_WINDOW_FLOAT ? surface->active->width : window->width;
-          texture.height = window->state & C_WINDOW_FLOAT ? surface->active->height : window->height;
-          texture.x = window->x;
-          texture.y = window->y;
-
-        } else {
-          texture.width = surface->active->width;
-          texture.height = surface->active->height;
-          texture.x = window->x + surface->sub.x;
-          texture.y = window->y + surface->sub.y;
-        }
-
-        c_log(C_LOG_DEBUG, "%p: surface(%d) %p width=%d height=%d x=%d y=%d", 
-            surface->conn, i, surface, texture.width, texture.height, texture.x, texture.y);
-        render_texture(render, &texture);
-
-      }
+      texture.width =  ss->surface->active->width;
+      texture.height = ss->surface->active->height;
+      texture.x = window->x + ss->x;
+      texture.y = window->y + ss->y;
     }
+
+    if (is_float) {
+      texture.x -= texture.width / 2;
+      texture.y -= texture.height / 2;
+    }
+
+render:
+    c_log(C_LOG_DEBUG, "%-*s %d(depth:%d) surface %p width=%d height=%d x=%d y=%d",
+          depth*3 + 2, "-", i + 1, depth, ss, texture.width, texture.height, texture.x, texture.y);
+    c_log(C_LOG_DEBUG, "window %d %d. child: %d %d", window->x, window->y, ss->x, ss->y);
+    render_texture(render, &texture);
+
+    if (ss->surface->sub.children)
+      draw_surface_tree(render, window, ss->surface, depth+1);
+
+  }
+}
+
+static int draw_windows(struct c_render *render) {
+  struct c_window *window;
+  c_map_for_each_values(render->windows,  window) {
+    c_log_value(window, "p");
+
+    struct c_wl_surface *surface = window->surface;
+    draw_surface_tree(render, window, surface, 0);
   }
 
   return 0;
@@ -473,96 +500,54 @@ static void destroy_surface(struct c_render *render, struct c_wl_surface *surfac
 
 }
 
-static int on_surface_destroy_cb(struct c_wl_surface *surface, void *userdata) {
-  struct c_render *render = userdata;
-
-  uint64_t window_key = (uint64_t)(surface->sub.parent ? surface->sub.parent : surface);
-  struct c_window *window = c_map_get(render->windows, window_key);
-
-  if (!window) return 0;
-
-  struct c_wl_surface *s;
-  c_list_for_each(window->surfaces, s) {
-    if (s == surface) {
-      c_list_remove_ptr(&window->surfaces, s);
-      break;
-    }
-  }
-  return redraw_scene(render);
-}
-
-static int on_client_gone(struct c_wl_connection *connection, void *userdata) {
-  struct c_render *render = userdata;
-
-  size_t key;
-  struct c_window *window;
-  c_map_for_each(render->windows, key, window) {
-    if (window->conn == connection) {
-      notify(render, window, C_RENDER_ON_WINDOW_CLOSE);
-
-      struct c_wl_surface *surface;
-      c_list_for_each(window->surfaces, surface)
-        destroy_surface(render, surface);
-      
-
-      c_list_destroy(window->surfaces);
-      c_map_remove(render->windows, key);
-      break;
-    }
-  }
-  return 0;
-}
-
 static struct c_window *add_new_window(struct c_render *render, struct c_wl_surface *surface) {
     struct c_window new_window = {0}; 
-
-    new_window.surfaces = c_list_new();
-    new_window.state |= C_WINDOW;
+    new_window.surface = surface;
     new_window.conn = surface->conn;
-
-    c_list_push(new_window.surfaces, surface, 0);
     return c_map_set(render->windows, (uint64_t)surface, &new_window, sizeof(new_window));
 }
 
 static int on_surface_update_cb(struct c_wl_surface *surface, void *userdata) {
   struct c_render *render = userdata;
-  struct c_wl_surface *parent = surface->sub.parent;
-  struct c_window *window;
+  struct c_wl_surface *root = find_root_surface(render, surface);
 
-  uint64_t window_key;
+  c_log(C_LOG_DEBUG, "root=%p role:%d", root, root->role);
+  c_log(C_LOG_DEBUG, "surface=%p role:%d", surface, surface->role);
 
-  if (surface->role == 0) return 0;
+  if (surface->role == 0 || root->role == 0) return 0;
 
-  if (surface->role == C_WL_SURFACE_ROLE_SUBSURFACE) {
-    window_key = (uint64_t)parent;
-    window = c_map_get(render->windows, window_key);
+  if (surface->role == C_WL_SURFACE_ROLE_XDG_POPUP) {}
 
-    if (!window)
-      window = add_new_window(render, parent);
+  struct c_window *window = c_map_get(render->windows, (uint64_t)root);
 
-    if (c_list_idx(window->surfaces, surface) == -1)
-      c_list_push(window->surfaces, surface, 0);
-
-  } else {
-    window_key = (uint64_t)surface;
-    window = c_map_get(render->windows, window_key);
-
-    if (!window) {
-      window = add_new_window(render, surface);
-      // struct c_output_mode *preferred_mode = c_drm_get_preferred_mode(render->drm);
-      // if (surface->xdg.max_height < preferred_mode->height 
-      //     || surface->xdg.max_width < preferred_mode->width) {
-      //   window->x = (uint32_t)preferred_mode->width / 2;
-      //   window->y = (uint32_t)preferred_mode->height / 2;
-      //   window->state |= C_WINDOW_FLOAT;
-      // }
-      notify(render, window, C_RENDER_ON_WINDOW_NEW);
-    }
-    
+  if (!window && surface->active) {
+    window = add_new_window(render, root);
+    notify(render, window, C_RENDER_ON_WINDOW_NEW);
   }
-
+  
   return redraw_scene(render);
 }
+
+static int on_surface_destroy_cb(struct c_wl_surface *surface, void *userdata) {
+  struct c_render *render = userdata;
+
+  struct c_wl_surface *root = find_root_surface(render, surface);
+  struct c_window *window = c_map_get(render->windows, (uint64_t)root);
+
+  c_log(C_LOG_DEBUG, "root=%p role:%d", root, root->role);
+  c_log(C_LOG_DEBUG, "surface=%p role:%d", surface, surface->role);
+
+  if (!window) goto out;
+
+  if (root == surface) {
+    notify(render, window, C_RENDER_ON_WINDOW_CLOSE);
+    c_map_remove(render->windows, (uint64_t)surface);
+  }
+
+out:
+  return redraw_scene(render);
+}
+
 
 static int on_buffer_destroy(struct c_wl_buffer *buffer, void *userdata) {
   struct c_render *render = userdata;
@@ -618,9 +603,10 @@ struct c_render *c_render_init(struct c_wl_display *display, struct c_drm *drm) 
   c_event_loop_add(display->loop, drm->fd, render_callback, render);
 
   struct c_wl_display_listener dpy_listeners = {
-    .on_client_gone = on_client_gone,
     .on_surface_update = on_surface_update_cb,
     .on_surface_destroy = on_surface_destroy_cb,
+
+    .on_subsurface_destroy = on_surface_destroy_cb,
     .on_buffer_destroy = on_buffer_destroy,
   };
 
@@ -641,10 +627,9 @@ error:
 void c_render_free(struct c_render *render) {
   if (render->windows) {
     struct c_window *window;
-    c_map_for_each_values(render->windows, window) {
+    c_map_for_each_values(render->windows, window)
       c_wl_connection_free(window->conn);
-      free(window->surfaces);
-    }
+    
     
     c_map_destroy(render->windows);
   }

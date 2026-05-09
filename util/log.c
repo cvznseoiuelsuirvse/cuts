@@ -44,17 +44,26 @@ void _c_log(enum c_log_level level, const char *file, int line, int insert_nl, c
     case C_LOG_ERROR:
       printf("\033[31m[%s] [%s %s:%d] ", time_format, log_level_string(level), file, line);
       break;
+
     case C_LOG_WARNING:
       printf("\033[33m[%s] [%s %s:%d] ", time_format, log_level_string(level), file, line);
       break;
+
+    case C_LOG_INFO:
+      printf("\033[34m[%s] [%s %s:%d] ", time_format, log_level_string(level), file, line);
+      break;
+
+    case C_LOG_DEBUG:
+      printf("\033[37;2m[%s] [%s %s:%d] ", time_format, log_level_string(level), file, line);
+      break;
+
     default:
       printf("[%s] [%s %s:%d] ", time_format, log_level_string(level), file, line);
       break;
   }
 
   vprintf(format, args);
-  if (level & (C_LOG_ERROR | C_LOG_WARNING))
-    printf("\033[0m");
+  printf("\033[0m");
 
   if (insert_nl)
     printf("\n");
@@ -67,7 +76,7 @@ void c_log_wl_request(struct c_wl_connection *conn, struct c_wl_object *object, 
   if (!(C_LOG_WAYLAND & __log_mask)) return;
 
   const struct c_wl_interface *iface = object->iface;
-  c_log2(C_LOG_WAYLAND, "[wayland] client (%p) %s#%lu.%s(", conn, iface->name, object->id, request->name);
+  c_log2(C_LOG_WAYLAND, " REQ (%p) %s#%lu.%s(", conn, iface->name, object->id, request->name);
 
   c_wl_array *arr;
   for (size_t i = 1; i <= request->nargs; i++) {
@@ -126,7 +135,7 @@ void c_log_wl_event(struct c_wl_connection *conn, struct c_wl_object *object, co
 					   union c_wl_arg *args, size_t nargs, const char *signature) {
   if (!(C_LOG_WAYLAND & __log_mask)) return;
   const struct c_wl_interface *iface = object->iface;
-  c_log2(C_LOG_WAYLAND, "[wayland] server (%p) %s#%lu.%s(", conn, iface->name, object->id, event_name);
+  c_log2(C_LOG_WAYLAND, "EVT (%p) %s#%lu.%s(", conn, iface->name, object->id, event_name);
 
   c_wl_array *arr;
   for (size_t i = 0; i < nargs; i++) {

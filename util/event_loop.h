@@ -14,7 +14,6 @@ typedef enum c_event_callback_status {
 	C_EVENT_OK,
 	C_EVENT_ERROR_FATAL,
 	C_EVENT_ERROR_FD_GONE,
-	C_EVENT_ERROR_WL_PROTO,
 } c_event_callback_status;
 
 #define C_EVENT_CALLBACK static c_event_callback_status

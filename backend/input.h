@@ -61,8 +61,8 @@ struct c_input_event_listener_keyboard {
 
 struct c_input_libinput_interface {
 	void *userdata;
-	int (*open_restricted)(const char *path, int flags, void *user_data);
-	void (*close_restricted)(int fd, void *user_data);
+	int (*open_restricted)(const char *path, int flags, void *userdata);
+	void (*close_restricted)(int fd, void *userdata);
 };
 
 struct c_input {

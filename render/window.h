@@ -13,17 +13,18 @@
 	 (area)->y <= (py) && (py) <= (area)->y + (area)->height)) \
 
 enum c_window_states {
-	C_WINDOW      = 	  1 << 0,
-	C_WINDOW_FLOAT = 	  1 << 1,
-	C_WINDOW_FULLSCREEN = 1 << 2,
+	C_WINDOW_FLOAT        = 1 << 1,
+	C_WINDOW_FULLSCREEN   = 1 << 2,
 };
 
 struct c_window {
   struct c_wl_connection *conn;
 
-  c_list *surfaces;
-  uint32_t width, height;
-  int32_t x, y;
+  struct c_wl_surface *surface; // struct c_wl_surface
+  int32_t x;
+  int32_t y;
+  uint32_t width;
+  uint32_t height;
 
   char title[256];
   char app_id[256];
