@@ -158,15 +158,16 @@ struct c_xdg_surface {
     char *title;
     char *app_id;
 
-    c_list *children; // struct c_xdg_surface.toplevel
   } toplevel;
 
   struct c_wl_surface *surface;
+
   struct {
     c_wl_object_id id;
     struct c_xdg_positioner positioner;
   } popup;
 
+  c_list *children;
   struct c_xdg_surface *parent;
 };
 

@@ -15,6 +15,11 @@ enum c_log_level {
 	C_LOG_WAYLAND = 1 << 4,
 };
 
+struct c_log_config {
+  uint32_t level_mask;
+  int      color;
+};
+
 
 #define c_log_errno(level, format, ...) _c_log((level), (const char *)__FILE__ + 3, __LINE__, 1, format ": %s" __VA_OPT__(,) __VA_ARGS__, strerror(errno))
 #define c_log(level, format, ...) _c_log((level), (const char *)__FILE__ + 3, __LINE__, 1, format __VA_OPT__(,) __VA_ARGS__)
@@ -22,7 +27,7 @@ enum c_log_level {
 
 #define c_log_value(var, fmt) c_log(C_LOG_DEBUG, #var "=%" fmt, var);
 
-void c_log_set_level(enum c_log_level n);
+void c_log_setup(struct c_log_config *cfg);
 void c_log_wl_request(struct c_wl_connection *conn, struct c_wl_object *object, struct c_wl_request *request, union c_wl_arg *args);
 void c_log_wl_event(struct c_wl_connection *conn, struct c_wl_object *object, const char *event_name, union c_wl_arg *args, size_t nargs, const char *signature);
 

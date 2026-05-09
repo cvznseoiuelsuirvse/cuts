@@ -349,11 +349,14 @@ C_EVENT_CALLBACK seat_server_callback(struct c_event_loop *loop, int fd, void *u
 } 
 
 int main() {
+  struct c_log_config cfg;
+  cfg.level_mask = C_LOG_ERROR | C_LOG_DEBUG | C_LOG_INFO | C_LOG_WARNING;
+  cfg.color = 1;
+  c_log_setup(&cfg);
+                                                                  
   signal(SIGINT, cleanup);
 
-  struct sockaddr_un sock_addr = {0};
-  c_log_set_level(C_LOG_ERROR | C_LOG_DEBUG | C_LOG_INFO | C_LOG_WARNING);
-                                                                  
+
   serv.clients = c_list_new();
 
   serv.fd = socket(AF_UNIX, C_SEAT_SOCKET_FLAGS, 0);
@@ -362,6 +365,7 @@ int main() {
     return 1;
   }
 
+  struct sockaddr_un sock_addr = {0};
   sock_addr.sun_family = AF_UNIX;
   snprintf(sock_addr.sun_path, sizeof(sock_addr.sun_path), C_SEAT_SOCKET_PATH);
 

@@ -5,8 +5,9 @@
 #include "wayland/server.h"
 #include "util/helpers.h"
 
-static int     __log_mask = 0;
-static int64_t __start = 0;
+static int      __log_mask = 0;
+static int64_t  __start = 0;
+static int      __color = 0;
 
 static const char *log_level_string(enum c_log_level level) {
 	switch (level) {
@@ -40,30 +41,36 @@ void _c_log(enum c_log_level level, const char *file, int line, int insert_nl, c
   va_list args;
   va_start(args, format);
 
-  switch (level) {
-    case C_LOG_ERROR:
-      printf("\033[31m[%s] [%s %s:%d] ", time_format, log_level_string(level), file, line);
-      break;
+  if (__color) {
+    switch (level) {
+      case C_LOG_ERROR:
+        printf("\033[31m[%s] [%s %s:%d] ", time_format, log_level_string(level), file, line);
+        break;
 
-    case C_LOG_WARNING:
-      printf("\033[33m[%s] [%s %s:%d] ", time_format, log_level_string(level), file, line);
-      break;
+      case C_LOG_WARNING:
+        printf("\033[33m[%s] [%s %s:%d] ", time_format, log_level_string(level), file, line);
+        break;
 
-    case C_LOG_INFO:
-      printf("\033[34m[%s] [%s %s:%d] ", time_format, log_level_string(level), file, line);
-      break;
+      case C_LOG_INFO:
+        printf("\033[34m[%s] [%s %s:%d] ", time_format, log_level_string(level), file, line);
+        break;
 
-    case C_LOG_DEBUG:
-      printf("\033[37;2m[%s] [%s %s:%d] ", time_format, log_level_string(level), file, line);
-      break;
+      case C_LOG_DEBUG:
+        printf("\033[37;2m[%s] [%s %s:%d] ", time_format, log_level_string(level), file, line);
+        break;
 
-    default:
-      printf("[%s] [%s %s:%d] ", time_format, log_level_string(level), file, line);
-      break;
+      default:
+        printf("[%s] [%s %s:%d] ", time_format, log_level_string(level), file, line);
+        break;
+    }
+
+    vprintf(format, args);
+    printf("\033[0m");
+
+  } else {
+    printf("[%s] [%s %s:%d] ", time_format, log_level_string(level), file, line);
+    vprintf(format, args);
   }
-
-  vprintf(format, args);
-  printf("\033[0m");
 
   if (insert_nl)
     printf("\n");
@@ -188,8 +195,9 @@ void c_log_wl_event(struct c_wl_connection *conn, struct c_wl_object *object, co
 
 }
 
-inline void c_log_set_level(enum c_log_level n) {
-  __log_mask |= n;
+void c_log_setup(struct c_log_config *cfg) {
+  __log_mask |= cfg->level_mask;
+  __color = cfg->color;
 }
 
 static int64_t now_ms() {

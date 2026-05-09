@@ -46,11 +46,11 @@ int xdg_surface_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id xdg_surface_id = args[0].o;
   struct c_xdg_surface *xdg_surface = c_wl_object_data_get(conn, xdg_surface_id);
 
-  if (xdg_surface->toplevel.children) {
+  if (xdg_surface->children) {
     struct c_xdg_surface *s;
-    c_list_for_each(xdg_surface->toplevel.children, s)
+    c_list_for_each(xdg_surface->children, s)
       s->parent = NULL;
-    c_list_destroy(xdg_surface->toplevel.children);
+    c_list_destroy(xdg_surface->children);
   }
 
   xdg_surface->surface->xdg_surface = NULL;
@@ -143,7 +143,7 @@ int xdg_toplevel_set_parent(struct c_wl_connection *conn, union c_wl_arg *args) 
 
   if (args[1].o == 0) {
     if (parent)
-      c_list_remove_ptr(&parent->toplevel.children, xdg_surface);
+      c_list_remove_ptr(&parent->children, xdg_surface);
 
     xdg_surface->parent = NULL;
     return 0;
@@ -152,11 +152,11 @@ int xdg_toplevel_set_parent(struct c_wl_connection *conn, union c_wl_arg *args) 
   struct c_xdg_surface *xdg_surface_parent = c_wl_object_data_get(conn, args[1].o);
   struct c_xdg_surface *parent2 = xdg_surface_parent->parent;
 
-  if (!parent2->toplevel.children)
-    parent2->toplevel.children = c_list_new();
+  if (!parent2->children)
+    parent2->children = c_list_new();
 
 
-  c_list_push(parent2->toplevel.children, xdg_surface, 0);
+  c_list_push(parent2->children, xdg_surface, 0);
   xdg_surface->parent = xdg_surface_parent;
 
   return 0;
@@ -168,7 +168,7 @@ int xdg_toplevel_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
 
   xdg_surface->surface->role = 0;
   if (parent)
-    c_list_remove_ptr(&parent->toplevel.children, xdg_surface);
+    c_list_remove_ptr(&parent->children, xdg_surface);
 
   if (xdg_surface->toplevel.title)  free(xdg_surface->toplevel.title);
   if (xdg_surface->toplevel.app_id) free(xdg_surface->toplevel.app_id);
@@ -264,6 +264,12 @@ int xdg_surface_get_popup(struct c_wl_connection *conn, union c_wl_arg *args) {
   xdg_surface->popup.id = args[1].n;
   memcpy(&xdg_surface->popup.positioner, xdg_positioner, sizeof(*xdg_positioner));
 
+
+  if (!xdg_surface_parent->children)
+    xdg_surface_parent->children = c_list_new();
+
+
+  c_list_push(xdg_surface_parent->children, xdg_surface, 0);
   c_wl_object_add(conn, args[1].n, self->version, c_wl_interface_get("xdg_popup"), self->data);
   return 0;
 }
@@ -274,6 +280,8 @@ int xdg_popup_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
 
   memset(&xdg_surface->popup, 0, sizeof(xdg_surface->popup));
   xdg_surface->surface->role = 0;
+
+  c_list_remove_ptr(&xdg_surface->parent->children, xdg_surface);
 
   c_wl_object_del(conn, args[0].o);
   return 0;

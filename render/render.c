@@ -11,6 +11,8 @@
 #include "util/log.h"
 #include "util/shm.h"
 
+#include "wayland/types/xdg-shell.h"
+
 #define CUTS_GL_COLOR 0.8f, 0.1f, 0.2f, 1.0f
 #define clear_color()   \
   glClearColor(CUTS_GL_COLOR); \
@@ -106,6 +108,85 @@ static struct c_wl_surface *find_root_surface(struct c_render *render, struct c_
   return surface;
 }
 
+
+static void calc_popup_coords(struct c_xdg_surface *surface, int32_t *x, int32_t *y) {
+  struct c_xdg_positioner positioner = surface->popup.positioner;
+
+  int32_t anchor_x, anchor_y;
+  int32_t dx, dy;
+
+  switch (positioner.anchor) {
+    case XDG_POSITIONER_ANCHOR_RIGHT:
+    case XDG_POSITIONER_ANCHOR_TOP_RIGHT:
+    case XDG_POSITIONER_ANCHOR_BOTTOM_RIGHT:
+      anchor_x = positioner.anchor_rect.width;
+      break;
+
+    case XDG_POSITIONER_ANCHOR_TOP:
+    case XDG_POSITIONER_ANCHOR_BOTTOM:
+      anchor_x = positioner.anchor_rect.width / 2;
+      break;
+
+    default:
+      anchor_x = 0;
+      break;
+  }
+
+  switch (positioner.anchor) {
+    case XDG_POSITIONER_ANCHOR_BOTTOM:
+    case XDG_POSITIONER_ANCHOR_BOTTOM_LEFT:
+    case XDG_POSITIONER_ANCHOR_BOTTOM_RIGHT:
+      anchor_y = positioner.anchor_rect.height;
+      break;
+
+    case XDG_POSITIONER_ANCHOR_LEFT:
+    case XDG_POSITIONER_ANCHOR_RIGHT:
+      anchor_y = positioner.anchor_rect.height / 2;
+      break;
+
+    default:
+      anchor_y = 0;
+      break;
+  }
+
+  switch (positioner.gravity) {
+    case XDG_POSITIONER_GRAVITY_LEFT:
+    case XDG_POSITIONER_GRAVITY_TOP_LEFT:
+    case XDG_POSITIONER_GRAVITY_BOTTOM_LEFT:
+      dx = -positioner.width;
+      break;
+
+    case XDG_POSITIONER_GRAVITY_TOP:
+    case XDG_POSITIONER_GRAVITY_BOTTOM:
+      dx = -positioner.width / 2;
+      break;
+
+    default:
+      dx = 0;
+      break;
+  }
+
+  switch (positioner.gravity) {
+    case XDG_POSITIONER_GRAVITY_TOP:
+    case XDG_POSITIONER_GRAVITY_TOP_LEFT:
+    case XDG_POSITIONER_GRAVITY_TOP_RIGHT:
+      dy = -positioner.height;
+      break;
+
+    case XDG_POSITIONER_GRAVITY_LEFT:
+    case XDG_POSITIONER_GRAVITY_RIGHT:
+      dy = -positioner.height / 2;
+      break;
+
+    default:
+      dy = 0;
+      break;
+  }
+
+  *x = positioner.anchor_rect.x + positioner.x + anchor_x + dx;
+  *y = positioner.anchor_rect.y + positioner.y + anchor_y + dy;
+
+}
 
 static int get_ft_fd(struct c_render *render) {
   int rfd, rwfd;
@@ -342,6 +423,7 @@ static GLuint ensure_buf_imported(struct c_render *render, struct c_wl_buffer *b
 
 static void draw_surface_tree(struct c_render *render, struct c_window *window,
                               struct c_wl_surface *surface, int depth) {
+
   int is_float = window->state & C_WINDOW_FLOAT;
 
   if (!(surface->role == C_WL_SURFACE_ROLE_XDG_TOPLEVEL) 
@@ -349,6 +431,7 @@ static void draw_surface_tree(struct c_render *render, struct c_window *window,
       || surface->sub.children->size == 0) {
     struct texture texture  = {
       .gl_texture = ensure_buf_imported(render, surface->active),
+      .buf_type = surface->active->type,
       .width =  is_float ? surface->active->width : window->width,
       .height = is_float ? surface->active->height : window->height,
       .x = window->x,
@@ -360,7 +443,7 @@ static void draw_surface_tree(struct c_render *render, struct c_window *window,
     render_texture(render, &texture);
   }
 
-  if (!surface->sub.children) return;
+  if (!surface->sub.children) goto xdg_pass;
 
   int i = 0;
   struct c_wl_subsurface *ss;
@@ -368,16 +451,9 @@ static void draw_surface_tree(struct c_render *render, struct c_window *window,
     if (!ss->surface->active) continue;
     struct texture texture = {
       .gl_texture = ensure_buf_imported(render, ss->surface->active),
+      .buf_type = ss->surface->active->type,
     };
     assert(texture.gl_texture > 0);
-
-    // if (surface->role == C_WL_SURFACE_ROLE_XDG_POPUP) {
-    //   struct c_xdg_positioner *positioner = ss->
-    //   texture.width =  ss->width;
-    //   texture.height = window->height;
-    //   texture.x = window->x;
-    //   texture.y = window->y;
-    //   goto render;
 
     if (i == 0 && depth == 0) {
       texture.width =  window->width;
@@ -397,14 +473,48 @@ static void draw_surface_tree(struct c_render *render, struct c_window *window,
       texture.y -= texture.height / 2;
     }
 
-render:
-    c_log(C_LOG_DEBUG, "%-*s %d(depth:%d) surface %p width=%d height=%d x=%d y=%d",
+    c_log(C_LOG_DEBUG, "[SUB] %-*s %d(depth:%d) surface %p width=%d height=%d x=%d y=%d",
           depth*3 + 2, "-", i + 1, depth, ss, texture.width, texture.height, texture.x, texture.y);
-    c_log(C_LOG_DEBUG, "window %d %d. child: %d %d", window->x, window->y, ss->x, ss->y);
     render_texture(render, &texture);
 
     if (ss->surface->sub.children)
       draw_surface_tree(render, window, ss->surface, depth+1);
+  }
+
+
+xdg_pass:
+  if (!surface->xdg_surface || !surface->xdg_surface->children) return;
+
+  struct c_xdg_surface *xdg_s;
+  c_list_for_each(surface->xdg_surface->children, xdg_s) {
+    if (!xdg_s->surface->active) continue;
+
+    struct texture texture = {
+      .gl_texture = ensure_buf_imported(render, xdg_s->surface->active),
+      .buf_type = xdg_s->surface->active->type,
+    };
+    assert(texture.gl_texture > 0);
+    
+    if (xdg_s->surface->role == C_WL_SURFACE_ROLE_XDG_POPUP) {
+      struct c_xdg_positioner positioner = xdg_s->popup.positioner;
+      texture.width = positioner.width;
+      texture.height = positioner.height;
+
+      calc_popup_coords(xdg_s, &texture.x, &texture.y);
+
+      texture.x += window->x;
+      texture.y += window->y;
+
+    } else {
+      texture.width = xdg_s->surface->active->width;
+      texture.height = xdg_s->surface->active->height;
+      texture.x = window->x + xdg_s->x;
+      texture.y = window->y + xdg_s->y;
+    }
+
+    c_log(C_LOG_DEBUG, "[XDG] %-*s %d(depth:%d) surface %p width=%d height=%d x=%d y=%d",
+          depth*3 + 2, "-", i + 1, depth, xdg_s, texture.width, texture.height, texture.x, texture.y);
+    render_texture(render, &texture);
 
   }
 }
@@ -489,17 +599,6 @@ static int create_swapchain(struct c_render *render) {
   return 0;
 }
 
-static void destroy_surface(struct c_render *render, struct c_wl_surface *surface) {
-  if (surface->active) {
-    destroy_wl_buffer(render, surface->active);
-  }
-
-  if (surface->pending) {
-    destroy_wl_buffer(render, surface->pending);
-  }
-
-}
-
 static struct c_window *add_new_window(struct c_render *render, struct c_wl_surface *surface) {
     struct c_window new_window = {0}; 
     new_window.surface = surface;
@@ -516,13 +615,19 @@ static int on_surface_update_cb(struct c_wl_surface *surface, void *userdata) {
 
   if (surface->role == 0 || root->role == 0) return 0;
 
-  if (surface->role == C_WL_SURFACE_ROLE_XDG_POPUP) {}
-
   struct c_window *window = c_map_get(render->windows, (uint64_t)root);
 
   if (!window && surface->active) {
     window = add_new_window(render, root);
     notify(render, window, C_RENDER_ON_WINDOW_NEW);
+
+  } else if (surface->role == C_WL_SURFACE_ROLE_XDG_POPUP) {
+    struct c_xdg_positioner p = surface->xdg_surface->popup.positioner;
+    int32_t x, y;
+    calc_popup_coords(surface->xdg_surface, &x, &y);
+    xdg_popup_configure(surface->conn, surface->xdg_surface->popup.id, x, y,
+                        p.width, p.height);
+    xdg_surface_configure(surface->conn, surface->xdg_surface->id, c_wl_serial());
   }
   
   return redraw_scene(render);

@@ -300,8 +300,11 @@ int main() {
   c_signal_handler_add(SIGTERM, cleanup, NULL);
   c_signal_handler_add(SIGINT, cleanup, NULL);
 
-  c_log_set_level(C_LOG_INFO | C_LOG_ERROR | C_LOG_DEBUG | C_LOG_WARNING);
-  c_log_set_level(C_LOG_WAYLAND);
+  struct c_log_config cfg;
+  cfg.level_mask = C_LOG_INFO | C_LOG_ERROR | C_LOG_DEBUG | C_LOG_WARNING;
+  cfg.level_mask |= C_LOG_WAYLAND;
+  cfg.color = 0;
+  c_log_setup(&cfg);
 
   struct c_wl_display *display = c_wl_display_init();
   if (!display) 
