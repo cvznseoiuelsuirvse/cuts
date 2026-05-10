@@ -10,6 +10,8 @@
 #include "render/gl/egl.h"
 
 #include "backend/drm/util.h"
+
+#include "util/malloc.h"
 #include "util/log.h"
 #include "util/helpers.h"
 
@@ -119,8 +121,8 @@ static int c_egl_get_modifiers(struct c_egl *egl, EGLint format,
   return num_modifiers;
 
 error:
-  if (modifiers) free(modifiers);
-  if (external_only) free(external_only);
+  if (modifiers) free(*modifiers);
+  if (external_only) free(*external_only);
   return -1;
 
 }
@@ -139,7 +141,7 @@ static int c_egl_get_formats(struct c_egl *egl, EGLint **formats) {
   }
 
   if (egl->proc.eglQueryDmaBufFormatsEXT(egl->display, num_formats, *formats, &num_formats) != EGL_TRUE) {
-    free(formats);
+    free(*formats);
     egl_error("eglQueryDmaBufFormatsEXT");
     return -1;
   }
@@ -171,7 +173,7 @@ struct c_format *c_egl_query_formats(struct c_egl *egl, size_t *n_entries) {
     free(external_only);
   }
 
-  struct c_format *table = malloc(*n_entries * sizeof(*table));
+  struct c_format *table = calloc(*n_entries, sizeof(*table));
   if (!table) {
     c_log(C_LOG_ERROR, "calloc failed");
     free(formats);

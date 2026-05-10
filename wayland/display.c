@@ -9,6 +9,7 @@
 #include "util/event_loop.h"
 #include "util/helpers.h"
 #include "util/log.h"
+#include "util/malloc.h"
 
 struct __display_event_listener {
   void *userdata;
@@ -74,6 +75,8 @@ error:
 
 C_EVENT_CALLBACK client_epoll_callback(struct c_event_loop *loop, int fd, void *data) {
   struct c_wl_connection *connection = data;
+  struct c_wl_display *dpy = c_wl_connection_get_dpy(connection);
+
   int ret = c_wl_connection_dispatch(connection);
 
   switch (ret) {
@@ -86,6 +89,7 @@ C_EVENT_CALLBACK client_epoll_callback(struct c_event_loop *loop, int fd, void *
       return C_EVENT_OK;
 
     case DISPATCH_CLIENT_ERR:
+      c_list_remove_ptr(&dpy->connections, connection);
       c_wl_connection_free(connection);
       return C_EVENT_ERROR_FD_GONE;
   }
@@ -114,6 +118,8 @@ C_EVENT_CALLBACK server_epoll_callback(struct c_event_loop *loop, int fd, void *
     return C_EVENT_ERROR_FATAL;
   }
 
+  c_list_push(display->connections, connection, 0);
+
   return C_EVENT_OK;
 }
 
@@ -138,7 +144,7 @@ void c_wl_display_notify(struct c_wl_display *display, void *data, enum c_wl_dis
     }
 
   switch (notifier) {
-    case C_WL_DISPLAY_ON_SURFACE_UPDATE:  notify(on_surface_update); break;
+    case C_WL_DISPLAY_ON_SURFACE_COMMIT:  notify(on_surface_commit); break;
     case C_WL_DISPLAY_ON_SURFACE_DESTROY: notify(on_surface_destroy); break;
     case C_WL_DISPLAY_ON_SUBSURFACE_DESTROY: notify(on_subsurface_destroy); break;
     case C_WL_DISPLAY_ON_BUFFER_DESTROY:  notify(on_buffer_destroy); break;
@@ -154,7 +160,7 @@ struct c_wl_display *c_wl_display_init() {
     return NULL;
   }
 
-  struct c_wl_display *display = calloc(1, sizeof(struct c_wl_display));
+  struct c_wl_display *display = calloc(1, sizeof(*display));
   if (!display) {
     c_log(C_LOG_ERROR, "failed to calloc");
     return NULL;
@@ -172,6 +178,7 @@ struct c_wl_display *c_wl_display_init() {
 
   display->listeners = c_list_new();
   display->supported_ifaces = c_list_new();
+  display->connections = c_list_new();
 
   c_wl_display_add_supported_interface(display, "wl_compositor", NULL, NULL);
   c_wl_display_add_supported_interface(display, "wl_subcompositor", NULL, NULL);
@@ -197,6 +204,14 @@ void c_wl_display_add_supported_interface(struct c_wl_display *display, const ch
 void c_wl_display_free(struct c_wl_display *display) {
   if (display->loop) c_event_loop_free(display->loop);
   if (*display->socket_path) unlink(display->socket_path);
+
+  if (display->connections) {
+    struct c_wl_connection *conn;
+    c_list_for_each(display->connections, conn)
+      c_wl_connection_free(conn);
+    c_list_destroy(display->connections);
+  }
+
   if (display->listeners) {
     struct __display_event_listener *l;
     c_list_for_each(display->listeners, l)
@@ -206,6 +221,7 @@ void c_wl_display_free(struct c_wl_display *display) {
 
   if (display->supported_ifaces)
     c_list_destroy(display->supported_ifaces);
+
 
   unsetenv("WAYLAND_DISPLAY");
   

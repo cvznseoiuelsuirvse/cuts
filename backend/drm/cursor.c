@@ -7,6 +7,7 @@
 #include "backend/drm/cursor.h"
 
 #include "util/log.h"
+#include "util/malloc.h"
 
 static int on_mouse_movement_cb(struct c_input_mouse_event *event, void *userdata) {
   struct c_drm *drm = userdata;
@@ -83,7 +84,7 @@ struct c_cursor *c_cursor_init(struct c_drm *drm, struct c_input *input) {
   }
 
   cursor->image_size = w * h * sizeof(uint32_t);
-  cursor->image = calloc(cursor->image_size, 1);
+  cursor->image = malloc(cursor->image_size);
   if (!cursor->image) {
     c_log(C_LOG_ERROR, "calloc failed");
     goto error;

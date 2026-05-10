@@ -50,11 +50,13 @@ enum c_wl_buffer_type {
 
 struct c_wl_buffer {
 	c_wl_object_id id;
+  struct c_wl_connection *conn;
+  c_wl_int       scale;
 
 	c_wl_uint width;
 	c_wl_uint height;
 
-	struct c_wl_surface *surface;
+	// struct c_wl_surface *surface;
 
 	enum c_wl_buffer_type type;	
 	union {
@@ -85,7 +87,6 @@ struct c_wl_surface {
   size_t         n_frames;
 
 	enum c_wl_surface_roles role;
-  c_wl_int         scale;
 	struct {
 		c_wl_int width,  x;
 		c_wl_int height, y;

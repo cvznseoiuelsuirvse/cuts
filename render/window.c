@@ -11,18 +11,12 @@ void c_window_resize(struct c_window *window, uint32_t width, uint32_t height, i
   struct c_wl_surface *toplevel = window->surface;
   struct c_xdg_surface *xdg_surface = toplevel->xdg_surface;
 
-  c_wl_enum states[2] = {XDG_TOPLEVEL_STATE_RESIZING};
+  c_wl_enum states[2] = {XDG_TOPLEVEL_STATE_RESIZING, XDG_TOPLEVEL_STATE_ACTIVATED};
 
   c_wl_array arr = {
     .size = sizeof(*states),
+    .data = states,
   };
-
-  if (activate) {
-    states[1] = XDG_TOPLEVEL_STATE_ACTIVATED;
-    arr.size += sizeof(*states);
-  }
-
-  arr.data = states;
 
   xdg_toplevel_configure(window->conn, xdg_surface->toplevel.id, width, height, &arr);
   xdg_surface_configure(window->conn, xdg_surface->id, c_wl_serial());

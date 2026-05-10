@@ -11,7 +11,9 @@
 
 #include "render/gl/egl.h"
 #include "render/gl/gles.h"
+
 #include "util/log.h"
+#include "util/malloc.h"
 
 void c_render_buffer_destroy(struct c_render *render, struct c_render_buffer *buf) {
   if (buf->texture) glDeleteTextures(1, &buf->texture);
@@ -48,7 +50,7 @@ struct c_render_buffer *c_render_buffer_create(struct c_render *render, uint32_t
     .drm_format = format,
     .modifier = gbm_bo_get_modifier(gbm_bo),
     .n_planes = gbm_bo_get_plane_count(gbm_bo),
-    .planes = calloc(1, sizeof(*params.planes) * C_DMABUF_MAX_PLANES),
+    .planes = calloc(C_DMABUF_MAX_PLANES, sizeof(*params.planes)),
   };
 
   for (size_t i = 0; i < params.n_planes; i++) {
@@ -114,7 +116,6 @@ struct c_render_buffer *c_render_buffer_create(struct c_render *render, uint32_t
 
 out:
   free(params.planes);
-  params.planes = NULL;
 
   gbm_bo_destroy(gbm_bo);
   if (!success) {

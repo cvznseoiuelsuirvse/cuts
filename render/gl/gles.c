@@ -9,6 +9,7 @@
 
 #include "util/log.h"
 #include "util/helpers.h"
+#include "util/malloc.h"
 
 static const GLchar *vertex_shader = 
   "#version 300 es\n"

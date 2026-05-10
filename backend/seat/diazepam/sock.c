@@ -10,13 +10,13 @@
 #include "sock.h"
 
 
-int seat_send(int fd, struct c_seat_msg_params *params) {
-  struct c_seat_msg_header header = params->header;
-  size_t buffer_size = C_SEAT_HEADER_SIZE + header.body_size;
+int seat_send(int fd, struct diazepam_msg_params *params) {
+  struct diazepam_msg_header header = params->header;
+  size_t buffer_size = DIAZEPAM_HEADER_SIZE + header.body_size;
   uint8_t buffer[buffer_size];
 
-  memcpy(buffer, &header, C_SEAT_HEADER_SIZE);
-  memcpy(buffer + C_SEAT_HEADER_SIZE, params->body, header.body_size);
+  memcpy(buffer, &header, DIAZEPAM_HEADER_SIZE);
+  memcpy(buffer + DIAZEPAM_HEADER_SIZE, params->body, header.body_size);
 
   if (params->fd > 0) {
     struct msghdr m;
@@ -43,7 +43,7 @@ int seat_send(int fd, struct c_seat_msg_params *params) {
   return send(fd, buffer, buffer_size, MSG_NOSIGNAL);
 }
 
-int seat_recv(int fd, struct c_seat_msg_params *params) {
+int seat_recv(int fd, struct diazepam_msg_params *params) {
   char cmsg[CMSG_SPACE(sizeof(int))];
 
   char buffer[sizeof(params->body)];
@@ -66,10 +66,10 @@ int seat_recv(int fd, struct c_seat_msg_params *params) {
     params->fd = *(int *)CMSG_DATA(c);
   }
 
-  memcpy(&params->header, buffer, C_SEAT_HEADER_SIZE);
+  memcpy(&params->header, buffer, DIAZEPAM_HEADER_SIZE);
   assert(params->header.body_size <= sizeof(params->body));
 
-  memcpy(params->body, buffer + C_SEAT_HEADER_SIZE, params->header.body_size);
+  memcpy(params->body, buffer + DIAZEPAM_HEADER_SIZE, params->header.body_size);
   return n;
   
 }
@@ -79,8 +79,8 @@ int seat_send_error(int fd, const char *fmt, ...) {
   va_list args;
   va_start(args, fmt);
 
-  struct c_seat_msg_params params = {0};
-  params.header.op = C_SEAT_MSG_ERROR;
+  struct diazepam_msg_params params = {0};
+  params.header.op = DIAZEPAM_MSG_ERROR;
   vsnprintf(params.body, sizeof(params.body), fmt, args);
   params.header.body_size = strlen(params.body);
 

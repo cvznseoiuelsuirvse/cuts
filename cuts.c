@@ -207,12 +207,12 @@ int wl_seat_get_pointer(struct c_wl_connection *conn, union c_wl_arg *args) {
 }
 
 void cleanup(int err, void *userdata) {
-  if (comp->render)  c_render_free(comp->render);
   if (comp->backend) c_backend_free(comp->backend);
+  if (comp->display) c_wl_display_free(comp->display);
+  if (comp->render)  c_render_free(comp->render);
 
   c_list_destroy(comp->windows);
 
-  if (comp->display) c_wl_display_free(comp->display);
 
   exit(err);
 }
@@ -278,7 +278,6 @@ void tile() {
   struct c_window *window;
   c_list_for_each(windows, window) {
     if (window->state & C_WINDOW_FLOAT) continue;
-    c_log(C_LOG_DEBUG, "%d %p", n_tiled_windows, window);
 
     window->x = i++ * one_window_width;
     window->x += i * gap;

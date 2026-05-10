@@ -40,7 +40,7 @@ struct {
 } serv = {0};
 
 static void cleanup(int code) {
-  if (serv.fd) unlink(C_SEAT_SOCKET_PATH);
+  if (serv.fd) unlink(DIAZEPAM_SOCKET_PATH);
   if (serv.clients) {
     struct seat_client *c;
     c_list_for_each(serv.clients, c) c_list_destroy(c->devices);
@@ -51,14 +51,14 @@ static void cleanup(int code) {
 }
 
 static void send_ack(int client_fd) {
-  struct c_seat_msg_params params = {0};
-  params.header.op = C_SEAT_MSG_ACK;
+  struct diazepam_msg_params params = {0};
+  params.header.op = DIAZEPAM_MSG_ACK;
   assert(seat_send(client_fd, &params) >= 0);
 }
 
 static void seat_enable(int client_fd, int vt) {
-  struct c_seat_msg_params send_params = {0};
-  send_params.header.op = C_SEAT_MSG_ENABLE_SEAT;
+  struct diazepam_msg_params send_params = {0};
+  send_params.header.op = DIAZEPAM_MSG_ENABLE_SEAT;
 
   serv.cur_vt = vt;
   seat_send(client_fd, &send_params);
@@ -66,8 +66,8 @@ static void seat_enable(int client_fd, int vt) {
 }
 
 static void seat_disable(int client_fd) {
-  struct c_seat_msg_params send_params = {0};
-  send_params.header.op = C_SEAT_MSG_DISABLE_SEAT;
+  struct diazepam_msg_params send_params = {0};
+  send_params.header.op = DIAZEPAM_MSG_DISABLE_SEAT;
 
   seat_send(client_fd, &send_params);
 
@@ -115,7 +115,7 @@ static struct seat_client *get_client_from_fd(int fd) {
   return NULL;
 }
 
-static void seat_close_device(int client_fd, struct c_seat_msg_params *params) {
+static void seat_close_device(int client_fd, struct diazepam_msg_params *params) {
   struct seat_client *client = get_client_from_fd(client_fd);
   if (!client) {
       seat_send_error(client_fd, "no clients registered with fd %d", client_fd);
@@ -138,7 +138,7 @@ static void seat_close_device(int client_fd, struct c_seat_msg_params *params) {
 
 }
 
-static void seat_open_device(int client_fd, struct c_seat_msg_params *params) {
+static void seat_open_device(int client_fd, struct diazepam_msg_params *params) {
   struct seat_client *client = get_client_from_fd(client_fd);
   if (!client) {
     seat_send_error(client_fd, "no clients registered with fd %d", client_fd);
@@ -170,9 +170,9 @@ static void seat_open_device(int client_fd, struct c_seat_msg_params *params) {
     return;
   }
 
-  struct c_seat_msg_params send_params = {0};
+  struct diazepam_msg_params send_params = {0};
   send_params.fd = fd;
-  send_params.header.op = C_SEAT_MSG_ACK;
+  send_params.header.op = DIAZEPAM_MSG_ACK;
   *(uint32_t *)send_params.body = __dev_id;
   send_params.header.body_size = sizeof(__dev_id);
 
@@ -240,7 +240,7 @@ static void on_vt_activate(int sig, void *userdata) {
   }
 }
 
-static void seat_open_seat(int client_fd, struct c_seat_msg_params *params) {
+static void seat_open_seat(int client_fd, struct diazepam_msg_params *params) {
   int vt = vt_get_current_num();
   c_log(C_LOG_DEBUG, "current vt number: %d", vt);
 
@@ -298,7 +298,7 @@ static void seat_close_seat(int client_fd) {
 }
 
 C_EVENT_CALLBACK seat_client_callback(struct c_event_loop *loop, int fd, void *userdata) {
-  struct c_seat_msg_params params;
+  struct diazepam_msg_params params;
   int n = seat_recv(fd, &params);
   if (n <= 0) {
     c_log(C_LOG_DEBUG, "client %d gone. closing seat", fd);
@@ -307,22 +307,22 @@ C_EVENT_CALLBACK seat_client_callback(struct c_event_loop *loop, int fd, void *u
   }
 
   switch (params.header.op) {
-    case C_SEAT_MSG_OPEN_SEAT:
+    case DIAZEPAM_MSG_OPEN_SEAT:
       c_log(C_LOG_DEBUG, "client#%d seat.open_seat", fd);
       seat_open_seat(fd, &params);
       break;
 
-    case C_SEAT_MSG_CLOSE_SEAT:
+    case DIAZEPAM_MSG_CLOSE_SEAT:
       c_log(C_LOG_DEBUG, "client#%d seat.close_seat", fd);
       seat_close_seat(fd);
       break;
 
-    case C_SEAT_MSG_OPEN_DEVICE:
+    case DIAZEPAM_MSG_OPEN_DEVICE:
       c_log(C_LOG_DEBUG, "client#%d seat.open_device", fd);
       seat_open_device(fd, &params);
       break;
 
-    case C_SEAT_MSG_CLOSE_DEVICE:
+    case DIAZEPAM_MSG_CLOSE_DEVICE:
       c_log(C_LOG_DEBUG, "client#%d seat.close_device", fd);
       seat_close_device(fd, &params);
       break;
@@ -359,7 +359,7 @@ int main() {
 
   serv.clients = c_list_new();
 
-  serv.fd = socket(AF_UNIX, C_SEAT_SOCKET_FLAGS, 0);
+  serv.fd = socket(AF_UNIX, DIAZEPAM_SOCKET_FLAGS, 0);
   if (serv.fd == -1) {
     c_log_errno(C_LOG_ERROR, "socket failed");
     return 1;
@@ -367,7 +367,7 @@ int main() {
 
   struct sockaddr_un sock_addr = {0};
   sock_addr.sun_family = AF_UNIX;
-  snprintf(sock_addr.sun_path, sizeof(sock_addr.sun_path), C_SEAT_SOCKET_PATH);
+  snprintf(sock_addr.sun_path, sizeof(sock_addr.sun_path), DIAZEPAM_SOCKET_PATH);
 
   if (bind(serv.fd, (struct sockaddr *)&sock_addr, sizeof(sock_addr)) == -1) {
     c_log_errno(C_LOG_ERROR, "bind failed");
@@ -391,11 +391,11 @@ int main() {
     goto error_unlink;
   }
 
-  if (chmod(C_SEAT_SOCKET_PATH, 0770) == -1) {
+  if (chmod(DIAZEPAM_SOCKET_PATH, 0770) == -1) {
     c_log_errno(C_LOG_ERROR, "socket chmod failed");
     goto error_unlink;
   }
-  if (chown(C_SEAT_SOCKET_PATH, getuid(), grp->gr_gid) == -1) {
+  if (chown(DIAZEPAM_SOCKET_PATH, getuid(), grp->gr_gid) == -1) {
     c_log_errno(C_LOG_ERROR, "socket chown failed");
     goto error_unlink;
   }

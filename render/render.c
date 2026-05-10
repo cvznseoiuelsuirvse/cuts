@@ -10,8 +10,9 @@
 
 #include "util/log.h"
 #include "util/shm.h"
+#include "util/malloc.h"
 
-#include "wayland/types/xdg-shell.h"
+#include "wayland/util.h"
 
 #define CUTS_GL_COLOR 0.8f, 0.1f, 0.2f, 1.0f
 #define clear_color()   \
@@ -97,7 +98,7 @@ static void page_flip_handler(int fd, unsigned int sequence, unsigned int tv_sec
 
 }
 
-static struct c_wl_surface *find_root_surface(struct c_render *render, struct c_wl_surface *surface) {
+static struct c_wl_surface *find_root_surface(struct c_wl_surface *surface) {
   while (surface->sub.surface && surface->sub.surface->parent) {
     surface = surface->sub.surface->parent;
   }
@@ -108,85 +109,6 @@ static struct c_wl_surface *find_root_surface(struct c_render *render, struct c_
   return surface;
 }
 
-
-static void calc_popup_coords(struct c_xdg_surface *surface, int32_t *x, int32_t *y) {
-  struct c_xdg_positioner positioner = surface->popup.positioner;
-
-  int32_t anchor_x, anchor_y;
-  int32_t dx, dy;
-
-  switch (positioner.anchor) {
-    case XDG_POSITIONER_ANCHOR_RIGHT:
-    case XDG_POSITIONER_ANCHOR_TOP_RIGHT:
-    case XDG_POSITIONER_ANCHOR_BOTTOM_RIGHT:
-      anchor_x = positioner.anchor_rect.width;
-      break;
-
-    case XDG_POSITIONER_ANCHOR_TOP:
-    case XDG_POSITIONER_ANCHOR_BOTTOM:
-      anchor_x = positioner.anchor_rect.width / 2;
-      break;
-
-    default:
-      anchor_x = 0;
-      break;
-  }
-
-  switch (positioner.anchor) {
-    case XDG_POSITIONER_ANCHOR_BOTTOM:
-    case XDG_POSITIONER_ANCHOR_BOTTOM_LEFT:
-    case XDG_POSITIONER_ANCHOR_BOTTOM_RIGHT:
-      anchor_y = positioner.anchor_rect.height;
-      break;
-
-    case XDG_POSITIONER_ANCHOR_LEFT:
-    case XDG_POSITIONER_ANCHOR_RIGHT:
-      anchor_y = positioner.anchor_rect.height / 2;
-      break;
-
-    default:
-      anchor_y = 0;
-      break;
-  }
-
-  switch (positioner.gravity) {
-    case XDG_POSITIONER_GRAVITY_LEFT:
-    case XDG_POSITIONER_GRAVITY_TOP_LEFT:
-    case XDG_POSITIONER_GRAVITY_BOTTOM_LEFT:
-      dx = -positioner.width;
-      break;
-
-    case XDG_POSITIONER_GRAVITY_TOP:
-    case XDG_POSITIONER_GRAVITY_BOTTOM:
-      dx = -positioner.width / 2;
-      break;
-
-    default:
-      dx = 0;
-      break;
-  }
-
-  switch (positioner.gravity) {
-    case XDG_POSITIONER_GRAVITY_TOP:
-    case XDG_POSITIONER_GRAVITY_TOP_LEFT:
-    case XDG_POSITIONER_GRAVITY_TOP_RIGHT:
-      dy = -positioner.height;
-      break;
-
-    case XDG_POSITIONER_GRAVITY_LEFT:
-    case XDG_POSITIONER_GRAVITY_RIGHT:
-      dy = -positioner.height / 2;
-      break;
-
-    default:
-      dy = 0;
-      break;
-  }
-
-  *x = positioner.anchor_rect.x + positioner.x + anchor_x + dx;
-  *y = positioner.anchor_rect.y + positioner.y + anchor_y + dy;
-
-}
 
 static int get_ft_fd(struct c_render *render) {
   int rfd, rwfd;
@@ -216,7 +138,7 @@ static int get_ft_fd(struct c_render *render) {
 
 static void *on_linux_dmabuf_bind(struct c_wl_connection *conn, c_wl_object_id new_id, c_wl_uint version, void *userdata) {
   struct c_render *render = userdata;
-  struct c_wl_linux_dmabuf_ctx *ctx = malloc(sizeof(*ctx));
+  struct c_wl_linux_dmabuf_ctx *ctx = c_malloc(sizeof(*ctx));
 
   if (!ctx) {
     c_log(C_LOG_ERROR, "malloc(c_wl_linux_dmabuf_ctx) failed");
@@ -239,7 +161,7 @@ static void *on_linux_dmabuf_bind(struct c_wl_connection *conn, c_wl_object_id n
   return ctx;
 
 error:
-  free(ctx);
+  c_free(ctx);
   return NULL;
 
 }
@@ -247,7 +169,7 @@ error:
 static void *on_wl_shm_bind(struct c_wl_connection *conn, c_wl_object_id new_id, c_wl_uint version, void *userdata) {
   struct c_render *render = userdata;
 
-  struct c_wl_formats *wl_formats = calloc(1, sizeof(*wl_formats));
+  struct c_wl_formats *wl_formats = c_malloc(sizeof(*wl_formats));
   if (!wl_formats) {
     c_log(C_LOG_ERROR, "calloc failed");
     return NULL;
@@ -338,7 +260,7 @@ static int render_texture(struct c_render *render, struct texture *texture) {
 
 static int c_render_import_shm(struct c_render *render, struct c_wl_buffer *buf) {
   struct c_shm *shm = buf->shm;
-  c_gles_texture_from_shm(shm, buf->width / buf->surface->scale, buf->height / buf->surface->scale);
+  c_gles_texture_from_shm(shm, buf->width / buf->scale, buf->height / buf->scale);
   return 0;
 }
 
@@ -377,8 +299,8 @@ static int c_render_import_dmabuf(struct c_render *render, struct c_wl_buffer *b
   };
 
   struct c_dmabuf_params params = {
-    .width = buf->width / buf->surface->scale,
-    .height = buf->height / buf->surface->scale,
+    .width = buf->width / buf->scale,
+    .height = buf->height / buf->scale,
     .modifier = dmabuf->modifier,
     .drm_format = dmabuf->drm_format,
     .n_planes = dmabuf->n_planes,
@@ -408,11 +330,12 @@ static GLuint ensure_buf_imported(struct c_render *render, struct c_wl_buffer *b
   if (buf->type == C_WL_BUFFER_DMA) {
     if (buf->dma->texture == 0)
       if (c_render_import_dmabuf(render, buf) < 0) return 0;
+    
 
     return buf->dma->texture;
 
   } else if (buf->type == C_WL_BUFFER_SHM) {
-    if (buf->shm->texture == 0) 
+    if (buf->shm->texture == 0)
       if (c_render_import_shm(render, buf) < 0) return 0;
 
     return buf->shm->texture;
@@ -522,7 +445,7 @@ xdg_pass:
 static int draw_windows(struct c_render *render) {
   struct c_window *window;
   c_map_for_each_values(render->windows,  window) {
-    c_log_value(window, "p");
+    c_log_value(window, "%p");
 
     struct c_wl_surface *surface = window->surface;
     draw_surface_tree(render, window, surface, 0);
@@ -541,7 +464,8 @@ static int destroy_wl_buffer(struct c_render *render, struct c_wl_buffer *buf) {
 
   /* buf->dma and buf->shm are union, so if buf if C_WL_BUFFER_SHM its still
    * gonna be destroyed */
-  free(buf->dma);
+  c_free(buf->dma);
+  buf->dma = NULL;
   return 0;
 }
 
@@ -606,9 +530,9 @@ static struct c_window *add_new_window(struct c_render *render, struct c_wl_surf
     return c_map_set(render->windows, (uint64_t)surface, &new_window, sizeof(new_window));
 }
 
-static int on_surface_update_cb(struct c_wl_surface *surface, void *userdata) {
+static int on_surface_commit_cb(struct c_wl_surface *surface, void *userdata) {
   struct c_render *render = userdata;
-  struct c_wl_surface *root = find_root_surface(render, surface);
+  struct c_wl_surface *root = find_root_surface(surface);
 
   c_log(C_LOG_DEBUG, "root=%p role:%d", root, root->role);
   c_log(C_LOG_DEBUG, "surface=%p role:%d", surface, surface->role);
@@ -621,26 +545,19 @@ static int on_surface_update_cb(struct c_wl_surface *surface, void *userdata) {
     window = add_new_window(render, root);
     notify(render, window, C_RENDER_ON_WINDOW_NEW);
 
-  } else if (surface->role == C_WL_SURFACE_ROLE_XDG_POPUP) {
-    struct c_xdg_positioner p = surface->xdg_surface->popup.positioner;
-    int32_t x, y;
-    calc_popup_coords(surface->xdg_surface, &x, &y);
-    xdg_popup_configure(surface->conn, surface->xdg_surface->popup.id, x, y,
-                        p.width, p.height);
-    xdg_surface_configure(surface->conn, surface->xdg_surface->id, c_wl_serial());
   }
-  
+
   return redraw_scene(render);
 }
 
 static int on_surface_destroy_cb(struct c_wl_surface *surface, void *userdata) {
   struct c_render *render = userdata;
 
-  struct c_wl_surface *root = find_root_surface(render, surface);
+  struct c_wl_surface *root = find_root_surface(surface);
   struct c_window *window = c_map_get(render->windows, (uint64_t)root);
 
-  c_log(C_LOG_DEBUG, "root=%p role:%d", root, root->role);
-  c_log(C_LOG_DEBUG, "surface=%p role:%d", surface, surface->role);
+  c_log_value(surface->active, "%p");
+  c_log_value(surface->pending, "%p");
 
   if (!window) goto out;
 
@@ -708,7 +625,7 @@ struct c_render *c_render_init(struct c_wl_display *display, struct c_drm *drm) 
   c_event_loop_add(display->loop, drm->fd, render_callback, render);
 
   struct c_wl_display_listener dpy_listeners = {
-    .on_surface_update = on_surface_update_cb,
+    .on_surface_commit = on_surface_commit_cb,
     .on_surface_destroy = on_surface_destroy_cb,
 
     .on_subsurface_destroy = on_surface_destroy_cb,
@@ -730,20 +647,15 @@ error:
 }
 
 void c_render_free(struct c_render *render) {
-  if (render->windows) {
-    struct c_window *window;
-    c_map_for_each_values(render->windows, window)
-      c_wl_connection_free(window->conn);
-    
-    
+  if (render->windows)
     c_map_destroy(render->windows);
-  }
 
   if (render->swapchain.buffers[0])
     c_render_buffer_destroy(render, render->swapchain.buffers[0]);
 
   if (render->swapchain.buffers[1])
     c_render_buffer_destroy(render, render->swapchain.buffers[1]);
+
 
   if (render->egl)             c_egl_free(render->egl);
   if (render->gl)              c_gles_free(render->gl);

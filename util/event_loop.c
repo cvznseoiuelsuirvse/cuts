@@ -1,5 +1,5 @@
-#include <stdlib.h>
 #include <unistd.h>
+#include <stdlib.h>
 
 #include "util/event_loop.h"
 #include "util/list.h"

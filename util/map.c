@@ -5,7 +5,7 @@
 #include <string.h>
 
 c_map *c_map_new(size_t size) {
-  c_map *m = malloc(sizeof(c_map));
+  c_map *m = calloc(1, sizeof(c_map));
   if (m == NULL) {
     perror("malloc");
     return NULL;
@@ -41,7 +41,7 @@ void c_map_destroy(c_map *m) {
 
 int set_value(struct c_map_pair *pair, void *value, size_t value_size) {
   if (value_size > 0) {
-    pair->value = malloc(value_size);
+    pair->value = calloc(1, value_size);
     if (!pair) {
       perror("malloc");
       return -1;
@@ -60,7 +60,7 @@ void *c_map_set(c_map *m, uint64_t key, void *value, size_t value_size) {
 
   struct c_map_pair *current_pair = m->pairs[n];
 
-  if (current_pair && current_pair->key == key) {
+  if (current_pair && !current_pair->value) {
     current_pair->key = key;
     set_value(current_pair, value, value_size);
     return current_pair->value;
@@ -86,8 +86,7 @@ void c_map_remove(c_map *m, uint64_t key) {
   size_t n = key % m->size;
   struct c_map_pair *pair = m->pairs[n];
 
-  for (; pair && pair->key != key; pair = pair->next)
-    ;
+  for (; pair && pair->key != key; pair = pair->next);
 
   if (pair) {
     if (!pair->prev && !pair->next) { // first and only
@@ -114,8 +113,7 @@ void *c_map_get(c_map *m, uint64_t key) {
   size_t n = key % m->size;
   struct c_map_pair *pair = m->pairs[n];
 
-  for (; pair && pair->key != key; pair = pair->next)
-    ;
+  for (; pair && pair->key != key; pair = pair->next);
 
   if (pair)
     return pair->value;

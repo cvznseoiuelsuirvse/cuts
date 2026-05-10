@@ -16,7 +16,7 @@ c_list *c_list_new() {
 static c_list *c_list_new2(void *data, size_t data_size) {
   c_list *l = c_list_new();
   if (data_size > 0) {
-    l->data = malloc(data_size);
+    l->data = calloc(1, data_size);
     if (!l->data) {
       perror("malloc");
       return NULL;
@@ -47,7 +47,7 @@ void *c_list_push(c_list *l, void *data, size_t data_size) {
   l->next->prev = l;
 
   if (data_size > 0) {
-    l->data = malloc(data_size);
+    l->data = calloc(1, data_size);
     if (!l->data) {
       perror("malloc");
       return NULL;

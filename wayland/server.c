@@ -3,12 +3,14 @@
 #include <sys/socket.h>
 #include <stdarg.h>
 
+#include "wayland/util.h"
 #include "wayland/display.h"
 #include "wayland/server.h"
 #include "wayland/types/wayland.h"
 
 #include "util/helpers.h"
 #include "util/log.h"
+#include "util/malloc.h"
 #include "util/bitmap.h"
 
 #define MAX_CMSG_FDS 32
@@ -39,11 +41,6 @@ struct c_wl_recv_message {
 struct c_wl_callback {
 	c_wl_object_id callback_id;
 	c_wl_object_id target_id;
-};
-
-struct c_wl_object_data {
-  void *data;
-  size_t ref_count;
 };
 
 inline void c_wl_interface_add(struct c_wl_interface *interface) {
@@ -128,10 +125,6 @@ int c_wl_connection_send(struct c_wl_connection *conn, struct c_wl_message *msg,
   va_start(args, nargs);
 
   struct c_wl_object *object = c_wl_object_get(conn, msg->id);
-  // if (!object) {
-  //   c_log(C_LOG_ERROR, "object with id %d not registered", msg->id);
-  //   abort();
-  // }
 
   char buffer[C_WL_BUFFER_SIZE] = {0};
   uint32_t offset = 0;
@@ -301,7 +294,7 @@ int c_wl_connection_dispatch(struct c_wl_connection *conn) {
   int buffer_offset = 0;
 
   size_t n_sync_requests = 0;
-  c_wl_object_id sync_requests[4] = {0};
+  c_wl_object_id sync_requests[16] = {0};
 
   while (buffer_offset < received) {
     if ((received - buffer_offset) < C_WL_HEADER_SIZE) return -1;
@@ -357,12 +350,11 @@ out:
   return ret;
 }
 
-int c_wl_object_add(struct c_wl_connection *conn, c_wl_new_id id, uint32_t version, const struct c_wl_interface *interface, struct c_wl_object_data *data) {
+int c_wl_object_add(struct c_wl_connection *conn, c_wl_new_id id,
+                    uint32_t version, const struct c_wl_interface *interface,
+                    void *data) {
   if (c_wl_object_get(conn, id)) return -1;
   assert(interface);
-
-  if (data)
-    data->ref_count++;
 
   struct c_wl_object new_object = {
     .id = id,
@@ -385,37 +377,6 @@ int c_wl_object_add(struct c_wl_connection *conn, c_wl_new_id id, uint32_t versi
   return id;
 }
 
-struct c_wl_object_data *c_wl_object_data_create(void *data) {
-  struct c_wl_object_data *odata = calloc(1, sizeof(*odata));
-  if (!odata) return NULL;
-  odata->data = data;
-  return odata;
-}
-
-void *c_wl_object_data_get(struct c_wl_connection *conn, c_wl_object_id id) {
-  struct c_wl_object *o = c_map_get(conn->objects, id);
-  if (!o) return NULL;
-  return o->data->data;
-}
-
-void *c_wl_object_data_get2(struct c_wl_object *object) {
-  return object->data->data;
-}
-
-void c_wl_object_data_set(struct c_wl_object *object, void *data) {
-  struct c_wl_object_data *odata = c_wl_object_data_create(data);
-  odata->ref_count++;
-  object->data = odata;
-}
-
-void c_wl_object_data_unref(struct c_wl_object *object) {
-  object->data->ref_count--;
-}
-
-void c_wl_object_data_ref(struct c_wl_object *object) {
-  object->data->ref_count++;
-}
-
 inline struct c_wl_object *c_wl_object_get(struct c_wl_connection *conn, c_wl_object_id id) {
   return c_map_get(conn->objects, id);
 }
@@ -424,12 +385,8 @@ int c_wl_object_del(struct c_wl_connection *conn, c_wl_object_id id) {
   struct c_wl_object *o = c_map_get(conn->objects, id);
   if (!o) return 1;
   
-  if (o->data) {
-    if (--o->data->ref_count == 0) {
-      free(o->data->data);
-      free(o->data);
-    }
-  }
+  if (o->data)
+    c_unref(o->data);
 
   c_map_remove(conn->objects, id);
   if (id < 0xFF000000) 
@@ -442,7 +399,7 @@ int c_wl_object_del(struct c_wl_connection *conn, c_wl_object_id id) {
 }
 
 struct c_wl_connection *c_wl_connection_init(int client_fd, struct c_wl_display *display) {
-  struct c_wl_connection *conn = calloc(1, sizeof(struct c_wl_connection));
+  struct c_wl_connection *conn = calloc(1, sizeof(* conn));
   if (!conn) {
     c_log(C_LOG_ERROR, "calloc failed");
     return NULL;
@@ -473,38 +430,42 @@ int c_wl_connection_free(struct c_wl_connection *conn) {
   struct c_wl_object *o;
   c_map_for_each(conn->objects, id, o)
     if (o->data) {
-      c_log(C_LOG_DEBUG, "%4d # %-30s %d %p", o->id, o->iface->name, o->data->ref_count, o->data);
-      if (--o->data->ref_count == 0) {
+      int refcount = c_get_refcount(o->data);
+      c_log(C_LOG_DEBUG, "%4d # %-30s %d %p", o->id, o->iface->name, refcount, o->data);
+
+      if (refcount == 1) {
         SWITCH_STR(o->iface->name);
           CASE_STR("wl_buffer") {
-            c_wl_display_notify(conn->dpy, o->data->data, C_WL_DISPLAY_ON_BUFFER_DESTROY);
+            c_wl_display_notify(conn->dpy, o->data, C_WL_DISPLAY_ON_BUFFER_DESTROY);
             SWITCH_STR_BREAK;
           }
 
           CASE_STR("xdg_toplevel") {
-            struct c_xdg_surface *xdg_surface = o->data->data;
+            struct c_xdg_surface *xdg_surface = o->data;
             if (xdg_surface->toplevel.title)  free(xdg_surface->toplevel.title);
             if (xdg_surface->toplevel.app_id) free(xdg_surface->toplevel.app_id);
             SWITCH_STR_BREAK;
           }
 
           CASE_STR("wl_surface") { 
-            struct c_wl_surface *surface = o->data->data;
-            c_wl_display_notify(conn->dpy, o->data->data, C_WL_DISPLAY_ON_SURFACE_DESTROY);
-            if (surface->sub.children) {
-              struct c_wl_subsurface *ss;
-              c_list_for_each(surface->sub.children, ss)
-                ss->parent = NULL;
-              c_list_destroy(surface->sub.children);
+            struct c_wl_surface *wl_surface = o->data;
+            c_wl_display_notify(conn->dpy, o->data, C_WL_DISPLAY_ON_SURFACE_DESTROY);
+
+            if (wl_surface->active) {
+              c_unref(wl_surface->active);
+            }
+
+            if (wl_surface->pending && wl_surface->pending != wl_surface->active) {
+              c_unref(wl_surface->pending);
             }
             SWITCH_STR_BREAK;
           }
 
-        SWITCH_STR_END
-
-        free(o->data->data);
-        free(o->data);
+        SWITCH_STR_END;
       }
+
+      c_unref(o->data);
+
   }
   c_map_destroy(conn->objects);
 

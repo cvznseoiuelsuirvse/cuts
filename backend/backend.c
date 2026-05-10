@@ -11,6 +11,7 @@
 
 #include "util/event_loop.h"
 #include "util/log.h"
+#include "util/malloc.h"
 
 
 static struct c_backend_device *open_gpu(struct c_backend *backend) {
@@ -158,7 +159,6 @@ void c_backend_free(struct c_backend *backend) {
 
   if (backend->input)   c_input_free(backend->input);
   if (backend->drm)     c_drm_free(backend->drm);
-      
   if (backend->seat)    c_seat_close(backend->seat);
 
   free(backend);

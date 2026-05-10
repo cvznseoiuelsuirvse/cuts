@@ -4,14 +4,14 @@
 #include "wayland/server.h"
 
 enum c_wl_display_notifier {
-	C_WL_DISPLAY_ON_SURFACE_UPDATE,
+	C_WL_DISPLAY_ON_SURFACE_COMMIT,
 	C_WL_DISPLAY_ON_SURFACE_DESTROY,
 	C_WL_DISPLAY_ON_SUBSURFACE_DESTROY,
 	C_WL_DISPLAY_ON_BUFFER_DESTROY,
 };
 
 struct c_wl_display_listener {
-	int (*on_surface_update)    (struct c_wl_surface *, void *);
+	int (*on_surface_commit)    (struct c_wl_surface *, void *);
 	int (*on_surface_destroy)   (struct c_wl_surface *, void *);
 	int (*on_subsurface_destroy)(struct c_wl_surface *, void *);
 
@@ -33,6 +33,7 @@ struct c_wl_display {
 	
 	c_list *listeners;
 	c_list *supported_ifaces;
+  c_list *connections;
 };
 
 struct c_wl_display *c_wl_display_init();

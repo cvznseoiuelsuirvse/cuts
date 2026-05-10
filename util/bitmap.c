@@ -38,7 +38,7 @@ inline int c_bitmap_unset(c_bitmap *bm, uint32_t n) {
 }
 
 c_bitmap *c_bitmap_new(size_t size) {
-  c_bitmap *bm = malloc(sizeof(c_bitmap));
+  c_bitmap *bm = calloc(1, sizeof(c_bitmap));
   if (bm == NULL) {
     perror("malloc");
     return NULL;

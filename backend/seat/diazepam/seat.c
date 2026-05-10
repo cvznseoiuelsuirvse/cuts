@@ -16,10 +16,10 @@ struct diazepam_backend {
 
 static int server_connect() {
   struct sockaddr_un sock_addr;
-  int fd = socket(AF_UNIX, C_SEAT_SOCKET_FLAGS, 0);
+  int fd = socket(AF_UNIX, DIAZEPAM_SOCKET_FLAGS, 0);
   memset(&sock_addr, 0, sizeof(sock_addr));
   sock_addr.sun_family = AF_UNIX;
-  snprintf(sock_addr.sun_path, sizeof(sock_addr.sun_path), "%s", C_SEAT_SOCKET_PATH);
+  snprintf(sock_addr.sun_path, sizeof(sock_addr.sun_path), "%s", DIAZEPAM_SOCKET_PATH);
 
   if (connect(fd, (struct sockaddr *)&sock_addr, sizeof(sock_addr)) < 0) {
     c_log_errno(C_LOG_ERROR, "failed to connect to the socket");
@@ -42,11 +42,11 @@ static int seat_open(void **backend, struct c_seat_listener *listener, void *lis
   _backend->listener = listener;
   _backend->listener_data = listener_data;
 
-  struct c_seat_msg_params params = {0};
-  params.header.op = C_SEAT_MSG_OPEN_SEAT;
+  struct diazepam_msg_params params = {0};
+  params.header.op = DIAZEPAM_MSG_OPEN_SEAT;
 
   if (seat_send(fd, &params) < 0) {
-    c_log_errno(C_LOG_ERROR, "failed to send C_SEAT_MSG_OPEN_SEAT message");
+    c_log_errno(C_LOG_ERROR, "failed to send DIAZEPAM_MSG_OPEN_SEAT message");
     goto error_seat;
   }
 
@@ -62,8 +62,8 @@ error_seat:
 static void seat_close(void *backend) {
   struct diazepam_backend *b = backend;
 
-  struct c_seat_msg_params params = {0};
-  params.header.op = C_SEAT_MSG_CLOSE_SEAT;
+  struct diazepam_msg_params params = {0};
+  params.header.op = DIAZEPAM_MSG_CLOSE_SEAT;
   seat_send(b->fd, &params);
   free(backend);
 }
@@ -72,23 +72,23 @@ static void seat_close(void *backend) {
 static int seat_dispatch(void *backend) {
   struct diazepam_backend *b = backend;
 
-  struct c_seat_msg_params params;
+  struct diazepam_msg_params params;
   seat_recv(b->fd, &params);
 
   switch (params.header.op) {
-    case C_SEAT_MSG_ENABLE_SEAT: 
+    case DIAZEPAM_MSG_ENABLE_SEAT: 
       if (b->listener->seat_enable)
         b->listener->seat_enable(NULL, b->listener_data);
       c_log(C_LOG_DEBUG, "seat enabled");
       return 0;
 
-    case C_SEAT_MSG_DISABLE_SEAT: 
+    case DIAZEPAM_MSG_DISABLE_SEAT: 
       if (b->listener->seat_disable)
         b->listener->seat_disable(NULL, b->listener_data);
       c_log(C_LOG_DEBUG, "seat disabled");
       return 0;
 
-    case C_SEAT_MSG_ERROR: 
+    case DIAZEPAM_MSG_ERROR: 
       c_log(C_LOG_ERROR, "%s", params.body);
       return -1;
 
@@ -102,24 +102,24 @@ static int seat_dispatch(void *backend) {
 static int seat_open_device(void *backend, const char *path, int *fd) {
   struct diazepam_backend *b = backend;
 
-  struct c_seat_msg_params params = {0};
-  params.header.op = C_SEAT_MSG_OPEN_DEVICE;
+  struct diazepam_msg_params params = {0};
+  params.header.op = DIAZEPAM_MSG_OPEN_DEVICE;
   params.header.body_size = strlen(path) + 1;
   snprintf(params.body, sizeof(params.body), "%s", path);
 
   if (seat_send(b->fd, &params) < 0) {
-    c_log_errno(C_LOG_ERROR, "failed to send C_SEAT_MSG_OPEN_DEVICE message");
+    c_log_errno(C_LOG_ERROR, "failed to send DIAZEPAM_MSG_OPEN_DEVICE message");
     return -1;
   }
 
-  struct c_seat_msg_params resp_params = {0};
+  struct diazepam_msg_params resp_params = {0};
   int n = seat_recv(b->fd, &resp_params);
   if (n < 0) {
     c_log_errno(C_LOG_ERROR, "failed to receive ack message");
     return -1;
   }
 
-  if (resp_params.header.op == C_SEAT_MSG_ERROR) {
+  if (resp_params.header.op == DIAZEPAM_MSG_ERROR) {
     c_log(C_LOG_ERROR, "failed to open %s: %s", path, resp_params.body);
     return -1;
   }
@@ -132,23 +132,23 @@ static int seat_open_device(void *backend, const char *path, int *fd) {
 static int seat_close_device(void *backend, int id) {
   struct diazepam_backend *b = backend;
 
-  struct c_seat_msg_params params = {0};
-  params.header.op = C_SEAT_MSG_CLOSE_DEVICE;
+  struct diazepam_msg_params params = {0};
+  params.header.op = DIAZEPAM_MSG_CLOSE_DEVICE;
   params.header.body_size = sizeof(id);
   *(int *)params.body = id;
 
   if (seat_send(b->fd, &params) < 0) {
-    c_log_errno(C_LOG_ERROR, "failed to send C_SEAT_MSG_CLOSE_DEVICE message");
+    c_log_errno(C_LOG_ERROR, "failed to send DIAZEPAM_MSG_CLOSE_DEVICE message");
     return -1;
   }
 
-  struct c_seat_msg_params resp_params = {0};
+  struct diazepam_msg_params resp_params = {0};
   if (seat_recv(b->fd, &resp_params) < 0) {
     c_log_errno(C_LOG_ERROR, "failed to receive ack message");
     return -1;
   }
 
-  if (resp_params.header.op == C_SEAT_MSG_ERROR) {
+  if (resp_params.header.op == DIAZEPAM_MSG_ERROR) {
     c_log(C_LOG_ERROR, "failed to close device %d: %s", id, resp_params.body);
     return -1;
   }

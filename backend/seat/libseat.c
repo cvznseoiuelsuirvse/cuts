@@ -2,7 +2,9 @@
 #include <libseat.h>
 
 #include "backend/seat/seat.h"
+
 #include "util/log.h"
+#include "util/malloc.h"
 
 struct libseat_backend {
   struct libseat *libseat;
@@ -32,7 +34,7 @@ static int _libseat_open(void **backend, struct c_seat_listener *listener, void 
   struct libseat_backend *ls_backend = calloc(1, sizeof(*ls_backend));
   if (!ls_backend) return -1;
 
-  struct libseat_seat_listener *ls_listener = malloc(sizeof(*ls_listener));
+  struct libseat_seat_listener *ls_listener = calloc(1, sizeof(*ls_listener));
   ls_listener->enable_seat = handle_enable;
   ls_listener->disable_seat = handle_disable;
   // struct libseat_seat_listener ls_listener = {

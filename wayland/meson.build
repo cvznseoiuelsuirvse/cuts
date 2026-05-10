@@ -2,6 +2,7 @@ wayland_sources = files(
   'server.c',
   'display.c',
   'types.c',
+  'util.c',
 
   'types/wayland.c',
   'types/xdg-shell.c',

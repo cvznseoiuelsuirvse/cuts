@@ -11,6 +11,7 @@
 #include "backend/input.h"
 
 #include "util/log.h"
+#include "util/malloc.h"
 
 
 static void add_modes(drmModeConnectorPtr connector, struct c_output *output) {

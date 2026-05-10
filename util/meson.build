@@ -7,6 +7,7 @@ util_sources = files(
   'log.c',
   'signal.c',
   'shm.c',
+  'malloc.c',
 )
 util_include = include_directories('..')
 util_dep = declare_dependency(

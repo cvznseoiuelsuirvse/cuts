@@ -9,6 +9,7 @@
 #include "backend/input.h"
 #include "util/log.h"
 #include "util/shm.h"
+#include "util/malloc.h"
 
 enum __input_event_listener_type {
   INPUT_EVENT_LISTENER_MOUSE = 1 << 5,
@@ -275,7 +276,7 @@ C_EVENT_CALLBACK libinput_dispatch_handler(struct c_event_loop *loop, int fd, vo
 static void add_listener(c_list *listeners, enum __input_event_listener_type type, void *listener, size_t listener_size, void *userdata) {
   struct __input_event_listener l = {
     .userdata = userdata,
-    .listener = calloc(1, listener_size),
+    .listener = malloc(listener_size),
     .type = type,
   };
   memcpy(l.listener, listener, listener_size);

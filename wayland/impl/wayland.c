@@ -5,10 +5,10 @@
 #include <sys/stat.h>
 
 #include "wayland/types/wayland.h"
-
 #include "wayland/display.h"
 
 #include "util/log.h"
+#include "util/malloc.h"
 #include "render/render.h"
 
 static void damage_surface(struct c_wl_surface *surface, union c_wl_arg *args) {
@@ -62,7 +62,7 @@ int wl_registry_bind(struct c_wl_connection *conn, union c_wl_arg *args) {
   if (interface->on_bind) {
     void *bind_data = interface->on_bind(conn, new_id, version, interface->userdata);
     if (bind_data)
-      c_wl_object_data_set(c_wl_object_get(conn, new_id), bind_data);
+      c_wl_object_get(conn, new_id)->data = bind_data;
     
   }
 
@@ -80,7 +80,7 @@ int wl_shm_create_pool(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_fd pool_fd = args[2].F;
   c_wl_int buffer_size = args[3].i;
 
-  struct c_wl_shm_pool *pool = calloc(1, sizeof(*pool));
+  struct c_wl_shm_pool *pool = c_malloc(sizeof(*pool));
   if (!pool) c_wl_error_set_and_return(wl_shm_id, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed");
 
   pool->fd = pool_fd;
@@ -103,25 +103,24 @@ int wl_shm_create_pool(struct c_wl_connection *conn, union c_wl_arg *args) {
         break;
     }
 
-    free(pool);
+    c_free(pool);
     c_log_errno(C_LOG_ERROR, "mmap() failed");
     c_wl_error_set_and_return(wl_shm_id, error_code, "failed to mmap");
   }
 
   pool->ptr = buffer;
   pool->size = buffer_size;
-  struct c_wl_formats *supported_formats = c_wl_object_data_get(conn, wl_shm_id);
+  struct c_wl_formats *supported_formats = c_wl_object_get(conn, wl_shm_id)->data;
   pool->supported_formats = supported_formats->formats;
   pool->n_supported_formats = supported_formats->n_formats;
 
-  struct c_wl_object_data *data = c_wl_object_data_create(pool);
-  c_wl_object_add(conn, wl_shm_pool_id, wl_shm->version, c_wl_interface_get("wl_shm_pool"), data);
+  c_wl_object_add(conn, wl_shm_pool_id, wl_shm->version, c_wl_interface_get("wl_shm_pool"), pool);
   return 0;
 }
 
 int wl_shm_pool_create_buffer(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id wl_shm_pool_id = args[0].o;
-  struct c_wl_shm_pool *pool = c_wl_object_data_get(conn, wl_shm_pool_id);
+  struct c_wl_shm_pool *pool = c_wl_object_get(conn, wl_shm_pool_id)->data;
 
   c_wl_new_id wl_buffer_id = args[1].n;
   struct c_wl_object *wl_buffer;
@@ -154,13 +153,15 @@ format_supported:
     return -1;
   }
 
-  struct c_wl_buffer *c_wl_buffer = calloc(1, sizeof(*c_wl_buffer));
-  struct c_shm *c_shm = calloc(1, sizeof(*c_shm));
+  struct c_wl_buffer *c_wl_buffer = c_malloc(sizeof(*c_wl_buffer));
+  struct c_shm *c_shm = c_malloc(sizeof(*c_shm));
 
   c_wl_buffer->id = wl_buffer_id;
+  c_wl_buffer->conn = conn;
   c_wl_buffer->width = width;
   c_wl_buffer->height = height;
   c_wl_buffer->type = C_WL_BUFFER_SHM;
+  c_wl_buffer->scale = 1;
 
   c_shm->stride = stride;
   c_shm->format = format;
@@ -168,16 +169,15 @@ format_supported:
   c_shm->base_ptr = &pool->ptr;
   c_wl_buffer->shm = c_shm;
 
-  struct c_wl_object_data *data = c_wl_object_data_create(c_wl_buffer);
   struct c_wl_interface *iface = c_wl_interface_get("wl_buffer");
-  c_wl_object_add(conn, wl_buffer_id, iface->version, iface, data);
+  c_wl_object_add(conn, wl_buffer_id, iface->version, iface, c_wl_buffer);
   return 0;
 }
 
 int wl_shm_pool_resize(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id wl_shm_pool_id = args[0].o;
   c_wl_int new_size = args[1].i;
-  struct c_wl_shm_pool *pool = c_wl_object_data_get(conn, wl_shm_pool_id);
+  struct c_wl_shm_pool *pool = c_wl_object_get(conn, wl_shm_pool_id)->data;
 
   uint8_t *new_buffer = mremap(pool->ptr, pool->size, new_size, MREMAP_MAYMOVE);
   if (new_buffer == MAP_FAILED) {
@@ -193,7 +193,7 @@ int wl_shm_pool_resize(struct c_wl_connection *conn, union c_wl_arg *args) {
 
 int wl_shm_pool_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id wl_shm_pool_id = args[0].o;
-  struct c_wl_shm_pool *pool = c_wl_object_data_get(conn, wl_shm_pool_id);
+  struct c_wl_shm_pool *pool = c_wl_object_get(conn, wl_shm_pool_id)->data;
 
   munmap(pool->ptr, pool->size);
   c_wl_object_del(conn, wl_shm_pool_id);
@@ -203,33 +203,26 @@ int wl_shm_pool_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
 
 int wl_surface_set_buffer_transform(struct c_wl_connection *conn, union c_wl_arg *args) { return 0; }
 int wl_surface_offset(struct c_wl_connection *conn, union c_wl_arg *args) { return 0; }
+
 int wl_surface_set_buffer_scale(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_wl_surface *surface = c_wl_object_data_get(conn, args[0].o);
+  struct c_wl_surface *surface = c_wl_object_get(conn, args[0].o)->data;
   c_wl_int scale = args[1].i;
   if (scale < 0)
     c_wl_error_set_and_return(args[0].o, WL_SURFACE_ERROR_INVALID_SCALE, "scale must be >0");
 
-  surface->scale = scale;
+  if (surface->pending)
+    surface->pending->scale = scale;
+
   return 0;
 }
 
 int wl_buffer_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
-  c_wl_object_id wl_buffer_id = args[0].o;
+  struct c_wl_object *self = c_wl_self(conn, args);
+  struct c_wl_buffer *wl_buffer = self->data;
 
-  struct c_wl_buffer *c_wl_buffer = c_wl_object_data_get(conn, wl_buffer_id);;
-  struct c_wl_surface *c_wl_surface = c_wl_buffer->surface;
-
-  c_wl_display_notify(c_wl_connection_get_dpy(conn), c_wl_buffer, C_WL_DISPLAY_ON_BUFFER_DESTROY);
-
-  if (c_wl_surface) {
-    if (c_wl_surface->pending == c_wl_buffer)
-      c_wl_surface->pending = NULL;
-
-    if (c_wl_surface->active == c_wl_buffer)
-      c_wl_surface->active = NULL;
-  }
-
-  c_wl_object_del(conn, wl_buffer_id);
+  struct c_wl_display *dpy = c_wl_connection_get_dpy(conn);
+  c_wl_display_notify(dpy, wl_buffer, C_WL_DISPLAY_ON_BUFFER_DESTROY);
+  c_wl_object_del(conn, self->id);
   return 0;
 }
 
@@ -240,20 +233,19 @@ int wl_compositor_create_region(struct c_wl_connection *conn, union c_wl_arg *ar
   struct c_wl_object *wl_region;
   C_WL_CHECK_IF_NOT_REGISTERED(wl_region_id, wl_region);
 
-  struct c_wl_region *c_wl_region = calloc(1, sizeof(struct c_wl_region));
+  struct c_wl_region *c_wl_region = c_malloc(sizeof(struct c_wl_region));
   if (!c_wl_region) {
     c_log(C_LOG_ERROR, "calloc failed");
     c_wl_error_set_and_return(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed");
   }
 
-  struct c_wl_object_data *data = c_wl_object_data_create(c_wl_region);
-  c_wl_object_add(conn, wl_region_id, self->version, c_wl_interface_get("wl_region"), data);
+  c_wl_object_add(conn, wl_region_id, self->version, c_wl_interface_get("wl_region"), c_wl_region);
   return 0;
 }
 
 int wl_region_add(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id wl_region_id = args[0].u;
-  struct c_wl_region *c_wl_region = c_wl_object_data_get(conn, wl_region_id);;
+  struct c_wl_region *c_wl_region = c_wl_object_get(conn, wl_region_id)->data;;
 
   c_wl_int x =      args[1].i;
   c_wl_int y =      args[2].i;
@@ -276,7 +268,7 @@ int wl_region_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
 
 int wl_surface_damage(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id wl_surface_id = args[0].u;
-  struct c_wl_surface *c_wl_surface = c_wl_object_data_get(conn, wl_surface_id);;
+  struct c_wl_surface *c_wl_surface = c_wl_object_get(conn, wl_surface_id)->data;;
 
   damage_surface(c_wl_surface, args);
 
@@ -285,7 +277,7 @@ int wl_surface_damage(struct c_wl_connection *conn, union c_wl_arg *args) {
 
 int wl_surface_damage_buffer(struct c_wl_connection *conn, union c_wl_arg *args) {
     c_wl_object_id wl_surface_id = args[0].u;
-  struct c_wl_surface *c_wl_surface = c_wl_object_data_get(conn, wl_surface_id);
+  struct c_wl_surface *c_wl_surface = c_wl_object_get(conn, wl_surface_id)->data;
 
   damage_surface(c_wl_surface, args);
 
@@ -300,7 +292,7 @@ int wl_surface_frame(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_wl_object *wl_callback;
   C_WL_CHECK_IF_NOT_REGISTERED(wl_callback_id, wl_callback);
 
-  struct c_wl_surface *surface = c_wl_object_data_get2(self);
+  struct c_wl_surface *surface = self->data;
   assert(surface->n_frames < sizeof(surface->frames));
 
   surface->frames[surface->n_frames++] = wl_callback_id;
@@ -312,33 +304,40 @@ int wl_surface_frame(struct c_wl_connection *conn, union c_wl_arg *args) {
 }
 
 int wl_surface_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
-  c_wl_object_id wl_surface_id = args[0].o;
   struct c_wl_object *self = c_wl_self(conn, args);
-  struct c_wl_surface *surface = c_wl_object_data_get2(self);
-
-  struct c_wl_display *dpy = c_wl_connection_get_dpy(conn);
-  c_wl_display_notify(dpy, surface, C_WL_DISPLAY_ON_SURFACE_DESTROY);
-
-  if (surface->active)
-    surface->active->surface = NULL;
-
-  if (surface->pending)
-    surface->pending->surface = NULL;
   
-  if (surface->sub.children) {
-    struct c_wl_subsurface *ss;
-    c_list_for_each(surface->sub.children, ss)
-      ss->parent = NULL;
-    c_list_destroy(surface->sub.children);
+  struct c_wl_surface *wl_surface = self->data;
+  struct c_wl_display *dpy = c_wl_connection_get_dpy(conn);
+  c_wl_display_notify(dpy, wl_surface, C_WL_DISPLAY_ON_SURFACE_DESTROY);
+
+  if (wl_surface->active) {
+    c_unref(wl_surface->active);
   }
 
-  c_wl_object_del(conn, wl_surface_id);
+  if (wl_surface->pending && wl_surface->pending != wl_surface->active) {
+    c_unref(wl_surface->pending);
+  }
+
+  if (wl_surface->xdg_surface && wl_surface->xdg_surface->surface == wl_surface)
+      wl_surface->xdg_surface->surface = NULL;
+
+  if (wl_surface->sub.surface)
+    wl_surface->sub.surface->surface = NULL;
+
+  else if (wl_surface->sub.children) {
+    struct c_wl_subsurface *ss;
+    c_list_for_each(wl_surface->sub.children, ss)
+      ss->parent = NULL;
+    c_list_destroy(wl_surface->sub.children);
+  }
+
+  c_wl_object_del(conn, self->id);
   return 0;
 }
 
 int wl_surface_set_opaque_region(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id wl_surface_id = args[0].o;
-  struct c_wl_surface *surface = c_wl_object_data_get(conn, wl_surface_id);
+  struct c_wl_surface *surface = c_wl_object_get(conn, wl_surface_id)->data;
 
   c_wl_object_id wl_region_id = args[1].o;
   if (wl_region_id == 0) {
@@ -349,14 +348,14 @@ int wl_surface_set_opaque_region(struct c_wl_connection *conn, union c_wl_arg *a
   struct c_wl_object *c_wl_region;
   C_WL_CHECK_IF_REGISTERED(wl_region_id, c_wl_region);
 
-  struct c_wl_region *region = c_wl_object_data_get2(c_wl_region);
+  struct c_wl_region *region = c_wl_region->data;
   memcpy(&surface->opaque, region, sizeof(surface->opaque));
   return 0;
 }
 
 int wl_surface_set_input_region(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id wl_surface_id = args[0].o;
-  struct c_wl_surface *surface = c_wl_object_data_get(conn, wl_surface_id);
+  struct c_wl_surface *surface = c_wl_object_get(conn, wl_surface_id)->data;
 
   c_wl_object_id wl_region_id = args[1].o;
   if (wl_region_id == 0) {
@@ -367,47 +366,58 @@ int wl_surface_set_input_region(struct c_wl_connection *conn, union c_wl_arg *ar
   struct c_wl_object *c_wl_region;
   C_WL_CHECK_IF_REGISTERED(wl_region_id, c_wl_region);
 
-  struct c_wl_region *region = c_wl_object_data_get2(c_wl_region);
+  struct c_wl_region *region = c_wl_region->data;
   memcpy(&surface->input, region, sizeof(surface->input));
 
   return 0;
 }
 
 int wl_surface_attach(struct c_wl_connection *conn, union c_wl_arg *args) {
-  c_wl_object_id wl_surface_id = args[0].u;
-  struct c_wl_surface *c_wl_surface =c_wl_object_data_get(conn, wl_surface_id);
+  struct c_wl_object *self = c_wl_self(conn, args);
+  struct c_wl_surface *wl_surface = self->data;
 
-  c_wl_object_id wl_buffer_id = args[1].o;
-  if (wl_buffer_id == 0) {
-    c_wl_surface->pending = NULL;
-    return 0;
+  c_wl_object_id buf_id = args[1].o;
+  c_wl_int x = args[2].i;
+  c_wl_int y = args[3].i;
+
+  if (self->version >= 5 && (x > 0 || y > 0))
+    c_wl_error_set_and_return(args[0].o, WL_SURFACE_ERROR_INVALID_OFFSET,
+                              "wl_surface version is %d, but x or y are not 0",
+                              self->version);
+  
+  if (buf_id > 0) {
+    struct c_wl_object *wl_buffer_o;
+    C_WL_CHECK_IF_REGISTERED(buf_id, wl_buffer_o);
+    struct c_wl_buffer *wl_buffer = wl_buffer_o->data;
+    wl_surface->pending = wl_buffer;
+
+  } else {
+    wl_surface->pending = NULL;
   }
-
-  struct c_wl_object *wl_buffer = c_wl_object_get(conn, wl_buffer_id);
-  C_WL_CHECK_IF_REGISTERED(wl_buffer_id, wl_buffer);
-  struct c_wl_buffer *c_wl_buffer = c_wl_object_data_get2(wl_buffer);
-
-  c_wl_buffer->surface = c_wl_surface;
-  c_wl_surface->pending = c_wl_buffer;
 
   return 0;
 }
 
 int wl_surface_commit(struct c_wl_connection *conn, union c_wl_arg *args) {
-  c_wl_object_id wl_surface_id = args[0].u;
-  struct c_wl_surface *wl_surface = c_wl_object_data_get(conn, wl_surface_id);
-  
-  if (wl_surface->active) {
-    wl_buffer_release(wl_surface->conn, wl_surface->active->id);
-  }
+  struct c_wl_object *self = c_wl_self(conn, args);
+  struct c_wl_surface *wl_surface = self->data;
 
-  if (wl_surface->pending) {
+  c_log_value(wl_surface, "%p wl_surface_commit");
+  c_log_value(wl_surface->active, "%p");
+  c_log_value(wl_surface->pending, "%p");
+  if (wl_surface->pending != wl_surface->active) {
+    if (wl_surface->active) {
+      wl_buffer_release(conn, wl_surface->active->id);
+      c_unref(wl_surface->active);
+    }
+
+    c_ref(wl_surface->pending);
     wl_surface->active = wl_surface->pending;
-    wl_surface->pending = NULL;
+    // wl_surface->pending = NULL;
   }
-
+  
   struct c_wl_display *dpy = c_wl_connection_get_dpy(conn);
-  c_wl_display_notify(dpy, wl_surface, C_WL_DISPLAY_ON_SURFACE_UPDATE);
+  c_wl_display_notify(dpy, wl_surface, C_WL_DISPLAY_ON_SURFACE_COMMIT);
 
   for (size_t i = 0; i < wl_surface->n_frames; i++) {
     c_wl_connection_callback_done(conn, wl_surface->frames[i]);
@@ -425,7 +435,7 @@ int wl_compositor_create_surface(struct c_wl_connection *conn, union c_wl_arg *a
   struct c_wl_object *wl_surface;
   C_WL_CHECK_IF_NOT_REGISTERED(wl_surface_id, wl_surface);
 
-  struct c_wl_surface *c_wl_surface = calloc(1, sizeof(struct c_wl_surface));
+  struct c_wl_surface *c_wl_surface = c_malloc(sizeof(struct c_wl_surface));
   if (!c_wl_surface) {
     c_log(C_LOG_ERROR, "calloc failed");
     c_wl_error_set_and_return(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed");
@@ -433,10 +443,8 @@ int wl_compositor_create_surface(struct c_wl_connection *conn, union c_wl_arg *a
 
   c_wl_surface->id = wl_surface_id;
   c_wl_surface->conn = conn;
-  c_wl_surface->scale = 1;
 
-  struct c_wl_object_data *data = c_wl_object_data_create(c_wl_surface);
-  c_wl_object_add(conn, wl_surface_id, self->version, c_wl_interface_get("wl_surface"), data);
+  c_wl_object_add(conn, wl_surface_id, self->version, c_wl_interface_get("wl_surface"), c_wl_surface);
   return 0;
 }
 
@@ -453,22 +461,22 @@ int wl_subcompositor_get_subsurface(struct c_wl_connection *conn, union c_wl_arg
   C_WL_CHECK_IF_REGISTERED(args[2].o, wl_surface);
   C_WL_CHECK_IF_REGISTERED(args[3].o, wl_surface_parent);
 
-  struct c_wl_subsurface *subsurface = calloc(1, sizeof(*subsurface));
+  struct c_wl_subsurface *subsurface = c_malloc(sizeof(*subsurface));
   if (!subsurface) 
     c_wl_error_set_and_return(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "failed to allocate c_wl_subsurface");
 
 
-  struct c_wl_surface *surface = c_wl_object_data_get2(wl_surface);
-  struct c_wl_surface *surface_parent = c_wl_object_data_get2(wl_surface_parent);
+  struct c_wl_surface *surface = wl_surface->data;
+  struct c_wl_surface *surface_parent = wl_surface_parent->data;
 
   if (surface == surface_parent) {
-    free(subsurface);
+    c_free(subsurface);
     c_wl_error_set_and_return(args[0].o, WL_SUBCOMPOSITOR_ERROR_BAD_PARENT,
                               "parent and child cannot be the same objects");
   }
 
   if (surface->role) {
-    free(subsurface);
+    c_free(subsurface);
     c_wl_error_set_and_return(args[0].o, WL_SUBCOMPOSITOR_ERROR_BAD_SURFACE,
                               "child surface already holds a role");
   }
@@ -492,36 +500,34 @@ int wl_subcompositor_get_subsurface(struct c_wl_connection *conn, union c_wl_arg
     surface_parent->sub.children = c_list_new();
 
   c_list_push(surface_parent->sub.children, subsurface, 0);
-  struct c_wl_object_data *data = c_wl_object_data_create(subsurface);
-  c_wl_object_add(conn, wl_subsurface_id, self->version, c_wl_interface_get("wl_subsurface"), data);
+  c_wl_object_add(conn, wl_subsurface_id, self->version, c_wl_interface_get("wl_subsurface"), subsurface);
 
   return 0;
 }
 
 int wl_subsurface_set_position(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_wl_subsurface *surface = c_wl_object_data_get(conn, args[0].o);
+  struct c_wl_subsurface *surface = c_wl_object_get(conn, args[0].o)->data;
   surface->x = args[1].i;
   surface->y = args[2].i;
   return 0;
 }
 
 int wl_subsurface_set_sync(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_wl_subsurface *surface = c_wl_object_data_get(conn, args[0].o);
+  struct c_wl_subsurface *surface = c_wl_object_get(conn, args[0].o)->data;
   surface->sync = 1;
   return 0;
 }
 
 int wl_subsurface_set_desync(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_wl_subsurface *surface = c_wl_object_data_get(conn, args[0].o);
+  struct c_wl_subsurface *surface = c_wl_object_get(conn, args[0].o)->data;
   surface->sync = 0;
   return 0;
 }
 
 int wl_subsurface_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_wl_subsurface *subsurface     = c_wl_object_data_get(conn, args[0].o);
+  struct c_wl_subsurface *subsurface     = c_wl_object_get(conn, args[0].o)->data;
   struct c_wl_surface    *surface        = subsurface->surface;
   struct c_wl_surface    *surface_parent = subsurface->parent;
-  c_log(C_LOG_DEBUG, "surface %p parent %p", surface, surface_parent);
 
   if (surface_parent)
     c_list_remove_ptr(&surface_parent->sub.children, subsurface);
@@ -537,8 +543,8 @@ int wl_subsurface_place_above(struct c_wl_connection *conn, union c_wl_arg *args
   struct c_wl_object *wl_surface_sibling;
   C_WL_CHECK_IF_REGISTERED(args[1].o, wl_surface_sibling);
 
-  struct c_wl_subsurface *surface = c_wl_object_data_get(conn, args[0].o);
-  struct c_wl_surface    *sibling = c_wl_object_data_get2(wl_surface_sibling);
+  struct c_wl_subsurface *surface = c_wl_object_get(conn, args[0].o)->data;
+  struct c_wl_surface    *sibling = wl_surface_sibling->data;
   struct c_wl_surface    *parent = surface->parent;
 
   c_list_remove_ptr(&parent->sub.children, surface);
@@ -553,8 +559,8 @@ int wl_subsurface_place_below(struct c_wl_connection *conn, union c_wl_arg *args
   struct c_wl_object *wl_surface_sibling;
   C_WL_CHECK_IF_REGISTERED(args[1].o, wl_surface_sibling);
 
-  struct c_wl_subsurface *surface = c_wl_object_data_get(conn, args[0].o);
-  struct c_wl_surface    *sibling = c_wl_object_data_get2(wl_surface_sibling);
+  struct c_wl_subsurface *surface = c_wl_object_get(conn, args[0].o)->data;
+  struct c_wl_surface    *sibling = wl_surface_sibling->data;
   struct c_wl_surface    *parent = surface->parent;
 
   c_list_remove_ptr(&parent->sub.children, surface);

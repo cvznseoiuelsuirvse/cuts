@@ -150,7 +150,7 @@ struct c_format *c_vulkan_query_formats(struct c_vulkan *vk, size_t *entries_n) 
 
   }
   
-  struct c_format *table = malloc(*entries_n * sizeof(*table));
+  struct c_format *table = calloc(*entries_n, sizeof(*table));
 
   size_t i = 0;
   for (size_t f = 0; f < LENGTH(fmts); f++) {
