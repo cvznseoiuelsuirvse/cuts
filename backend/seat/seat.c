@@ -41,6 +41,7 @@ struct c_seat *c_seat_open(struct c_seat_listener *listener, void *listener_data
   return seat;
 
 error:
+  c_log(C_LOG_ERROR, "failed to initialize seat");
   free(seat);
   return NULL;
 }

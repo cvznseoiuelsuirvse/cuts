@@ -4,8 +4,8 @@
 #include <unistd.h>
 #include <string.h>
 
-#include "wayland/types/wayland.h"
-#include "wayland/types/linux-dmabuf-v1.h"
+#include "wayland/proto/wayland.h"
+#include "wayland/proto/linux-dmabuf-v1.h"
 #include "wayland/server.h"
 
 #include "render/render.h"

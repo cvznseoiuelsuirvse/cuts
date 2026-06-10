@@ -6,7 +6,7 @@
 #include <drm_fourcc.h>
 #include <gbm.h>
 
-#include "wayland/types/wayland.h"
+#include "wayland/proto/wayland.h"
 #include "backend/input.h"
 
 #define c_drm_for_each_connector(backend, conn)  \

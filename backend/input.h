@@ -14,11 +14,11 @@ enum c_input_keyboard_mods {
 };
 
 enum c_input_mouse_buttons {
-	C_MOUSE_BUTTON_RIGHT = 1,
+	C_MOUSE_BUTTON_RIGHT,
 };
 
 enum c_input_mouse_axis_source {
-	C_MOUSE_AXIS_SOURCE_WHEEL = 1,
+	C_MOUSE_AXIS_SOURCE_WHEEL,
 	C_MOUSE_AXIS_SOURCE_FINGER,
 	C_MOUSE_AXIS_SOURCE_CONTINUOUS,
 	C_MOUSE_AXIS_SOURCE_WHEEL_TILT,
@@ -38,9 +38,9 @@ struct c_input_mouse_event {
 };
 
 struct c_input_event_listener_mouse {
-	int (*on_mouse_movement)(struct c_input_mouse_event *event, void *userdata);
-	int (*on_mouse_scroll)  (struct c_input_mouse_event *event, void *userdata);
-	int (*on_mouse_button)  (struct c_input_mouse_event *event, void *userdata);
+	void (*on_mouse_movement)(struct c_input_mouse_event *event, void *userdata);
+	void (*on_mouse_scroll)  (struct c_input_mouse_event *event, void *userdata);
+	void (*on_mouse_button)  (struct c_input_mouse_event *event, void *userdata);
 };
 
 struct c_input_keyboard_event {
@@ -56,7 +56,7 @@ struct c_input_keyboard_event {
 };
 
 struct c_input_event_listener_keyboard {
-	int (*on_keyboard_key)     (struct c_input_keyboard_event *event, void *userdata);
+	void (*on_keyboard_key)     (struct c_input_keyboard_event *event, void *userdata);
 };
 
 struct c_input_libinput_interface {

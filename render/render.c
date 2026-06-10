@@ -5,19 +5,14 @@
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
 
+#include "render/render.h"
 #include "render/gl/egl.h"
 #include "render/gl/gles.h"
+#include "compositor/scene.h"
 
 #include "util/log.h"
 #include "util/shm.h"
 #include "util/malloc.h"
-
-#include "wayland/util.h"
-
-#define CUTS_GL_COLOR 0.8f, 0.1f, 0.2f, 1.0f
-#define clear_color()   \
-  glClearColor(CUTS_GL_COLOR); \
-  glClear(GL_COLOR_BUFFER_BIT)
 
 #define DMA_VERT_POS_TOP_LEFT(vp)     vp.tl_x, vp.tl_y
 #define DMA_VERT_POS_BOTTOM_LEFT(vp)  vp.bl_x, vp.bl_y
@@ -40,54 +35,152 @@
 #define SHM_VERT_TOP_RIGHT(vp)    SHM_VERT_POS_TOP_RIGHT(vp),    1.0f, 0.0f
 
 #define DMA_VERTS(vp) {DMA_VERT_TOP_LEFT(vp), DMA_VERT_BOTTOM_LEFT(vp), DMA_VERT_BOTTOM_RIGHT(vp), DMA_VERT_TOP_LEFT(vp), DMA_VERT_BOTTOM_RIGHT(vp), DMA_VERT_TOP_RIGHT(vp)}
-
 #define SHM_VERTS(vp) {SHM_VERT_TOP_LEFT(vp), SHM_VERT_BOTTOM_LEFT(vp), SHM_VERT_BOTTOM_RIGHT(vp), SHM_VERT_TOP_LEFT(vp), SHM_VERT_BOTTOM_RIGHT(vp), SHM_VERT_TOP_RIGHT(vp)}
 
-
 struct vert_pos {
-  float tl_x, tl_y;
-  float bl_x, bl_y;
-  float br_x, br_y;
-  float tr_x, tr_y;
-};
-
-struct texture {
-  GLuint gl_texture;
-  uint32_t width, height;
-  int32_t x, y;
-  enum c_wl_buffer_type buf_type;
-};
-
-enum c_render_notifier {
-	C_RENDER_ON_WINDOW_NEW,
-	C_RENDER_ON_WINDOW_UPDATE,
-	C_RENDER_ON_WINDOW_CLOSE,
-};
-
-struct __render_event_listener {
-  void *userdata;
-  struct c_render_listener *listener;
+	float tl_x, tl_y;
+	float bl_x, bl_y;
+	float br_x, br_y;
+	float tr_x, tr_y;
 };
 
 static int __needs_redraw = 0;
+float __gl_bg_color[4] = {0.4f, 0.4f, 0.4f, 1.0f};
 
-static void notify(struct c_render *render, struct c_window *window, enum c_render_notifier notifier) {
-  struct __render_event_listener *l;
+#define GL_COLOR_VEC4(v) v[0], v[1], v[2], v[3]
 
-  #define __notify(callback) \
-    c_list_for_each(render->listeners, l) { \
-      if (l->listener->callback) {\
-        c_log(C_LOG_DEBUG, #callback " %p", window); \
-        l->listener->callback(window, l->userdata); \
-      } \
-    }
+static void clear_color() {
+  glClearColor(GL_COLOR_VEC4(__gl_bg_color));
+  glClear(GL_COLOR_BUFFER_BIT);
+}
 
-  switch (notifier) {
-    case C_RENDER_ON_WINDOW_NEW:       __notify(on_window_new); break;
-    case C_RENDER_ON_WINDOW_CLOSE:     __notify(on_window_close); break;
-    default: break;
-  }
+static inline float value_transform_x(int value, int max_value) {
+	return -1 + (float)value/max_value * 2;
+}
 
+static inline float value_transform_y(int value, int max_value) {
+	return 1 + (float)value/max_value * -2;
+}
+
+static void create_verts(uint32_t width, uint32_t height, int32_t x, int32_t y,
+		struct vert_pos *vp, uint32_t max_width, uint32_t max_height) {
+
+	vp->tl_x = value_transform_x(x, max_width);
+	vp->tl_y = value_transform_y(y, max_height);
+
+	vp->bl_x = value_transform_x(x, max_width);
+	vp->bl_y = value_transform_y(y + height, max_height);
+
+	vp->br_x = value_transform_x(x + width, max_width);
+	vp->br_y = value_transform_y(y + height, max_height);
+
+	vp->tr_x = value_transform_x(x + width, max_width);
+	vp->tr_y = value_transform_y(y, max_height);
+}
+
+static void render_quad(struct c_render *render, struct c_scene_quad *quad, GLuint gl_texture) {
+	struct c_gles *gl = render->gl;
+	struct c_output_mode *preferred_mode = c_drm_get_preferred_mode(render->drm);
+
+	glUseProgram(gl->program);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, gl_texture);
+
+	struct vert_pos vp = {0};
+	create_verts(quad->width, quad->height, quad->x, quad->y, &vp,
+	             preferred_mode->width, preferred_mode->height);
+
+	glBindBuffer(GL_ARRAY_BUFFER, gl->vbo);
+	if (quad->buffer->type == C_WL_BUFFER_DMA) {
+		float dma_vertices[] = DMA_VERTS(vp);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(dma_vertices), dma_vertices);
+	} else {
+		float shm_vertices[] = SHM_VERTS(vp);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(shm_vertices), shm_vertices);
+	}
+
+	glUniform1i(glGetUniformLocation(gl->program, "tex"), 0);
+	glDrawArrays(GL_TRIANGLES, 0, 6);
+}
+
+static int import_shm(struct c_render *render, struct c_wl_buffer *buf) {
+	struct c_shm *shm = buf->shm;
+	c_gles_texture_from_shm(shm, buf->width / buf->scale, buf->height / buf->scale);
+	return 0;
+}
+
+static int import_dmabuf(struct c_render *render, struct c_wl_buffer *buf) {
+	int ret = 0;
+	struct c_dmabuf *dmabuf = buf->dma;
+
+	struct c_format *format = NULL;
+	for (size_t i = 0; i < render->n_formats; i++) {
+		format = &render->formats[i];
+		if (format->drm_format == dmabuf->drm_format && format->modifier == dmabuf->modifier) break;
+	}
+
+	char *format_name = drmGetFormatName(dmabuf->drm_format);
+
+	if (!format) {
+		c_log(C_LOG_ERROR, "%s (0x%08"PRIx32") 0x%08"PRIx64" pair not found",
+		      format_name, dmabuf->drm_format, dmabuf->modifier);
+		ret = -1;
+		goto out;
+	}
+
+	if (format->n_planes != dmabuf->n_planes) {
+		c_log(C_LOG_ERROR, "%s (0x%08"PRIx32") requires %d planes, but %d was specified",
+		      format_name, dmabuf->drm_format, format->n_planes, dmabuf->n_planes);
+		ret = -1;
+		goto out;
+	}
+
+	if (buf->width > format->max_width || buf->height > format->max_height) {
+		c_log(C_LOG_ERROR, "buffer is too large. %s (0x%08"PRIx32") max resolution: %ux%u",
+		      format_name, format->drm_format, format->max_width, format->max_height);
+		ret = -1;
+		goto out;
+	}
+
+	struct c_dmabuf_params params = {
+		.width      = buf->width / buf->scale,
+		.height     = buf->height / buf->scale,
+		.modifier   = dmabuf->modifier,
+		.drm_format = dmabuf->drm_format,
+		.n_planes   = dmabuf->n_planes,
+		.planes     = dmabuf->planes,
+	};
+
+	dmabuf->image = c_egl_create_image_from_dmabuf(render->egl, &params);
+	if (!dmabuf->image) {
+		c_log(C_LOG_ERROR, "failed to import dmabuf");
+		ret = -1;
+		goto out;
+	}
+
+	c_gles_texture_from_dmabuf_image(render->gl, dmabuf);
+
+	for (uint32_t i = 0; i < dmabuf->n_planes; i++) {
+		close(dmabuf->planes[i].fd);
+	}
+
+out:
+	free(format_name);
+	return ret;
+}
+
+static GLuint ensure_imported(struct c_render *render, struct c_wl_buffer *buf) {
+	if (buf->type == C_WL_BUFFER_DMA) {
+		if (buf->dma->texture == 0)
+			if (import_dmabuf(render, buf) < 0) return 0;
+		return buf->dma->texture;
+	} else if (buf->type == C_WL_BUFFER_SHM) {
+		if (buf->shm->texture == 0)
+			if (import_shm(render, buf) < 0) return 0;
+		return buf->shm->texture;
+	}
+
+	assert(0);
 }
 
 static void page_flip_handler(int fd, unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec, void *userdata) {
@@ -95,18 +188,6 @@ static void page_flip_handler(int fd, unsigned int sequence, unsigned int tv_sec
 
   render->swapchain.front ^= 1;
   render->drm->connector.waiting_for_flip = 0;
-
-}
-
-static struct c_wl_surface *find_root_surface(struct c_wl_surface *surface) {
-  while (surface->sub.surface && surface->sub.surface->parent) {
-    surface = surface->sub.surface->parent;
-  }
-
-  while (surface->xdg_surface && surface->xdg_surface->parent) {
-    surface = surface->xdg_surface->parent->surface;
-  }
-  return surface;
 }
 
 
@@ -186,7 +267,7 @@ static void *on_wl_shm_bind(struct c_wl_connection *conn, c_wl_object_id new_id,
   return wl_formats;
 }
 
-int c_render_handle_event(struct c_render *render) {
+static int c_render_handle_event(struct c_render *render) {
   drmEventContext ctx = {
     .version = DRM_EVENT_CONTEXT_VERSION,
     .page_flip_handler = page_flip_handler,
@@ -200,287 +281,30 @@ int c_render_handle_event(struct c_render *render) {
   return 0;
 }
 
-static inline float value_transform_x(int value, int max_value) {
-  return -1 + (float)value/max_value * 2;
-}
 
-static inline float value_transform_y(int value, int max_value) {
-  return 1 + (float)value/max_value * -2;
-}
-
-static void create_verts(uint32_t width, uint32_t height, int32_t x, int32_t y, 
-    struct vert_pos *vp, uint32_t max_width, uint32_t max_height) {
-
-  vp->tl_x = value_transform_x(x, max_width);
-  vp->tl_y = value_transform_y(y, max_height);
-
-  vp->bl_x = value_transform_x(x, max_width);
-  vp->bl_y = value_transform_y(y + height, max_height);
-
-  vp->br_x = value_transform_x(x + width, max_width);
-  vp->br_y = value_transform_y(y + height, max_height);
-
-  vp->tr_x = value_transform_x(x + width, max_width);
-  vp->tr_y = value_transform_y(y, max_height);
-
-}
-
-static int render_texture(struct c_render *render, struct texture *texture) {
-  struct c_gles *gl = render->gl;
-  struct c_output_mode *preferred_mode = c_drm_get_preferred_mode(render->drm);
-
-  glUseProgram(gl->program);
-
-  glActiveTexture(GL_TEXTURE0);
-  glBindTexture(GL_TEXTURE_2D, texture->gl_texture);
-
-  uint32_t mon_width =  preferred_mode->width;
-  uint32_t mon_height = preferred_mode->height;
-
-  struct vert_pos vp = {0};
-  create_verts(texture->width, texture->height, texture->x, texture->y, &vp, mon_width, mon_height);
-
-
-  glBindBuffer(GL_ARRAY_BUFFER, gl->vbo);
-  if (texture->buf_type == C_WL_BUFFER_DMA) {
-    float dma_vertices[] = DMA_VERTS(vp);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(dma_vertices), dma_vertices);
-  } else {
-    float shm_vertices[] = SHM_VERTS(vp);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(shm_vertices), shm_vertices);
-  }
-
-  glUniform1i(glGetUniformLocation(gl->program, "tex"), 0);
-
-  glDrawArrays(GL_TRIANGLES, 0, 6);
-
-  return 0;
-
-}
-
-static int c_render_import_shm(struct c_render *render, struct c_wl_buffer *buf) {
-  struct c_shm *shm = buf->shm;
-  c_gles_texture_from_shm(shm, buf->width / buf->scale, buf->height / buf->scale);
-  return 0;
-}
-
-static int c_render_import_dmabuf(struct c_render *render, struct c_wl_buffer *buf) {
-  int ret = 0;
-  struct c_dmabuf *dmabuf = buf->dma;
-
-  struct c_format *format = NULL;
-  for (size_t i = 0; i < render->n_formats; i++) {
-    format = &render->formats[i];
-    if (format->drm_format == dmabuf->drm_format && format->modifier == dmabuf->modifier) break;
-  }
-
-  char *format_name = drmGetFormatName(dmabuf->drm_format);
-
-  if (!format) {
-    c_log(C_LOG_ERROR, "%s (0x%08"PRIx32") 0x%08"PRIx64" pair not found", 
-          format_name, dmabuf->drm_format, dmabuf->modifier);
-    ret = -1;
-    goto out;
-  }
-
-  if (format->n_planes != dmabuf->n_planes) {
-    c_log(C_LOG_ERROR, "%s (0x%08"PRIx32") requires %d planes, but %d was specified", 
-          format_name, dmabuf->drm_format, format->n_planes, dmabuf->n_planes);
-    ret = -1;
-    goto out;
-
-  }
-
-  if (buf->width > format->max_width || buf->height > format->max_height) {
-    c_log(C_LOG_ERROR, "buffer is too large. %s (0x%08"PRIx32") max resolution: %ux%u", 
-          format_name, format->drm_format, format->max_width, format->max_height);
-    ret = -1;
-    goto out;
-  };
-
-  struct c_dmabuf_params params = {
-    .width = buf->width / buf->scale,
-    .height = buf->height / buf->scale,
-    .modifier = dmabuf->modifier,
-    .drm_format = dmabuf->drm_format,
-    .n_planes = dmabuf->n_planes,
-    .planes = dmabuf->planes,
-  };
-
-  dmabuf->image = c_egl_create_image_from_dmabuf(render->egl, &params);
-  if (!dmabuf->image) {
-    c_log(C_LOG_ERROR, "failed to import dmabuf"); 
-    ret = -1;
-    goto out;
-  }
-
-  c_gles_texture_from_dmabuf_image(render->gl, dmabuf);
-
-  for (uint32_t i = 0; i < dmabuf->n_planes; i++) {
-    close(dmabuf->planes[i].fd);
-  } 
-
-out:
-  free(format_name);
-  return ret;
-
-}
-
-static GLuint ensure_buf_imported(struct c_render *render, struct c_wl_buffer *buf) {
-  if (buf->type == C_WL_BUFFER_DMA) {
-    if (buf->dma->texture == 0)
-      if (c_render_import_dmabuf(render, buf) < 0) return 0;
-    
-
-    return buf->dma->texture;
-
-  } else if (buf->type == C_WL_BUFFER_SHM) {
-    if (buf->shm->texture == 0)
-      if (c_render_import_shm(render, buf) < 0) return 0;
-
-    return buf->shm->texture;
-  }
-
-  assert(0);
-}
-
-static void draw_surface_tree(struct c_render *render, struct c_window *window,
-                              struct c_wl_surface *surface, int depth) {
-
-  int is_float = window->state & C_WINDOW_FLOAT;
-
-  if (!(surface->role == C_WL_SURFACE_ROLE_XDG_TOPLEVEL) 
-      || !surface->sub.children 
-      || surface->sub.children->size == 0) {
-    struct texture texture  = {
-      .gl_texture = ensure_buf_imported(render, surface->active),
-      .buf_type = surface->active->type,
-      .width =  is_float ? surface->active->width : window->width,
-      .height = is_float ? surface->active->height : window->height,
-      .x = window->x,
-      .y = window->y,
-    };
-        
-    c_log(C_LOG_DEBUG, "%-*s 0(depth:%d) surface %p width=%d height=%d x=%d y=%d",
-          depth*3, " ", depth, surface, texture.width, texture.height, texture.x, texture.y);
-    render_texture(render, &texture);
-  }
-
-  if (!surface->sub.children) goto xdg_pass;
-
-  int i = 0;
-  struct c_wl_subsurface *ss;
-  c_list_for_each(surface->sub.children, ss) {
-    if (!ss->surface->active) continue;
-    struct texture texture = {
-      .gl_texture = ensure_buf_imported(render, ss->surface->active),
-      .buf_type = ss->surface->active->type,
-    };
-    assert(texture.gl_texture > 0);
-
-    if (i == 0 && depth == 0) {
-      texture.width =  window->width;
-      texture.height = window->height;
-      texture.x = window->x;
-      texture.y = window->y;
-
-    } else {
-      texture.width =  ss->surface->active->width;
-      texture.height = ss->surface->active->height;
-      texture.x = window->x + ss->x;
-      texture.y = window->y + ss->y;
-    }
-
-    if (is_float) {
-      texture.x -= texture.width / 2;
-      texture.y -= texture.height / 2;
-    }
-
-    c_log(C_LOG_DEBUG, "[SUB] %-*s %d(depth:%d) surface %p width=%d height=%d x=%d y=%d",
-          depth*3 + 2, "-", i + 1, depth, ss, texture.width, texture.height, texture.x, texture.y);
-    render_texture(render, &texture);
-
-    if (ss->surface->sub.children)
-      draw_surface_tree(render, window, ss->surface, depth+1);
-  }
-
-
-xdg_pass:
-  if (!surface->xdg_surface || !surface->xdg_surface->children) return;
-
-  struct c_xdg_surface *xdg_s;
-  c_list_for_each(surface->xdg_surface->children, xdg_s) {
-    if (!xdg_s->surface->active) continue;
-
-    struct texture texture = {
-      .gl_texture = ensure_buf_imported(render, xdg_s->surface->active),
-      .buf_type = xdg_s->surface->active->type,
-    };
-    assert(texture.gl_texture > 0);
-    
-    if (xdg_s->surface->role == C_WL_SURFACE_ROLE_XDG_POPUP) {
-      struct c_xdg_positioner positioner = xdg_s->popup.positioner;
-      texture.width = positioner.width;
-      texture.height = positioner.height;
-
-      calc_popup_coords(xdg_s, &texture.x, &texture.y);
-
-      texture.x += window->x;
-      texture.y += window->y;
-
-    } else {
-      texture.width = xdg_s->surface->active->width;
-      texture.height = xdg_s->surface->active->height;
-      texture.x = window->x + xdg_s->x;
-      texture.y = window->y + xdg_s->y;
-    }
-
-    c_log(C_LOG_DEBUG, "[XDG] %-*s %d(depth:%d) surface %p width=%d height=%d x=%d y=%d",
-          depth*3 + 2, "-", i + 1, depth, xdg_s, texture.width, texture.height, texture.x, texture.y);
-    render_texture(render, &texture);
-
-  }
-}
-
-static int draw_windows(struct c_render *render) {
-  struct c_window *window;
-  c_map_for_each_values(render->windows,  window) {
-    c_log_value(window, "%p");
-
-    struct c_wl_surface *surface = window->surface;
-    draw_surface_tree(render, window, surface, 0);
-  }
-
-  return 0;
-}
-
-static int destroy_wl_buffer(struct c_render *render, struct c_wl_buffer *buf) {
-  if (buf->type == C_WL_BUFFER_DMA) {
-    eglDestroyImage(render->egl->display, buf->dma->image);
-    glDeleteTextures(1, &buf->dma->texture);
-  } else if (buf->type == C_WL_BUFFER_SHM) {
-    glDeleteTextures(1, &buf->shm->texture);
-  } else return 0;
-
-  /* buf->dma and buf->shm are union, so if buf if C_WL_BUFFER_SHM its still
-   * gonna be destroyed */
-  c_free(buf->dma);
-  buf->dma = NULL;
-  return 0;
-}
-
-
-static int redraw_scene(struct c_render *render) {
+void c_render_draw_scene(struct c_render *render) {
   if (render->drm->connector.waiting_for_flip) {
     __needs_redraw = 1;
-    return 0;
+    return;
   }
 
   struct c_render_buffer *back_buffer = render->swapchain.buffers[render->swapchain.front ^ 1];
 
   glBindFramebuffer(GL_FRAMEBUFFER, back_buffer->fbo);
   clear_color();
-  if (draw_windows(render) == -1) return -1;
+
+	struct c_scene_quad quads[C_SCENE_MAX_WINDOWS];
+	int n = c_scene_collect(quads, C_SCENE_MAX_WINDOWS);
+	for (int i = 0; i < n; i++) {
+    struct c_wl_buffer *buf = quads[i].buffer;
+		GLuint tex = ensure_imported(render, buf);
+		if (tex == 0) {
+      c_log(C_LOG_WARNING, "failed to import %s buffer#%d", buf->type == C_WL_BUFFER_DMA ? "DMA" : "SHM", buf->id);
+      continue;
+    }
+		render_quad(render, &quads[i], tex);
+	}
+
   glFlush();
   glFinish();
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -490,18 +314,7 @@ static int redraw_scene(struct c_render *render) {
 
   render->drm->connector.waiting_for_flip = 1;
   __needs_redraw = 0;
-  return 0;
 }
-
-void c_render_add_listener(struct c_render *render, struct c_render_listener *listener, void *userdata) {
-  struct __render_event_listener l = {
-    .userdata = userdata,
-    .listener = calloc(1, sizeof(*listener)),
-  };
-  memcpy(l.listener, listener, sizeof(*listener));
-  c_list_push(render->listeners, &l, sizeof(l)); 
-}
-
 
 static int create_swapchain(struct c_render *render) {
   struct c_output_mode *preferred_mode = c_drm_get_preferred_mode(render->drm);
@@ -523,58 +336,31 @@ static int create_swapchain(struct c_render *render) {
   return 0;
 }
 
-static struct c_window *add_new_window(struct c_render *render, struct c_wl_surface *surface) {
-    struct c_window new_window = {0}; 
-    new_window.surface = surface;
-    new_window.conn = surface->conn;
-    return c_map_set(render->windows, (uint64_t)surface, &new_window, sizeof(new_window));
+static void on_surface_commit_cb(struct c_wl_surface *surface, void *userdata) {
+  c_render_draw_scene(userdata);
 }
 
-static int on_surface_commit_cb(struct c_wl_surface *surface, void *userdata) {
-  struct c_render *render = userdata;
-  struct c_wl_surface *root = find_root_surface(surface);
-
-  c_log(C_LOG_DEBUG, "root=%p role:%d", root, root->role);
-  c_log(C_LOG_DEBUG, "surface=%p role:%d", surface, surface->role);
-
-  if (surface->role == 0 || root->role == 0) return 0;
-
-  struct c_window *window = c_map_get(render->windows, (uint64_t)root);
-
-  if (!window && surface->active) {
-    window = add_new_window(render, root);
-    notify(render, window, C_RENDER_ON_WINDOW_NEW);
-
-  }
-
-  return redraw_scene(render);
+static void on_surface_destroy_cb(struct c_wl_surface *surface, void *userdata) {
+  c_render_draw_scene(userdata);
 }
 
-static int on_surface_destroy_cb(struct c_wl_surface *surface, void *userdata) {
-  struct c_render *render = userdata;
+static int destroy_buffer(struct c_render *render, struct c_wl_buffer *buf) {
+	if (buf->type == C_WL_BUFFER_DMA) {
+		eglDestroyImage(render->egl->display, buf->dma->image);
+		glDeleteTextures(1, &buf->dma->texture);
+	} else if (buf->type == C_WL_BUFFER_SHM) {
+		glDeleteTextures(1, &buf->shm->texture);
+	} else return 0;
 
-  struct c_wl_surface *root = find_root_surface(surface);
-  struct c_window *window = c_map_get(render->windows, (uint64_t)root);
-
-  c_log_value(surface->active, "%p");
-  c_log_value(surface->pending, "%p");
-
-  if (!window) goto out;
-
-  if (root == surface) {
-    notify(render, window, C_RENDER_ON_WINDOW_CLOSE);
-    c_map_remove(render->windows, (uint64_t)surface);
-  }
-
-out:
-  return redraw_scene(render);
+	c_free(buf->dma);
+	buf->dma = NULL;
+	return 0;
 }
 
 
-static int on_buffer_destroy(struct c_wl_buffer *buffer, void *userdata) {
+static void on_buffer_destroy(struct c_wl_buffer *buffer, void *userdata) {
   struct c_render *render = userdata;
-  destroy_wl_buffer(render, buffer);
-  return 0;
+  destroy_buffer(render, buffer);
 }
 
 C_EVENT_CALLBACK render_callback(struct c_event_loop *loop, int fd, void *userdata) {
@@ -582,20 +368,17 @@ C_EVENT_CALLBACK render_callback(struct c_event_loop *loop, int fd, void *userda
     return C_EVENT_ERROR_FATAL;
 
   if (__needs_redraw)
-    if (redraw_scene((struct c_render *)userdata) == -1) return C_EVENT_ERROR_FATAL;
+    c_render_draw_scene((struct c_render *)userdata);
 
   return C_EVENT_OK;
 }
 
-struct c_render *c_render_init(struct c_wl_display *display, struct c_drm *drm) {
+struct c_render *c_render_init(struct c_event_loop *loop, struct c_wl_display *display, struct c_drm *drm) {
   struct c_render *render = calloc(1, sizeof(struct c_render));
   if (!render) 
     return NULL;
 
-  render->windows = c_map_new(1024);
   render->drm = drm;
-
-
   render->egl = c_egl_init(render->drm->gbm_device);
   if (!render->egl) goto error;
 
@@ -620,9 +403,11 @@ struct c_render *c_render_init(struct c_wl_display *display, struct c_drm *drm) 
     goto error;
   }
 
+  c_scene_init(preferred_mode->width, preferred_mode->height);
+
   glViewport(0, 0, preferred_mode->width, preferred_mode->height);
-  if (redraw_scene(render) == -1) return NULL;
-  c_event_loop_add(display->loop, drm->fd, render_callback, render);
+  c_render_draw_scene(render);
+  c_event_loop_add(loop, drm->fd, render_callback, render);
 
   struct c_wl_display_listener dpy_listeners = {
     .on_surface_commit = on_surface_commit_cb,
@@ -637,8 +422,6 @@ struct c_render *c_render_init(struct c_wl_display *display, struct c_drm *drm) 
   c_wl_display_add_supported_interface(display, "wl_shm", on_wl_shm_bind, render);
   c_wl_display_add_supported_interface(display, "zwp_linux_dmabuf_v1", on_linux_dmabuf_bind, render);
 
-  render->listeners = c_list_new();
-    
   return render;
 
 error:
@@ -647,9 +430,6 @@ error:
 }
 
 void c_render_free(struct c_render *render) {
-  if (render->windows)
-    c_map_destroy(render->windows);
-
   if (render->swapchain.buffers[0])
     c_render_buffer_destroy(render, render->swapchain.buffers[0]);
 
@@ -663,13 +443,6 @@ void c_render_free(struct c_render *render) {
   if (render->formats)        free(render->formats);
   if (render->wl_formats)     free(render->wl_formats);
 
-  if (render->listeners) {
-    struct __render_event_listener *l;
-    c_list_for_each(render->listeners, l)
-      free(l->listener);
-    c_list_destroy(render->listeners);
-
-  }
-
+  c_scene_destroy();
   free(render);
 }

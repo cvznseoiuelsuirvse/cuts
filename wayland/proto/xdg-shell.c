@@ -3,7 +3,7 @@
 #include "wayland/server.h"
 
 
-#include "wayland/types/xdg-shell.h"
+#include "wayland/proto/xdg-shell.h"
 C_WL_EVENT xdg_wm_base_ping(struct c_wl_connection *conn, c_wl_object_id xdg_wm_base, c_wl_uint serial) {
   struct c_wl_message msg = {xdg_wm_base, 0, "u", "ping"};
   return c_wl_connection_send(conn, &msg, 1, serial);

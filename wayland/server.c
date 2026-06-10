@@ -6,7 +6,7 @@
 #include "wayland/util.h"
 #include "wayland/display.h"
 #include "wayland/server.h"
-#include "wayland/types/wayland.h"
+#include "wayland/proto/wayland.h"
 
 #include "util/helpers.h"
 #include "util/log.h"
@@ -80,6 +80,7 @@ static int c_wl_connection_read(struct c_wl_connection *conn, char *buffer, size
     int *fds = (int *)CMSG_DATA(cmsghdr);
     size_t n_fds = (cmsghdr->cmsg_len - CMSG_LEN(0)) / sizeof(int);
 
+    c_log_value(n_fds, "%d");
     for (size_t i = 0; i < n_fds; i++) {
       req_fds[(*n_req_fds)++] = fds[i];
     }
@@ -125,6 +126,10 @@ int c_wl_connection_send(struct c_wl_connection *conn, struct c_wl_message *msg,
   va_start(args, nargs);
 
   struct c_wl_object *object = c_wl_object_get(conn, msg->id);
+  if (!object) {
+    c_log(C_LOG_ERROR, "no objects registered with id %d", msg->id);
+    abort();
+  }
 
   char buffer[C_WL_BUFFER_SIZE] = {0};
   uint32_t offset = 0;
@@ -431,23 +436,14 @@ int c_wl_connection_free(struct c_wl_connection *conn) {
   c_map_for_each(conn->objects, id, o)
     if (o->data) {
       int refcount = c_get_refcount(o->data);
-      c_log(C_LOG_DEBUG, "%4d # %-30s %d %p", o->id, o->iface->name, refcount, o->data);
+      c_log(C_LOG_DEBUG, "rc:%d %p %s#%d", refcount, o->data, o->iface->name, o->id);
 
       if (refcount == 1) {
-        SWITCH_STR(o->iface->name);
-          CASE_STR("wl_buffer") {
+        SWITCH_STR(o->iface->name)
+          CASE_STR("wl_buffer")
             c_wl_display_notify(conn->dpy, o->data, C_WL_DISPLAY_ON_BUFFER_DESTROY);
-            SWITCH_STR_BREAK;
-          }
 
-          CASE_STR("xdg_toplevel") {
-            struct c_xdg_surface *xdg_surface = o->data;
-            if (xdg_surface->toplevel.title)  free(xdg_surface->toplevel.title);
-            if (xdg_surface->toplevel.app_id) free(xdg_surface->toplevel.app_id);
-            SWITCH_STR_BREAK;
-          }
-
-          CASE_STR("wl_surface") { 
+          CASE_STR("wl_surface")
             struct c_wl_surface *wl_surface = o->data;
             c_wl_display_notify(conn->dpy, o->data, C_WL_DISPLAY_ON_SURFACE_DESTROY);
 
@@ -458,8 +454,18 @@ int c_wl_connection_free(struct c_wl_connection *conn) {
             if (wl_surface->pending && wl_surface->pending != wl_surface->active) {
               c_unref(wl_surface->pending);
             }
-            SWITCH_STR_BREAK;
-          }
+
+            if (wl_surface->sub.children)
+              c_list_destroy(wl_surface->sub.children);
+
+        SWITCH_STR_END;
+
+      } else {
+        SWITCH_STR(o->iface->name)
+          CASE_STR("xdg_toplevel")
+            struct c_xdg_surface *xdg_surface = o->data;
+            if (xdg_surface->toplevel.title)  free(xdg_surface->toplevel.title);
+            if (xdg_surface->toplevel.app_id) free(xdg_surface->toplevel.app_id);
 
         SWITCH_STR_END;
       }

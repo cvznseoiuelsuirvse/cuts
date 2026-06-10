@@ -1,10 +1,9 @@
-#ifndef CUTS_RENDER_WINDOW_H
-#define CUTS_RENDER_WINDOW_H
+#ifndef CUTS_COMPOSITOR_WINDOW_H
+#define CUTS_COMPOSITOR_WINDOW_H
 
 #include <stdint.h>
 
-#include "wayland/types/wayland.h"
-#include "wayland/types.h"
+#include "wayland/proto/wayland.h"
 #include "backend/input.h"
 
 #define POINTER_INSIDE(px, py, area) \
@@ -18,9 +17,8 @@ enum c_window_states {
 };
 
 struct c_window {
-  struct c_wl_connection *conn;
+  struct c_wl_surface *surface;
 
-  struct c_wl_surface *surface; // struct c_wl_surface
   int32_t x;
   int32_t y;
   uint32_t width;
@@ -33,7 +31,6 @@ struct c_window {
 };
 
 void c_window_resize(struct c_window *window, uint32_t width, uint32_t height, int activate);
-void c_window_move(struct c_window *window);
 void c_window_hide(struct c_window *window);
 void c_window_activate(struct c_window *window);
 void c_window_focus(struct c_window *window, double hotspot_x, double hotspot_y);

@@ -19,7 +19,7 @@ void *c_malloc(size_t size) {
   memset(m, 0, init_size);
   m->ref_count = 1;
 
-  return m + 1;
+  return m + 1; // == return (void *)m + sizeof(struct c_metadata)
 }
 
 void c_free(void *data) {

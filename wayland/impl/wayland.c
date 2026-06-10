@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 
-#include "wayland/types/wayland.h"
+#include "wayland/proto/wayland.h"
 #include "wayland/display.h"
 
 #include "util/log.h"
@@ -54,7 +54,9 @@ int wl_registry_bind(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_wl_object *c_wl_object;
   C_WL_CHECK_IF_NOT_REGISTERED(new_id, c_wl_object);
 
-  const struct c_wl_display_supported_iface *interface = c_list_get(c_wl_connection_get_dpy(conn)->supported_ifaces, name - 1);
+  const struct c_wl_display_supported_iface *interface =
+      c_list_get(c_wl_connection_get_dpy(conn)->supported_ifaces, name - 1);
+
   if (!interface) c_wl_error_set_and_return(new_id, WL_DISPLAY_ERROR_IMPLEMENTATION, "interface is not supported");
 
   c_wl_object_add(conn, new_id, version, interface->iface, NULL);
@@ -222,6 +224,8 @@ int wl_buffer_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
 
   struct c_wl_display *dpy = c_wl_connection_get_dpy(conn);
   c_wl_display_notify(dpy, wl_buffer, C_WL_DISPLAY_ON_BUFFER_DESTROY);
+
+  wl_buffer->id = 0;
   c_wl_object_del(conn, self->id);
   return 0;
 }
@@ -402,18 +406,27 @@ int wl_surface_commit(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_wl_object *self = c_wl_self(conn, args);
   struct c_wl_surface *wl_surface = self->data;
 
-  c_log_value(wl_surface, "%p wl_surface_commit");
-  c_log_value(wl_surface->active, "%p");
-  c_log_value(wl_surface->pending, "%p");
+  if (wl_surface->active)
+    c_log(C_LOG_DEBUG, "ACTIVE #%d %p", wl_surface->active->id, wl_surface->active);
+  else
+    c_log(C_LOG_DEBUG, "ACTIVE %p",  wl_surface->active);
+
+  if (wl_surface->pending)
+    c_log(C_LOG_DEBUG, "PNDING #%d %p", wl_surface->pending->id, wl_surface->pending);
+  else
+    c_log(C_LOG_DEBUG, "PNDING %p", wl_surface->pending);
+
   if (wl_surface->pending != wl_surface->active) {
-    if (wl_surface->active) {
+    if (wl_surface->active && wl_surface->active->id > 0) {
       wl_buffer_release(conn, wl_surface->active->id);
       c_unref(wl_surface->active);
     }
 
-    c_ref(wl_surface->pending);
+    if (wl_surface->pending) 
+      c_ref(wl_surface->pending);
+
     wl_surface->active = wl_surface->pending;
-    // wl_surface->pending = NULL;
+    
   }
   
   struct c_wl_display *dpy = c_wl_connection_get_dpy(conn);

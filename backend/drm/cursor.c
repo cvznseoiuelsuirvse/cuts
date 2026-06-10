@@ -7,9 +7,8 @@
 #include "backend/drm/cursor.h"
 
 #include "util/log.h"
-#include "util/malloc.h"
 
-static int on_mouse_movement_cb(struct c_input_mouse_event *event, void *userdata) {
+static void on_mouse_movement_cb(struct c_input_mouse_event *event, void *userdata) {
   struct c_drm *drm = userdata;
   struct c_output *output = drm->output;
   struct c_output_mode *preferred_mode = c_drm_get_preferred_mode(drm);
@@ -38,8 +37,6 @@ static int on_mouse_movement_cb(struct c_input_mouse_event *event, void *userdat
   event->y = new_y;
 
   drmModeMoveCursor(drm->fd, drm->connector.crtc_id, new_x, new_y);
-  
-  return 0;
 }
 
 int c_cursor_update(struct c_drm *drm, struct c_cursor *cursor) {

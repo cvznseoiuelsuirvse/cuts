@@ -9,7 +9,6 @@
 #include "util/event_loop.h"
 #include "util/helpers.h"
 #include "util/log.h"
-#include "util/malloc.h"
 
 struct __display_event_listener {
   void *userdata;
@@ -144,22 +143,18 @@ void c_wl_display_notify(struct c_wl_display *display, void *data, enum c_wl_dis
     }
 
   switch (notifier) {
-    case C_WL_DISPLAY_ON_SURFACE_COMMIT:  notify(on_surface_commit); break;
-    case C_WL_DISPLAY_ON_SURFACE_DESTROY: notify(on_surface_destroy); break;
-    case C_WL_DISPLAY_ON_SUBSURFACE_DESTROY: notify(on_subsurface_destroy); break;
-    case C_WL_DISPLAY_ON_BUFFER_DESTROY:  notify(on_buffer_destroy); break;
+    case C_WL_DISPLAY_ON_SURFACE_COMMIT:      notify(on_surface_commit); break;
+    case C_WL_DISPLAY_ON_SURFACE_DESTROY:     notify(on_surface_destroy); break;
+    case C_WL_DISPLAY_ON_SUBSURFACE_DESTROY:  notify(on_subsurface_destroy); break;
+    case C_WL_DISPLAY_ON_BUFFER_DESTROY:      notify(on_buffer_destroy); break;
+    case C_WL_DISPLAY_ON_TOPLEVEL_NEW:        notify(on_toplevel_new); break;
+    case C_WL_DISPLAY_ON_TOPLEVEL_DESTROY:    notify(on_toplevel_destroy); break;
     default: break;
   }
 
 }
 
-struct c_wl_display *c_wl_display_init() {
-  struct c_event_loop *loop = c_event_loop_init();
-  if (!loop) {
-    c_log(C_LOG_ERROR, "c_event_loop_init() failed");
-    return NULL;
-  }
-
+struct c_wl_display *c_wl_display_init(struct c_event_loop *loop) {
   struct c_wl_display *display = calloc(1, sizeof(*display));
   if (!display) {
     c_log(C_LOG_ERROR, "failed to calloc");
@@ -173,7 +168,6 @@ struct c_wl_display *c_wl_display_init() {
     return NULL;
   }
 
-  display->loop = loop;
   c_event_loop_add(loop, fd, server_epoll_callback, display);
 
   display->listeners = c_list_new();
@@ -202,7 +196,6 @@ void c_wl_display_add_supported_interface(struct c_wl_display *display, const ch
 }
 
 void c_wl_display_free(struct c_wl_display *display) {
-  if (display->loop) c_event_loop_free(display->loop);
   if (*display->socket_path) unlink(display->socket_path);
 
   if (display->connections) {
@@ -224,7 +217,6 @@ void c_wl_display_free(struct c_wl_display *display) {
 
 
   unsetenv("WAYLAND_DISPLAY");
-  
   free(display);
 }
 

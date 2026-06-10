@@ -119,9 +119,9 @@ void c_list_remove_ptr(c_list **head, void *data) {
 
 }
 
-void *c_list_get(c_list *l, uint32_t i) {
-  for (uint32_t ii = 0; l->next; l = l->next, ii++) {
-    if (ii == i) {
+void *c_list_get(c_list *l, uint32_t index) {
+  for (uint32_t i = 0; l->next; l = l->next, i++) {
+    if (i == index) {
       return l->data;
     }
   }
@@ -137,4 +137,22 @@ int c_list_idx(c_list *l, void *data) {
   }
 
   return -1;
+}
+
+void c_list_clear(c_list *l) {
+  c_list *next = l;
+
+  while (next) {
+    c_list *_next = next->next;
+
+    if (next->copied && next->data)
+      free(next->data);
+
+    if (next != l)
+      free(next);
+
+    next = _next;
+  }
+
+  memset(l, 0, sizeof(*l));
 }

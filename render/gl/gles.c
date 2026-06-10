@@ -4,12 +4,10 @@
 #include <GLES2/gl2ext.h>
 #include <GLES3/gl3.h>
 
-#include "render/render.h"
 #include "render/gl/gles.h"
 
 #include "util/log.h"
 #include "util/helpers.h"
-#include "util/malloc.h"
 
 static const GLchar *vertex_shader = 
   "#version 300 es\n"

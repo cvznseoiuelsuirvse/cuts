@@ -4,7 +4,7 @@
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
 
-#include "render/render.h"
+#include "render/types.h"
 
 struct c_gles {
 	GLuint program;

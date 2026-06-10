@@ -4,10 +4,10 @@ wayland_sources = files(
   'types.c',
   'util.c',
 
-  'types/wayland.c',
-  'types/xdg-shell.c',
-  'types/linux-dmabuf-v1.c',
-  'types/xdg-decoration-unstable-v1.c',
+  'proto/wayland.c',
+  'proto/xdg-shell.c',
+  'proto/linux-dmabuf-v1.c',
+  'proto/xdg-decoration-unstable-v1.c',
 
   'impl/wayland.c',
   'impl/xdg-shell.c',

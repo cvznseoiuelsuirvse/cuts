@@ -7,7 +7,6 @@ render_sources = files(
   'gl/gles.c',
   'buffer.c',
   'render.c',
-  'window.c',
 )
      
 render_dep = declare_dependency(

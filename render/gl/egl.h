@@ -1,7 +1,7 @@
 #ifndef CUTS_RENDER_GL_EGL_H
 #define CUTS_RENDER_GL_EGL_H
 
-#include "render/render.h"
+#include "render/types.h"
 
 struct c_egl {
 	EGLDisplay  display; 

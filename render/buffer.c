@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <inttypes.h>
 
+#include "render/render.h"
 #include "render/gl/egl.h"
 #include "render/gl/gles.h"
 

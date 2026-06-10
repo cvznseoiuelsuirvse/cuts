@@ -4,9 +4,7 @@
 #include <stdlib.h>
 
 #include "wayland/types.h"
-#include "wayland/types/xdg-shell.h"
-
-#include "util/malloc.h"
+#include "wayland/proto/xdg-shell.h"
 
 #define PADDED4(n) ((n + 3) & ~3)
 

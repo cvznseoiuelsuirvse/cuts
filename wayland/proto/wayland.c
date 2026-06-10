@@ -3,7 +3,7 @@
 #include "wayland/server.h"
 
 
-#include "wayland/types/wayland.h"
+#include "wayland/proto/wayland.h"
 C_WL_EVENT wl_display_error(struct c_wl_connection *conn, c_wl_object_id wl_display, c_wl_object_id object_id, c_wl_uint code, c_wl_string message) {
   struct c_wl_message msg = {wl_display, 0, "ous", "error"};
   return c_wl_connection_send(conn, &msg, 3, object_id, code, message);

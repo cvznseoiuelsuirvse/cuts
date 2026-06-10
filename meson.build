@@ -15,6 +15,7 @@ c_args = [
 ]
 
 subdir('util')
+subdir('compositor')
 subdir('backend')
 subdir('wayland')
 subdir('render')
@@ -28,6 +29,7 @@ executable('cuts',
   c_args: c_args,
   dependencies: [
     backend_dep,
+    compositor_dep,
     util_dep,
     wayland_dep,
     render_dep,

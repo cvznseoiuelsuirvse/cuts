@@ -1,12 +1,14 @@
+#include <stdlib.h>
 #include <unistd.h>
 #include <inttypes.h>
 #include <gbm.h>
+#include <xf86drm.h>
+#include <drm_fourcc.h>
 
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
 #include <GLES3/gl3.h>
 
-#include "render/render.h"
 #include "render/gl/egl.h"
 
 #include "backend/drm/util.h"

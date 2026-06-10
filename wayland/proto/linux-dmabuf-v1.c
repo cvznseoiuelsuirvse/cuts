@@ -1,9 +1,8 @@
 #include <stdint.h>
 
 #include "wayland/server.h"
+#include "wayland/proto/linux-dmabuf-v1.h"
 
-
-#include "wayland/types/linux-dmabuf-v1.h"
 C_WL_EVENT zwp_linux_dmabuf_v1_format(struct c_wl_connection *conn, c_wl_object_id zwp_linux_dmabuf_v1, c_wl_uint format) {
   struct c_wl_message msg = {zwp_linux_dmabuf_v1, 0, "u", "format"};
   return c_wl_connection_send(conn, &msg, 1, format);

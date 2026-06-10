@@ -3,7 +3,7 @@
 #include <fcntl.h>
 #include <string.h>
 
-#include "wayland/types/wayland.h"
+#include "wayland/proto/wayland.h"
 
 #include "backend/backend.h"
 #include "backend/input.h"
@@ -11,7 +11,6 @@
 
 #include "util/event_loop.h"
 #include "util/log.h"
-#include "util/malloc.h"
 
 
 static struct c_backend_device *open_gpu(struct c_backend *backend) {
@@ -164,7 +163,7 @@ void c_backend_free(struct c_backend *backend) {
   free(backend);
 }
 
-struct c_backend *c_backend_init(struct c_wl_display *display) {
+struct c_backend *c_backend_init(struct c_event_loop *loop, struct c_wl_display *display) {
   struct c_backend *backend = calloc(1, sizeof(*backend));
   if (!backend) {
     c_log(C_LOG_ERROR, "calloc failed");
@@ -181,10 +180,8 @@ struct c_backend *c_backend_init(struct c_wl_display *display) {
   backend->seat = c_seat_open(&seat_listener, backend);
   if (!backend->seat) goto error;
 
-  c_event_loop_add(display->loop, c_seat_get_fd(backend->seat), seat_event_cb, backend->seat);
-
+  c_event_loop_add(loop, c_seat_get_fd(backend->seat), seat_event_cb, backend->seat);
   if (c_seat_dispatch(backend->seat) == -1) goto error;
-
 
   struct c_backend_device *dev_gpu = open_gpu(backend);
   if (!dev_gpu) goto error;
@@ -195,7 +192,7 @@ struct c_backend *c_backend_init(struct c_wl_display *display) {
     .userdata = backend,
   };
 
-  backend->input = c_input_init(display->loop, &libinput_interface);
+  backend->input = c_input_init(loop, &libinput_interface);
   if (!backend->input) goto error;
 
   backend->drm = c_drm_init(dev_gpu->fd, backend->input);

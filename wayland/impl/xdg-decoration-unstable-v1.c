@@ -1,5 +1,5 @@
-#include "wayland/types/xdg-decoration-unstable-v1.h"
-#include "wayland/types/xdg-shell.h"
+#include "wayland/proto/xdg-decoration-unstable-v1.h"
+#include "wayland/proto/xdg-shell.h"
 
 #include "util/malloc.h"
 

@@ -25,9 +25,10 @@ struct layout {
 
 // bind functions
 void quit(bind_args *args);
-void sh_cmd(bind_args *args);
+void sh(bind_args *args);
 void kill_window(bind_args *args);
-void focus(bind_args *args);
+void move_focus(bind_args *args);
+void switch_tag(bind_args *args);
 
 // layout functions
 void tile();
