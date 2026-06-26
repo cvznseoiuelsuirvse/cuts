@@ -2,7 +2,13 @@
 #include "backend/input.h"
 
 static uint32_t gap = 15;
-static uint32_t background = 0x99E6FFFF;
+static uint32_t background = 0x777777ff;
+
+struct border border = {
+  .width = 5,
+  .c_focus =   0xff0000ff,
+  .c_default = 0xffffffff,
+};
 
 static struct xkb_rule_names xkb_rules = {
     .layout = "us,ru",

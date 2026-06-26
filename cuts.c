@@ -32,15 +32,6 @@
   c_render_draw_scene(comp.render); \
 }
 
-#define HEX_TO_VEC4(n) \
-{ \
-  ((n >> 24) & 0xff) / 255.0f, \
-  ((n >> 16) & 0xff) / 255.0f, \
-  ((n >>  8) & 0xff) / 255.0f, \
-  ((n >>  0) & 0xff) / 255.0f, \
-}
-
-
 #define clients_for_each_in_tag(comp, client) \
   c_list_for_each((comp).clients, (client)) \
     if ((client->tag & (comp).current_tag))
@@ -76,30 +67,40 @@ struct c_output_mode *preferred_output_mode() {
   assert(0);
 }
 
+void client_change_focus(struct client *client, double hotspot_x, double hotspot_y) {
+  if (client == comp.focused_client) return;
+
+  if (comp.focused_client) {
+    c_window_unfocus(comp.focused_client->window);
+    comp.focused_client->window->border_color = border.c_default;
+  }
+
+  c_window_focus(client->window, hotspot_x, hotspot_y);
+  comp.focused_client = client;
+  comp.focused_client->window->border_color = border.c_focus;
+}
+
 void client_close(struct client *client) {
-  if (comp.focused_client == client) {
+  int is_focused = comp.focused_client == client;
+
+  if (is_focused) {
     c_window_unfocus(client->window);
-    if (comp.clients->size > 1) {
-      struct client *pre_last = c_list_get_end(comp.clients, -2);
-      comp.focused_client = pre_last;
-    } else {
-      comp.focused_client = NULL;
-    }
+    comp.focused_client = NULL;
   }
 
   c_scene_remove_window(client->window);
   free(client->window);
   c_list_remove_ptr(&comp.clients, client);
-}
 
-void client_change_focus(struct client *client, double hotspot_x, double hotspot_y) {
-  if (client == comp.focused_client) return;
+  if (is_focused) {
+    if (comp.clients->size > 0) {
+      struct client *last = c_list_get(comp.clients, comp.clients->size - 1);
+      client_change_focus(last, 0, 0);
 
-  if (comp.focused_client)
-    c_window_unfocus(comp.focused_client->window);
-
-  c_window_focus(client->window, hotspot_x, hotspot_y);
-  comp.focused_client = client;
+    } else {
+      comp.focused_client = NULL;
+    }
+  }
 }
 
 int wl_seat_get_keyboard(struct c_wl_connection *conn, union c_wl_arg *args) {
@@ -157,12 +158,7 @@ void on_mouse_movement(struct c_input_mouse_event *event, void *userdata) {
         return;
       }
 
-      if (comp.focused_client)
-        c_window_unfocus(comp.focused_client->window);
-
-      c_window_focus(window, event->x, event->y);
-      comp.focused_client = client;
-
+      client_change_focus(client, event->x, event->y);
       break;
     }
   }
@@ -190,6 +186,7 @@ void on_keyboard_key(struct c_input_keyboard_event *event, void *userdata) {
 void on_window_new(struct c_wl_surface *surface, void *userdata) {
   struct c_window *window = calloc(1, sizeof(*window));
   window->surface = surface;
+  window->border_width = border.width;
   struct client client = {
     .tag = comp.current_tag,
     .window = window,
@@ -263,6 +260,8 @@ int count_tiled() {
 }
 
 void tile() {
+  uint32_t total_gap = gap + border.width;
+
   uint32_t scene_width, scene_height;
   struct c_output_mode *preferred = preferred_output_mode();
   scene_width = preferred->width;
@@ -271,26 +270,25 @@ void tile() {
   int tiled_clients = count_tiled();
   if (tiled_clients == 0) return;
 
-  int window_count = 0;
-
-  uint32_t tag_window_height = scene_height - gap * 2;
-  uint32_t tag_window_width = (scene_width - gap * (tiled_clients + 1)) / tiled_clients;
+  uint32_t tag_window_height = scene_height - total_gap * 2;
+  uint32_t tag_window_width = (scene_width - total_gap * (tiled_clients + 1)) / tiled_clients;
 
   struct client *client;
+  int i = 0;
   clients_for_each_in_tag(comp, client) {
     struct c_window *window = client->window;
     c_scene_add_window(window);
 
     if (window->state & C_WINDOW_FLOAT) continue;
 
-    window->x = (gap * (window_count + 1)) + (window_count * tag_window_width);
-    window->y = gap;
+    window->x = (total_gap * (i + 1)) + (i * tag_window_width);
+    window->y = total_gap;
 
     window->width = tag_window_width;
     window->height = tag_window_height;
 
     c_window_resize(window, window->width, window->height, client == comp.focused_client);
-    window_count++;
+    i++;
   }
 }
 
@@ -392,7 +390,10 @@ int main() {
   comp.backend = backend;
 
   struct c_render *render = c_render_init(loop, display, backend->drm);
-  if (!render) goto out;
+  if (!render) {
+    c_log(C_LOG_ERROR, "failed to initialize renderer");
+    goto out;
+  }
 
   struct c_wl_display_listener dpy_listener = {
     .on_toplevel_new = on_window_new,

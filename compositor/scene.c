@@ -1,6 +1,7 @@
 #include "compositor/window.h"
 #include "compositor/scene.h"
 #include "util/log.h"
+#include "util/helpers.h"
 
 struct {
 	c_list  *windows;
@@ -26,6 +27,8 @@ static void collect_surface_tree(struct c_window *window, struct c_wl_surface *s
 			.height = is_float ? surface->active->height : window->height,
 			.x = window->x,
 			.y = window->y,
+      .border_width = window->border_width,
+      .border_color = HEX_TO_VEC4(window->border_color),
 		};
 
 		c_log(C_LOG_DEBUG, "%-*s 0(depth:%d) surface %p width=%d height=%d x=%d y=%d",
@@ -41,7 +44,11 @@ static void collect_surface_tree(struct c_window *window, struct c_wl_surface *s
 		if (!ss->surface->active) continue;
 		if (*count >= max) return;
 
-		struct c_scene_quad q = { .buffer = ss->surface->active };
+		struct c_scene_quad q = { 
+      .buffer = ss->surface->active,
+      .border_width = window->border_width,
+      .border_color = HEX_TO_VEC4(window->border_color),
+    };
 
 		if (i == 0 && depth == 0) {
 			q.width  = window->width;

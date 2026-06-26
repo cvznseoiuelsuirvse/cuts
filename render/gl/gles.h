@@ -26,5 +26,6 @@ struct c_gles *c_gles_init();
 void c_gles_free(struct c_gles *gl);
 void c_gles_texture_from_dmabuf_image(struct c_gles *gl, struct c_dmabuf *buf);
 void c_gles_texture_from_shm(struct c_shm *buf, uint32_t width, uint32_t height);
+GLuint c_gles_texture_from_color(float color[3], uint32_t width, uint32_t height);
 
 #endif

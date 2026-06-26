@@ -114,11 +114,8 @@ void c_window_close(struct c_window *window) {
 }
 
 void c_window_pointer_move(struct c_window *window, double x, double y) {
-  struct c_wl_surface *surface = window->surface;
-  struct c_xdg_surface *xdg_surface = surface->xdg_surface;
-
-  c_wl_fixed hotspot_x = c_wl_fixed_from_double(x + xdg_surface->x);
-  c_wl_fixed hotspot_y = c_wl_fixed_from_double(y + xdg_surface->y);
+  c_wl_fixed hotspot_x = c_wl_fixed_from_double(x - window->x);
+  c_wl_fixed hotspot_y = c_wl_fixed_from_double(y - window->y);
 
   struct c_wl_object *o = NULL;
   c_wl_objects_for_each(window_conn(window), o) {

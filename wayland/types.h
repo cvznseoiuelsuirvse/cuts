@@ -56,8 +56,6 @@ struct c_wl_buffer {
 	c_wl_uint width;
 	c_wl_uint height;
 
-	// struct c_wl_surface *surface;
-
 	enum c_wl_buffer_type type;	
 	union {
 		struct c_dmabuf *dma;

@@ -3,45 +3,44 @@
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
 #include <GLES3/gl3.h>
+#include <fcntl.h>
 
 #include "render/gl/gles.h"
 
 #include "util/log.h"
 #include "util/helpers.h"
 
-static const GLchar *vertex_shader = 
-  "#version 300 es\n"
-  "layout(location = 0) in vec2 pos;\n"
-  "layout(location = 1) in vec2 uv;\n"
-  "\n"
-  "out vec2 v_uv;\n"
-  "\n"
-  "void main() {\n"
-  "    v_uv = uv;\n"
-  "    gl_Position = vec4(pos, 0.0, 1.0);\n"
-  "}\n";
-
-static const GLchar *fragment_shader = 
-  "#version 300 es\n"
-  "precision mediump float;\n"
-  "\n"
-  "in vec2 v_uv;\n"
-  "uniform sampler2D tex;\n"
-  "\n"
-  "out vec4 frag_color;\n"
-  "\n"
-  "void main() {\n"
-  "    frag_color = texture(tex, v_uv);\n"
-  "}\n";
-
+#define VERTEX_SHADER_PATH   "render/gl/shaders/shader.vert"
+#define FRAGMENT_SHADER_PATH "render/gl/shaders/shader.frag"
 
 static GLuint compile_shader(GLenum type) {
   GLuint shader = glCreateShader(type);
-  if (type == GL_VERTEX_SHADER)
-    glShaderSource(shader, 1, &vertex_shader, NULL);
-  else
-    glShaderSource(shader, 1, &fragment_shader, NULL);
 
+  FILE *f;
+
+  if (type == GL_VERTEX_SHADER) {
+    f = fopen(VERTEX_SHADER_PATH, "r");
+  } else {
+    f = fopen(FRAGMENT_SHADER_PATH, "r");
+  }
+
+  if (!f) {
+    c_log_errno(C_LOG_ERROR, "failed to open %s", (type == GL_VERTEX_SHADER) ? "vertex" : "fragment");
+    return 0;
+  }
+
+  GLchar shader_source[4096];
+  int c;
+  int i = 0;
+  while ((c = fgetc(f)) != EOF && i < (int)sizeof(shader_source) - 1) {
+    shader_source[i++] = c;   
+  }
+  shader_source[i] = 0;
+
+  fclose(f);
+
+  const GLchar *shader_code = shader_source;
+  glShaderSource(shader, 1, &shader_code, NULL);
   glCompileShader(shader);
 
   GLint success = 0;
@@ -153,13 +152,39 @@ void c_gles_texture_from_dmabuf_image(struct c_gles *gl, struct c_dmabuf *buf) {
   glGenTextures(1, &buf->texture);
   glBindTexture(GL_TEXTURE_2D, buf->texture);
 
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
   gl->proc.glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, buf->image);
   glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+
+GLuint c_gles_texture_from_color(float color[3], uint32_t width, uint32_t height) {
+  GLuint texture;
+  glGenTextures(1, &texture);
+  glBindTexture(GL_TEXTURE_2D, texture);
+ 
+  GLubyte *buf = malloc(width * height * 3 * sizeof(*buf));
+  if (!buf) {
+    c_log_errno(C_LOG_ERROR, "malloc failed");
+    return 0;
+  }
+
+  for (size_t i = 0; i < width * height * 3; i+=3) {
+    buf[i] =     color[0];
+    buf[i + 1] = color[1];
+    buf[i + 2] = color[2];
+  }
+
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, buf);
+                                   
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+  free(buf);
+  
+  return texture;
 }
 
 void c_gles_free(struct c_gles *gl) {

@@ -4,6 +4,12 @@
 #include <stdint.h>
 #include <xkbcommon/xkbcommon.h>
 
+struct border {
+  uint32_t width;
+  uint32_t c_focus;
+  uint32_t c_default;
+};
+
 typedef union {
 	char *const s;
 	int32_t     i;
@@ -11,6 +17,7 @@ typedef union {
 } bind_args;
 
 typedef void(*bind_func)(bind_args *args);
+
 struct bind {
   uint32_t 	   	modmask;
   xkb_keysym_t 	keysym;

@@ -34,8 +34,19 @@
 #define SHM_VERT_BOTTOM_RIGHT(vp) SHM_VERT_POS_BOTTOM_RIGHT(vp), 1.0f, 1.0f
 #define SHM_VERT_TOP_RIGHT(vp)    SHM_VERT_POS_TOP_RIGHT(vp),    1.0f, 0.0f
 
-#define DMA_VERTS(vp) {DMA_VERT_TOP_LEFT(vp), DMA_VERT_BOTTOM_LEFT(vp), DMA_VERT_BOTTOM_RIGHT(vp), DMA_VERT_TOP_LEFT(vp), DMA_VERT_BOTTOM_RIGHT(vp), DMA_VERT_TOP_RIGHT(vp)}
-#define SHM_VERTS(vp) {SHM_VERT_TOP_LEFT(vp), SHM_VERT_BOTTOM_LEFT(vp), SHM_VERT_BOTTOM_RIGHT(vp), SHM_VERT_TOP_LEFT(vp), SHM_VERT_BOTTOM_RIGHT(vp), SHM_VERT_TOP_RIGHT(vp)}
+#define DMA_VERTS(vp)                                                          \
+  {                                                                            \
+      DMA_VERT_TOP_LEFT(vp),     DMA_VERT_BOTTOM_LEFT(vp),                     \
+      DMA_VERT_BOTTOM_RIGHT(vp), DMA_VERT_TOP_LEFT(vp),                        \
+      DMA_VERT_BOTTOM_RIGHT(vp), DMA_VERT_TOP_RIGHT(vp)                        \
+  }
+
+#define SHM_VERTS(vp)                                                          \
+  {                                                                            \
+      SHM_VERT_TOP_LEFT(vp),     SHM_VERT_BOTTOM_LEFT(vp),                     \
+      SHM_VERT_BOTTOM_RIGHT(vp), SHM_VERT_TOP_LEFT(vp),                        \
+      SHM_VERT_BOTTOM_RIGHT(vp), SHM_VERT_TOP_RIGHT(vp),                       \
+  }
 
 struct vert_pos {
 	float tl_x, tl_y;
@@ -83,14 +94,23 @@ static void render_quad(struct c_render *render, struct c_scene_quad *quad, GLui
 	struct c_output_mode *preferred_mode = c_drm_get_preferred_mode(render->drm);
 
 	glUseProgram(gl->program);
-	glActiveTexture(GL_TEXTURE0);
+	glBindBuffer(GL_ARRAY_BUFFER, gl->vbo);
+  
+  glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, gl_texture);
 
 	struct vert_pos vp = {0};
-	create_verts(quad->width, quad->height, quad->x, quad->y, &vp,
-	             preferred_mode->width, preferred_mode->height);
+	create_verts(
+      quad->width,
+      quad->height,
+      quad->x,
+      quad->y,
+      &vp, 
+      preferred_mode->width,
+      preferred_mode->height
+    );
 
-	glBindBuffer(GL_ARRAY_BUFFER, gl->vbo);
+
 	if (quad->buffer->type == C_WL_BUFFER_DMA) {
 		float dma_vertices[] = DMA_VERTS(vp);
 		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(dma_vertices), dma_vertices);
@@ -99,7 +119,17 @@ static void render_quad(struct c_render *render, struct c_scene_quad *quad, GLui
 		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(shm_vertices), shm_vertices);
 	}
 
-	glUniform1i(glGetUniformLocation(gl->program, "tex"), 0);
+  GLint tex_loc = glGetUniformLocation(gl->program, "tex");
+  GLint border_size_loc = glGetUniformLocation(gl->program, "border_size");
+  GLint border_color_loc = glGetUniformLocation(gl->program, "border_color");
+
+#define border_color_args quad->border_color[0], quad->border_color[1], quad->border_color[2], quad->border_color[3]
+
+  c_log(C_LOG_DEBUG, "%f %f %f %f", border_color_args);
+	glUniform1i(tex_loc, 0);
+  glUniform2f(border_size_loc, (float)quad->border_width / quad->width, (float)quad->border_width / quad->height);
+  glUniform4f(border_color_loc, border_color_args);
+
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 }
 

@@ -16,8 +16,6 @@ typedef struct c_list {
 #define c_list_for_each(pos, member)                             \
   for (c_list *__pos = pos; __pos->next && ((member = __pos->data), 1); __pos = __pos->next) 	\
 
-#define c_list_get_end(l, index) c_list_get((l), (l)->size + (index))
-
 c_list *c_list_new();
 void    c_list_destroy(c_list *l);
 void   *c_list_push(c_list *l, void *data, size_t data_size);

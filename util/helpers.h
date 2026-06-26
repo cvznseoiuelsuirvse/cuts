@@ -16,6 +16,14 @@
 #define DEFAULT_STR } else {
 #define SWITCH_STR_END } }
 
+#define HEX_TO_VEC4(n) \
+{ \
+  ((n >> 24) & 0xff) / 255.0f, \
+  ((n >> 16) & 0xff) / 255.0f, \
+  ((n >>  8) & 0xff) / 255.0f, \
+  ((n >>  0) & 0xff) / 255.0f, \
+}
+
 void print_buffer(char *buffer, size_t buffer_len);
 uint32_t drm_format_to_bpp(uint32_t format);
 int set_nonblocking(int fd);

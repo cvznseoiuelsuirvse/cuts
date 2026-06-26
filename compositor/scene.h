@@ -12,6 +12,10 @@ struct c_scene_quad {
 	struct c_wl_buffer *buffer;
 	int32_t  x, y;
 	uint32_t width, height;
+
+  float    border_color[4];
+  uint32_t border_width;
+
 };
 
 void c_scene_init(uint32_t width, uint32_t height);
