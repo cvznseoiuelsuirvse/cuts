@@ -26,7 +26,7 @@ static c_list *c_list_new2(void *data, size_t data_size) {
   } else 
     l->data = data;
 
-  return l->data;
+  return l;
 }
 
 void c_list_destroy(c_list *l) {
@@ -63,7 +63,6 @@ void *c_list_push(c_list *l, void *data, size_t data_size) {
 void *c_list_insert(c_list **head, uint32_t i, void *data, size_t data_size) {
   c_list *l = *head;
   if (i > l->size) return NULL;
-
   l->size++;
 
   for (uint32_t ii = 0; l->next; l = l->next, ii++)
@@ -71,6 +70,7 @@ void *c_list_insert(c_list **head, uint32_t i, void *data, size_t data_size) {
     
   if (!l->prev && l->next) {  // first
     c_list *new = c_list_new2(data, data_size);
+    new->size = l->size;
     new->next = l;
     l->prev = new;
     *head = new;

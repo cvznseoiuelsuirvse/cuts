@@ -1,13 +1,16 @@
 #include "cuts.h"
 #include "backend/input.h"
 
-static uint32_t gap = 15;
-static uint32_t background = 0x777777ff;
+static const uint32_t gap = 15;
+static const uint32_t background = 0x2d862dff;
 
-struct border border = {
-  .width = 5,
-  .c_focus =   0xff0000ff,
-  .c_default = 0xffffffff,
+static const float mfact =      0.45f;
+static const uint32_t nmaster = 2;
+
+static struct border border = {
+  .width = 3,
+  .c_focus =   0xff99ffff,
+  .c_default = 0xccccffff,
 };
 
 static struct xkb_rule_names xkb_rules = {
@@ -22,6 +25,7 @@ static struct bind binds[] = {
 	{LEADER, XKB_KEY_q,                     quit, 			  {}},
 	{LEADER, XKB_KEY_Return, 	              sh, 	        {.s = "alacritty"}},
 	{LEADER, XKB_KEY_b, 	                  sh, 	        {.s = "firefox"}},
+	{LEADER, XKB_KEY_c, 	                  sh, 	        {.s = "chromium --enable-features=UseOzonePlatform --ozone-platform=wayland"}},
 	{LEADER, XKB_KEY_x, 	  	              kill_window,	{}},
 	{LEADER, XKB_KEY_j, 	  	              move_focus,   {.i = 1}},
 	{LEADER, XKB_KEY_k, 	  	              move_focus,   {.i = -1}},
@@ -40,5 +44,5 @@ static struct layout layouts[] = {
 	{tile, "tile"},
 };
 
-static uint32_t keyboard_repeat_rate =  50;
-static uint32_t keyboard_repeat_delay = 300;
+static const uint32_t keyboard_repeat_rate =  50;
+static const uint32_t keyboard_repeat_delay = 300;

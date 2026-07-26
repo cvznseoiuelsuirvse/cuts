@@ -13,69 +13,68 @@ extern float __gl_bg_color[4];
 
 static void collect_surface_tree(struct c_window *window, struct c_wl_surface *surface,
                                   int depth, struct c_scene_quad *out, int *count, int max) {
-	int is_float = window->state & C_WINDOW_FLOAT;
+  if (!surface->active) return;
+  if (*count >= max) return;
 
-	if (!(surface->role == C_WL_SURFACE_ROLE_XDG_TOPLEVEL) ||
-	    !surface->sub.children || surface->sub.children->size == 0) {
+  struct c_scene_quad q = {
+    .buffer = surface->active,
+    .width  = window->width,
+    .height = window->height,
+    .x = window->x,
+    .y = window->y,
+    .border_width = window->border_width,
+    .border_color = HEX_TO_VEC4(window->border_color),
+    .uv_scale = {1.0f, 1.0f},
+    .uv_offset = {0.0f},
+  };
 
-		if (!surface->active) return;
+  struct {
+    int32_t x, y;
+    uint32_t w, h;
+  } win_geom = {0};
+
+  if (surface->xdg_surface && surface->xdg_surface->width > 0) {
+    win_geom.x = surface->xdg_surface->x;
+    win_geom.y = surface->xdg_surface->y;
+    win_geom.w = surface->xdg_surface->width;
+    win_geom.h = surface->xdg_surface->height;
+
+    q.uv_offset[0] = (float)win_geom.x / surface->active->width;
+    q.uv_offset[1] = (float)win_geom.y / surface->active->height;
+
+    q.uv_scale[0] = (float)win_geom.w / surface->active->width;
+    q.uv_scale[1] = (float)win_geom.h / surface->active->height;
+  }
+
+  c_log(C_LOG_DEBUG, "uv_scale = %f, %f", q.uv_scale[0], q.uv_scale[1]);
+  c_log(C_LOG_DEBUG, "uv_offset = %f, %f", q.uv_offset[0], q.uv_offset[1]);
+  c_log(C_LOG_DEBUG, "%-*s surface#%d %p width=%d height=%d x=%d y=%d depth=%d",
+        depth + 1, " ", surface->id, surface, q.width, q.height, q.x, q.y, depth);
+  out[(*count)++] = q;
+
+  if (!surface->sub.children || surface->sub.children->size == 0) return;
+  q.border_width = 0;
+
+	struct c_wl_subsurface *sub_s;
+	c_list_for_each(surface->sub.children, sub_s) {
+		if (!sub_s->surface->active) continue;
 		if (*count >= max) return;
 
-		struct c_scene_quad q = {
-			.buffer = surface->active,
-			.width  = is_float ? surface->active->width  : window->width,
-			.height = is_float ? surface->active->height : window->height,
-			.x = window->x,
-			.y = window->y,
-      .border_width = window->border_width,
-      .border_color = HEX_TO_VEC4(window->border_color),
-		};
+    q.buffer = sub_s->surface->active,
 
-		c_log(C_LOG_DEBUG, "%-*s 0(depth:%d) surface %p width=%d height=%d x=%d y=%d",
-		      depth * 3, " ", depth, surface, q.width, q.height, q.x, q.y);
+    q.width  = sub_s->surface->active->width;
+    q.height = sub_s->surface->active->height;
 
-		out[(*count)++] = q;
-		return;
-	}
+    q.x = window->x + sub_s->x - win_geom.x;
+    q.y = window->y + sub_s->y - win_geom.y;
 
-	int i = 0;
-	struct c_wl_subsurface *ss;
-	c_list_for_each(surface->sub.children, ss) {
-		if (!ss->surface->active) continue;
-		if (*count >= max) return;
-
-		struct c_scene_quad q = { 
-      .buffer = ss->surface->active,
-      .border_width = window->border_width,
-      .border_color = HEX_TO_VEC4(window->border_color),
-    };
-
-		if (i == 0 && depth == 0) {
-			q.width  = window->width;
-			q.height = window->height;
-			q.x = window->x;
-			q.y = window->y;
-		} else {
-			q.width  = ss->surface->active->width;
-			q.height = ss->surface->active->height;
-			q.x = window->x + ss->x;
-			q.y = window->y + ss->y;
-		}
-
-		if (is_float) {
-			q.x -= q.width  / 2;
-			q.y -= q.height / 2;
-		}
-
-		c_log(C_LOG_DEBUG, "[SUB] %-*s %d(depth:%d) surface %p width=%d height=%d x=%d y=%d",
-		      depth * 3 + 2, "-", i + 1, depth, ss, q.width, q.height, q.x, q.y);
+		c_log(C_LOG_DEBUG, "%-*s SUB-surface#%d %p width=%d height=%d x=%d y=%d depth=%d",
+		      depth + 3, " ", sub_s->id, sub_s, q.width, q.height, q.x, q.y, depth);
 
 		out[(*count)++] = q;
 
-		if (ss->surface->sub.children)
-			collect_surface_tree(window, ss->surface, depth + 1, out, count, max);
-
-		i++;
+		if (sub_s->surface->sub.children)
+			collect_surface_tree(window, sub_s->surface, depth + 1, out, count, max);
 	}
 }
 

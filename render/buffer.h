@@ -6,7 +6,7 @@
 #include <EGL/eglext.h>
 #include <GL/gl.h>
 
-struct c_render_buffer {
+struct c_renderer_buffer {
   uint32_t    drm_fb_id;
   EGLImageKHR egl_image;
   GLuint      texture;
@@ -14,8 +14,8 @@ struct c_render_buffer {
   GLuint      rbo;
 };
 
-struct c_render;
-struct c_render_buffer *c_render_buffer_create(struct c_render *render, uint32_t width, uint32_t height);
-void c_render_buffer_destroy(struct c_render *render, struct c_render_buffer *buf);
+struct c_renderer;
+struct c_renderer_buffer *c_renderer_buffer_create(struct c_renderer *render, uint32_t width, uint32_t height);
+void c_renderer_buffer_destroy(struct c_renderer *render, struct c_renderer_buffer *buf);
 
 #endif

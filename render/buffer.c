@@ -16,16 +16,16 @@
 #include "util/log.h"
 #include "util/malloc.h"
 
-void c_render_buffer_destroy(struct c_render *render, struct c_render_buffer *buf) {
+void c_renderer_buffer_destroy(struct c_renderer *render, struct c_renderer_buffer *buf) {
   if (buf->texture) glDeleteTextures(1, &buf->texture);
   if (buf->drm_fb_id) drmModeRmFB(render->drm->fd, buf->drm_fb_id);
   if (buf->egl_image) eglDestroyImage(render->egl->display, buf->egl_image);
   free(buf);
 }
 
-struct c_render_buffer *c_render_buffer_create(struct c_render *render, uint32_t width, uint32_t height) { 
+struct c_renderer_buffer *c_renderer_buffer_create(struct c_renderer *render, uint32_t width, uint32_t height) { 
   int success = 1;
-  struct c_render_buffer *buf = calloc(1, sizeof(*buf));
+  struct c_renderer_buffer *buf = calloc(1, sizeof(*buf));
   if (!buf) {
     return NULL;
   }
@@ -36,7 +36,7 @@ struct c_render_buffer *c_render_buffer_create(struct c_render *render, uint32_t
       GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING);
   if (!gbm_bo) {
     c_log_errno(C_LOG_ERROR, "gbm_bo_create failed");
-    c_render_buffer_destroy(render, buf);
+    c_renderer_buffer_destroy(render, buf);
     return NULL;
   }
 
@@ -120,7 +120,7 @@ out:
 
   gbm_bo_destroy(gbm_bo);
   if (!success) {
-    c_render_buffer_destroy(render, buf);
+    c_renderer_buffer_destroy(render, buf);
     buf = NULL;
   }
 

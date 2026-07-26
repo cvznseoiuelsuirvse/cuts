@@ -29,7 +29,7 @@
 { \
   c_scene_clear(); \
   (comp).layout.func(); \
-  c_render_draw_scene(comp.render); \
+  c_renderer_draw_scene(comp.render); \
 }
 
 #define clients_for_each_in_tag(comp, client) \
@@ -47,7 +47,7 @@ struct {
   struct c_event_loop *loop;
   struct c_wl_display *display;
   struct c_backend    *backend;
-  struct c_render     *render;
+  struct c_renderer     *render;
   struct c_output     *output;
 
   uint32_t current_tag;
@@ -58,6 +58,18 @@ struct {
 	struct layout layout;
 } comp;
 
+struct {
+  uint32_t y, height, width;
+
+  struct {
+    uint32_t x, width;
+  } master;
+
+  struct {
+    uint32_t x, width;
+  } stack;
+
+} tile_layout = {0};
 
 struct c_output_mode *preferred_output_mode() {
   struct c_output_mode *mode;
@@ -192,7 +204,7 @@ void on_window_new(struct c_wl_surface *surface, void *userdata) {
     .window = window,
   };
 
-  struct client *client_cpy =c_list_push(comp.clients, &client, sizeof(client));
+  struct client *client_cpy = c_list_insert(&comp.clients, 0, &client, sizeof(client));
   client_change_focus(client_cpy, 0, 0);
   LAYOUT(comp);
 }
@@ -259,33 +271,55 @@ int count_tiled() {
   return i;
 }
 
-void tile() {
-  uint32_t total_gap = gap + border.width;
+void calc_tile_layout() {
+  struct c_output_mode *scene = preferred_output_mode();
 
-  uint32_t scene_width, scene_height;
-  struct c_output_mode *preferred = preferred_output_mode();
-  scene_width = preferred->width;
-  scene_height = preferred->height;
-   
-  int tiled_clients = count_tiled();
+  tile_layout.width = scene->width - gap * 2;
+  tile_layout.height = scene->height - gap * 2;
+  tile_layout.y = gap;
+
+  tile_layout.master.x = gap;
+  tile_layout.master.width = scene->width * mfact - gap * 2;
+
+  tile_layout.stack.x = tile_layout.master.width + gap * 2;
+  tile_layout.stack.width = scene->width - tile_layout.master.width - gap * 3;
+}
+
+void tile() {
+  if (tile_layout.height == 0)
+    calc_tile_layout();
+
+  uint32_t tiled_clients = count_tiled();
   if (tiled_clients == 0) return;
 
-  uint32_t tag_window_height = scene_height - total_gap * 2;
-  uint32_t tag_window_width = (scene_width - total_gap * (tiled_clients + 1)) / tiled_clients;
+  uint32_t stack_clients = (tiled_clients - nmaster) & -(tiled_clients >= nmaster);
+  uint32_t master_clients = tiled_clients - stack_clients;
+
+  uint32_t master_client_height = (tile_layout.height - gap * (master_clients -1)) / master_clients;
+  uint32_t stack_client_height = stack_clients ? (tile_layout.height - gap * (stack_clients - 1)) / stack_clients : 0;
 
   struct client *client;
-  int i = 0;
+  size_t i = 0;
   clients_for_each_in_tag(comp, client) {
     struct c_window *window = client->window;
     c_scene_add_window(window);
 
     if (window->state & C_WINDOW_FLOAT) continue;
 
-    window->x = (total_gap * (i + 1)) + (i * tag_window_width);
-    window->y = total_gap;
+    if (i < nmaster) {
+      window->x = tile_layout.master.x;
+      window->width = stack_clients > 0 ? tile_layout.master.width : tile_layout.width;
 
-    window->width = tag_window_width;
-    window->height = tag_window_height;
+      window->height = master_client_height;
+      window->y = tile_layout.y + master_client_height * i + gap * i;
+        
+    } else {
+      window->x = tile_layout.stack.x;
+      window->width = tile_layout.stack.width;
+
+      window->height = stack_client_height;
+      window->y = tile_layout.y + stack_client_height * (i - master_clients) + gap * (i - master_clients);
+    }
 
     c_window_resize(window, window->width, window->height, client == comp.focused_client);
     i++;
@@ -299,7 +333,7 @@ void cleanup(int err, void *userdata) {
   }
 
   if (comp.render)  {
-    c_render_free(comp.render);
+    c_renderer_free(comp.render);
     comp.render = NULL;
   }
 
@@ -337,7 +371,7 @@ int main() {
   c_scene_set_background(background4);
 
   struct c_log_config cfg;
-  cfg.level_mask = C_LOG_INFO | C_LOG_ERROR | C_LOG_DEBUG | C_LOG_WARNING;
+  cfg.level_mask = C_LOG_INFO | C_LOG_DEBUG | C_LOG_ERROR | C_LOG_WARNING;
   cfg.level_mask |= C_LOG_WAYLAND;
   cfg.color = 1;
   c_log_setup(&cfg);
@@ -389,7 +423,7 @@ int main() {
 
   comp.backend = backend;
 
-  struct c_render *render = c_render_init(loop, display, backend->drm);
+  struct c_renderer *render = c_renderer_init(loop, display, backend->drm);
   if (!render) {
     c_log(C_LOG_ERROR, "failed to initialize renderer");
     goto out;

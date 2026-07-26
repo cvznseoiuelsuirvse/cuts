@@ -20,6 +20,9 @@ void c_window_resize(struct c_window *window, uint32_t width, uint32_t height, i
     .data = states,
   };
 
+  width -= window->border_width * 2;
+  height -= window->border_width * 2;
+
   xdg_toplevel_configure(window_conn(window), xdg_surface->toplevel.id, width, height, &arr);
   xdg_surface_configure(window_conn(window), xdg_surface->id, c_wl_serial());
   
@@ -32,8 +35,13 @@ void c_window_deactivate(struct c_window *window) {
   struct c_wl_surface *surface = window->surface;
   struct c_xdg_surface *xdg_surface = surface->xdg_surface;
 
+  // uint32_t width = window->width - window->border_width * 2;
+  // uint32_t height = window->height - window->border_width * 2;
+  uint32_t width = window->width - window->border_width * 2;
+  uint32_t height = window->height - window->border_width * 2;
+
   c_wl_array arr = {0};
-  xdg_toplevel_configure(window_conn(window), xdg_surface->toplevel.id, window->width, window->height, &arr);
+  xdg_toplevel_configure(window_conn(window), xdg_surface->toplevel.id, width, height, &arr);
   xdg_surface_configure(window_conn(window), xdg_surface->id, c_wl_serial());
 
 }
@@ -48,7 +56,10 @@ void c_window_activate(struct c_window *window) {
     .data = &state,
   };
 
-  xdg_toplevel_configure(window_conn(window), xdg_surface->toplevel.id, window->width, window->height, &arr);
+  uint32_t width = window->width - window->border_width * 2;
+  uint32_t height = window->height - window->border_width * 2;
+
+  xdg_toplevel_configure(window_conn(window), xdg_surface->toplevel.id, width, height, &arr);
   xdg_surface_configure(window_conn(window), xdg_surface->id, c_wl_serial());
   
 };

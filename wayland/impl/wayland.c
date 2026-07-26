@@ -199,7 +199,6 @@ int wl_shm_pool_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
 
   munmap(pool->ptr, pool->size);
   c_wl_object_del(conn, wl_shm_pool_id);
-
   return 0;
 }
 

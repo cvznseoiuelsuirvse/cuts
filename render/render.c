@@ -14,38 +14,22 @@
 #include "util/shm.h"
 #include "util/malloc.h"
 
-#define DMA_VERT_POS_TOP_LEFT(vp)     vp.tl_x, vp.tl_y
-#define DMA_VERT_POS_BOTTOM_LEFT(vp)  vp.bl_x, vp.bl_y
-#define DMA_VERT_POS_TOP_RIGHT(vp)    vp.tr_x, vp.tr_y
-#define DMA_VERT_POS_BOTTOM_RIGHT(vp) vp.br_x, vp.br_y
 
-#define SHM_VERT_POS_TOP_LEFT(vp)     vp.tl_x, -(vp.tl_y)
-#define SHM_VERT_POS_BOTTOM_LEFT(vp)  vp.bl_x, -(vp.bl_y)
-#define SHM_VERT_POS_TOP_RIGHT(vp)    vp.tr_x, -(vp.tr_y)
-#define SHM_VERT_POS_BOTTOM_RIGHT(vp) vp.br_x, -(vp.br_y)
+#define VERT_POS_TOP_LEFT(vp)     vp.tl_x, -(vp.tl_y)
+#define VERT_POS_BOTTOM_LEFT(vp)  vp.bl_x, -(vp.bl_y)
+#define VERT_POS_TOP_RIGHT(vp)    vp.tr_x, -(vp.tr_y)
+#define VERT_POS_BOTTOM_RIGHT(vp) vp.br_x, -(vp.br_y)
 
-#define DMA_VERT_TOP_LEFT(vp)     DMA_VERT_POS_TOP_LEFT(vp),     0.0f, 1.0f
-#define DMA_VERT_BOTTOM_LEFT(vp)  DMA_VERT_POS_BOTTOM_LEFT(vp),  0.0f, 0.0f
-#define DMA_VERT_BOTTOM_RIGHT(vp) DMA_VERT_POS_BOTTOM_RIGHT(vp), 1.0f, 0.0f
-#define DMA_VERT_TOP_RIGHT(vp)    DMA_VERT_POS_TOP_RIGHT(vp),    1.0f, 1.0f
+#define VERT_TOP_LEFT(vp)     VERT_POS_TOP_LEFT(vp),     0.0f, 0.0f
+#define VERT_BOTTOM_LEFT(vp)  VERT_POS_BOTTOM_LEFT(vp),  0.0f, 1.0f
+#define VERT_BOTTOM_RIGHT(vp) VERT_POS_BOTTOM_RIGHT(vp), 1.0f, 1.0f
+#define VERT_TOP_RIGHT(vp)    VERT_POS_TOP_RIGHT(vp),    1.0f, 0.0f
 
-#define SHM_VERT_TOP_LEFT(vp)     SHM_VERT_POS_TOP_LEFT(vp),     0.0f, 0.0f
-#define SHM_VERT_BOTTOM_LEFT(vp)  SHM_VERT_POS_BOTTOM_LEFT(vp),  0.0f, 1.0f
-#define SHM_VERT_BOTTOM_RIGHT(vp) SHM_VERT_POS_BOTTOM_RIGHT(vp), 1.0f, 1.0f
-#define SHM_VERT_TOP_RIGHT(vp)    SHM_VERT_POS_TOP_RIGHT(vp),    1.0f, 0.0f
-
-#define DMA_VERTS(vp)                                                          \
+#define VERTS(vp)                                                          \
   {                                                                            \
-      DMA_VERT_TOP_LEFT(vp),     DMA_VERT_BOTTOM_LEFT(vp),                     \
-      DMA_VERT_BOTTOM_RIGHT(vp), DMA_VERT_TOP_LEFT(vp),                        \
-      DMA_VERT_BOTTOM_RIGHT(vp), DMA_VERT_TOP_RIGHT(vp)                        \
-  }
-
-#define SHM_VERTS(vp)                                                          \
-  {                                                                            \
-      SHM_VERT_TOP_LEFT(vp),     SHM_VERT_BOTTOM_LEFT(vp),                     \
-      SHM_VERT_BOTTOM_RIGHT(vp), SHM_VERT_TOP_LEFT(vp),                        \
-      SHM_VERT_BOTTOM_RIGHT(vp), SHM_VERT_TOP_RIGHT(vp),                       \
+      VERT_TOP_LEFT(vp),     VERT_BOTTOM_LEFT(vp),                     \
+      VERT_BOTTOM_RIGHT(vp), VERT_TOP_LEFT(vp),                        \
+      VERT_BOTTOM_RIGHT(vp), VERT_TOP_RIGHT(vp),                       \
   }
 
 struct vert_pos {
@@ -89,7 +73,7 @@ static void create_verts(uint32_t width, uint32_t height, int32_t x, int32_t y,
 	vp->tr_y = value_transform_y(y, max_height);
 }
 
-static void render_quad(struct c_render *render, struct c_scene_quad *quad, GLuint gl_texture) {
+static void render_quad(struct c_renderer *render, struct c_scene_quad *quad, GLuint gl_texture) {
 	struct c_gles *gl = render->gl;
 	struct c_output_mode *preferred_mode = c_drm_get_preferred_mode(render->drm);
 
@@ -110,36 +94,36 @@ static void render_quad(struct c_render *render, struct c_scene_quad *quad, GLui
       preferred_mode->height
     );
 
-
-	if (quad->buffer->type == C_WL_BUFFER_DMA) {
-		float dma_vertices[] = DMA_VERTS(vp);
-		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(dma_vertices), dma_vertices);
-	} else {
-		float shm_vertices[] = SHM_VERTS(vp);
-		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(shm_vertices), shm_vertices);
-	}
+  float verts[] = VERTS(vp);
+  glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
 
   GLint tex_loc = glGetUniformLocation(gl->program, "tex");
   GLint border_size_loc = glGetUniformLocation(gl->program, "border_size");
   GLint border_color_loc = glGetUniformLocation(gl->program, "border_color");
+  GLint draw_border_loc = glGetUniformLocation(gl->program, "draw_border");
+  GLint uv_offset_loc = glGetUniformLocation(gl->program, "uv_offset");
+  GLint uv_scale_loc = glGetUniformLocation(gl->program, "uv_scale");
 
 #define border_color_args quad->border_color[0], quad->border_color[1], quad->border_color[2], quad->border_color[3]
 
-  c_log(C_LOG_DEBUG, "%f %f %f %f", border_color_args);
 	glUniform1i(tex_loc, 0);
+  glUniform1i(draw_border_loc, quad->border_width > 0);
   glUniform2f(border_size_loc, (float)quad->border_width / quad->width, (float)quad->border_width / quad->height);
   glUniform4f(border_color_loc, border_color_args);
+
+  glUniform2f(uv_offset_loc, quad->uv_offset[0], quad->uv_offset[1]);
+  glUniform2f(uv_scale_loc, quad->uv_scale[0], quad->uv_scale[1]);
 
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 }
 
-static int import_shm(struct c_render *render, struct c_wl_buffer *buf) {
+static int import_shm(struct c_renderer *render, struct c_wl_buffer *buf) {
 	struct c_shm *shm = buf->shm;
 	c_gles_texture_from_shm(shm, buf->width / buf->scale, buf->height / buf->scale);
 	return 0;
 }
 
-static int import_dmabuf(struct c_render *render, struct c_wl_buffer *buf) {
+static int import_dmabuf(struct c_renderer *render, struct c_wl_buffer *buf) {
 	int ret = 0;
 	struct c_dmabuf *dmabuf = buf->dma;
 
@@ -199,7 +183,7 @@ out:
 	return ret;
 }
 
-static GLuint ensure_imported(struct c_render *render, struct c_wl_buffer *buf) {
+static GLuint ensure_imported(struct c_renderer *render, struct c_wl_buffer *buf) {
 	if (buf->type == C_WL_BUFFER_DMA) {
 		if (buf->dma->texture == 0)
 			if (import_dmabuf(render, buf) < 0) return 0;
@@ -214,14 +198,14 @@ static GLuint ensure_imported(struct c_render *render, struct c_wl_buffer *buf) 
 }
 
 static void page_flip_handler(int fd, unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec, void *userdata) {
-  struct c_render *render = userdata;
+  struct c_renderer *render = userdata;
 
   render->swapchain.front ^= 1;
   render->drm->connector.waiting_for_flip = 0;
 }
 
 
-static int get_ft_fd(struct c_render *render) {
+static int get_ft_fd(struct c_renderer *render) {
   int rfd, rwfd;
   size_t table_size = render->n_formats * sizeof(*render->formats); 
 
@@ -248,7 +232,7 @@ static int get_ft_fd(struct c_render *render) {
 }
 
 static void *on_linux_dmabuf_bind(struct c_wl_connection *conn, c_wl_object_id new_id, c_wl_uint version, void *userdata) {
-  struct c_render *render = userdata;
+  struct c_renderer *render = userdata;
   struct c_wl_linux_dmabuf_ctx *ctx = c_malloc(sizeof(*ctx));
 
   if (!ctx) {
@@ -278,7 +262,7 @@ error:
 }
 
 static void *on_wl_shm_bind(struct c_wl_connection *conn, c_wl_object_id new_id, c_wl_uint version, void *userdata) {
-  struct c_render *render = userdata;
+  struct c_renderer *render = userdata;
 
   struct c_wl_formats *wl_formats = c_malloc(sizeof(*wl_formats));
   if (!wl_formats) {
@@ -297,7 +281,7 @@ static void *on_wl_shm_bind(struct c_wl_connection *conn, c_wl_object_id new_id,
   return wl_formats;
 }
 
-static int c_render_handle_event(struct c_render *render) {
+static int c_renderer_handle_event(struct c_renderer *render) {
   drmEventContext ctx = {
     .version = DRM_EVENT_CONTEXT_VERSION,
     .page_flip_handler = page_flip_handler,
@@ -312,13 +296,13 @@ static int c_render_handle_event(struct c_render *render) {
 }
 
 
-void c_render_draw_scene(struct c_render *render) {
+void c_renderer_draw_scene(struct c_renderer *render) {
   if (render->drm->connector.waiting_for_flip) {
     __needs_redraw = 1;
     return;
   }
 
-  struct c_render_buffer *back_buffer = render->swapchain.buffers[render->swapchain.front ^ 1];
+  struct c_renderer_buffer *back_buffer = render->swapchain.buffers[render->swapchain.front ^ 1];
 
   glBindFramebuffer(GL_FRAMEBUFFER, back_buffer->fbo);
   clear_color();
@@ -346,17 +330,17 @@ void c_render_draw_scene(struct c_render *render) {
   __needs_redraw = 0;
 }
 
-static int create_swapchain(struct c_render *render) {
+static int create_swapchain(struct c_renderer *render) {
   struct c_output_mode *preferred_mode = c_drm_get_preferred_mode(render->drm);
   uint32_t width = preferred_mode->width;
   uint32_t height = preferred_mode->height;
 
-  if (!(render->swapchain.buffers[0] = c_render_buffer_create(render, width, height))) {
+  if (!(render->swapchain.buffers[0] = c_renderer_buffer_create(render, width, height))) {
     c_log(C_LOG_ERROR, "failed to create swapchain buffer(0)");
     return -1;
   }
 
-  if (!(render->swapchain.buffers[1] = c_render_buffer_create(render, width, height))) {
+  if (!(render->swapchain.buffers[1] = c_renderer_buffer_create(render, width, height))) {
     c_log(C_LOG_ERROR, "failed to create swapchain buffer(1)");
     return -1;
   }
@@ -367,44 +351,45 @@ static int create_swapchain(struct c_render *render) {
 }
 
 static void on_surface_commit_cb(struct c_wl_surface *surface, void *userdata) {
-  c_render_draw_scene(userdata);
+  c_renderer_draw_scene(userdata);
 }
 
 static void on_surface_destroy_cb(struct c_wl_surface *surface, void *userdata) {
-  c_render_draw_scene(userdata);
+  c_renderer_draw_scene(userdata);
 }
 
-static int destroy_buffer(struct c_render *render, struct c_wl_buffer *buf) {
+static int destroy_buffer(struct c_renderer *render, struct c_wl_buffer *buf) {
 	if (buf->type == C_WL_BUFFER_DMA) {
 		eglDestroyImage(render->egl->display, buf->dma->image);
 		glDeleteTextures(1, &buf->dma->texture);
 	} else if (buf->type == C_WL_BUFFER_SHM) {
 		glDeleteTextures(1, &buf->shm->texture);
-	} else return 0;
+	}
 
 	c_free(buf->dma);
 	buf->dma = NULL;
+
 	return 0;
 }
 
 
 static void on_buffer_destroy(struct c_wl_buffer *buffer, void *userdata) {
-  struct c_render *render = userdata;
+  struct c_renderer *render = userdata;
   destroy_buffer(render, buffer);
 }
 
 C_EVENT_CALLBACK render_callback(struct c_event_loop *loop, int fd, void *userdata) {
-  if (c_render_handle_event((struct c_render *)userdata) == -1) 
+  if (c_renderer_handle_event((struct c_renderer *)userdata) == -1) 
     return C_EVENT_ERROR_FATAL;
 
   if (__needs_redraw)
-    c_render_draw_scene((struct c_render *)userdata);
+    c_renderer_draw_scene((struct c_renderer *)userdata);
 
   return C_EVENT_OK;
 }
 
-struct c_render *c_render_init(struct c_event_loop *loop, struct c_wl_display *display, struct c_drm *drm) {
-  struct c_render *render = calloc(1, sizeof(struct c_render));
+struct c_renderer *c_renderer_init(struct c_event_loop *loop, struct c_wl_display *display, struct c_drm *drm) {
+  struct c_renderer *render = calloc(1, sizeof(struct c_renderer));
   if (!render) 
     return NULL;
 
@@ -426,7 +411,7 @@ struct c_render *c_render_init(struct c_event_loop *loop, struct c_wl_display *d
   }
 
   struct c_output_mode *preferred_mode = c_drm_get_preferred_mode(drm);
-  struct c_render_buffer *front_buffer = render->swapchain.buffers[0];
+  struct c_renderer_buffer *front_buffer = render->swapchain.buffers[0];
   if (drmModeSetCrtc(drm->fd, drm->connector.crtc_id, front_buffer->drm_fb_id,
                   0, 0, &drm->connector.id, 1, preferred_mode->info) != 0) {
     c_log_errno(C_LOG_ERROR, "drmModeSetCrtc failed");
@@ -436,7 +421,7 @@ struct c_render *c_render_init(struct c_event_loop *loop, struct c_wl_display *d
   c_scene_init(preferred_mode->width, preferred_mode->height);
 
   glViewport(0, 0, preferred_mode->width, preferred_mode->height);
-  c_render_draw_scene(render);
+  c_renderer_draw_scene(render);
   c_event_loop_add(loop, drm->fd, render_callback, render);
 
   struct c_wl_display_listener dpy_listeners = {
@@ -455,16 +440,16 @@ struct c_render *c_render_init(struct c_event_loop *loop, struct c_wl_display *d
   return render;
 
 error:
-  c_render_free(render);
+  c_renderer_free(render);
   return NULL;
 }
 
-void c_render_free(struct c_render *render) {
+void c_renderer_free(struct c_renderer *render) {
   if (render->swapchain.buffers[0])
-    c_render_buffer_destroy(render, render->swapchain.buffers[0]);
+    c_renderer_buffer_destroy(render, render->swapchain.buffers[0]);
 
   if (render->swapchain.buffers[1])
-    c_render_buffer_destroy(render, render->swapchain.buffers[1]);
+    c_renderer_buffer_destroy(render, render->swapchain.buffers[1]);
 
 
   if (render->egl)             c_egl_free(render->egl);

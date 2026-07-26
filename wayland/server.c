@@ -13,7 +13,7 @@
 #include "util/malloc.h"
 #include "util/bitmap.h"
 
-#define MAX_CMSG_FDS 32
+#define MAX_CMSG_FDS 1024
 
 static struct c_wl_interface *__interface[C_WL_MAX_INTERFACES];
 static size_t                 __ninterfaces = 0;

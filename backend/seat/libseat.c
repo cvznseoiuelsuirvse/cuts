@@ -4,18 +4,21 @@
 #include "backend/seat/seat.h"
 
 #include "util/log.h"
-#include "util/malloc.h"
 
 struct libseat_backend {
   struct libseat *libseat;
+
   struct c_seat_listener *listener;
   void *listener_data;
+
+  struct libseat_seat_listener *ls_listener;
 };
 
 static void log_libseat(enum libseat_log_level level, const char *format, va_list args) {
-  vprintf(format, args);
-  printf("\n");
-  // c_log(C_LOG_DEBUG, format, args);
+  char buffer[1024];
+  vsnprintf(buffer, sizeof(buffer), format, args);
+
+  c_log(C_LOG_INFO, "[libseat] %s", buffer);
 }
 
 static void handle_enable(struct libseat *libseat, void *userdata) {
@@ -37,10 +40,6 @@ static int _libseat_open(void **backend, struct c_seat_listener *listener, void 
   struct libseat_seat_listener *ls_listener = calloc(1, sizeof(*ls_listener));
   ls_listener->enable_seat = handle_enable;
   ls_listener->disable_seat = handle_disable;
-  // struct libseat_seat_listener ls_listener = {
-  //   .enable_seat = handle_enable,
-  //   .disable_seat = handle_disable,
-  // };
 
   libseat_set_log_handler(log_libseat);
 	libseat_set_log_level(LIBSEAT_LOG_LEVEL_INFO);
@@ -54,6 +53,7 @@ static int _libseat_open(void **backend, struct c_seat_listener *listener, void 
   ls_backend->libseat = seat;
   ls_backend->listener = listener;
   ls_backend->listener_data = listener_data;
+  ls_backend->ls_listener = ls_listener;
 
   *backend = ls_backend;
 
@@ -63,6 +63,7 @@ static int _libseat_open(void **backend, struct c_seat_listener *listener, void 
 static void _libseat_close(void *backend) {
   struct libseat_backend *b = backend;
   libseat_close_seat(b->libseat);
+  free(b->ls_listener);
   free(backend);
 }
 
