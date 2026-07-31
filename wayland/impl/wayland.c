@@ -9,7 +9,7 @@
 
 #include "util/log.h"
 #include "util/malloc.h"
-#include "render/render.h"
+#include "render/types.h"
 
 static void damage_surface(struct c_wl_surface *surface, union c_wl_arg *args) {
   c_wl_int x =      args[1].i;
@@ -62,7 +62,7 @@ int wl_registry_bind(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_add(conn, new_id, version, interface->iface, NULL);
 
   if (interface->on_bind) {
-    void *bind_data = interface->on_bind(conn, new_id, version, interface->userdata);
+    void *bind_data = interface->on_bind(conn, new_id, version, interface->on_bind_userdata);
     if (bind_data)
       c_wl_object_get(conn, new_id)->data = bind_data;
     
@@ -145,12 +145,12 @@ format_supported:
     c_wl_error_set_and_return(wl_shm_pool_id, WL_SHM_ERROR_INVALID_STRIDE, "invalid offset");
   
 
-  if (pool->size - offset < height * stride)
+  if ((c_wl_int)pool->size - offset < height * stride)
     c_wl_error_set_and_return(wl_shm_pool_id, WL_SHM_ERROR_INVALID_STRIDE, "invalid offset");
 
 
   uint32_t region_size = (uint32_t)stride * height;
-  if ((region_size > pool->size) || (offset > pool->size - region_size)) {
+  if ((region_size > pool->size) || (offset > (c_wl_int)(pool->size - region_size))) {
     c_wl_error_set_and_return(wl_shm_pool_id, WL_DISPLAY_ERROR_INVALID_OBJECT, "requested region too large");
     return -1;
   }
@@ -405,16 +405,6 @@ int wl_surface_commit(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_wl_object *self = c_wl_self(conn, args);
   struct c_wl_surface *wl_surface = self->data;
 
-  if (wl_surface->active)
-    c_log(C_LOG_DEBUG, "ACTIVE #%d %p", wl_surface->active->id, wl_surface->active);
-  else
-    c_log(C_LOG_DEBUG, "ACTIVE %p",  wl_surface->active);
-
-  if (wl_surface->pending)
-    c_log(C_LOG_DEBUG, "PNDING #%d %p", wl_surface->pending->id, wl_surface->pending);
-  else
-    c_log(C_LOG_DEBUG, "PNDING %p", wl_surface->pending);
-
   if (wl_surface->pending != wl_surface->active) {
     if (wl_surface->active && wl_surface->active->id > 0) {
       wl_buffer_release(conn, wl_surface->active->id);
@@ -425,7 +415,6 @@ int wl_surface_commit(struct c_wl_connection *conn, union c_wl_arg *args) {
       c_ref(wl_surface->pending);
 
     wl_surface->active = wl_surface->pending;
-    
   }
   
   struct c_wl_display *dpy = c_wl_connection_get_dpy(conn);
@@ -457,6 +446,10 @@ int wl_compositor_create_surface(struct c_wl_connection *conn, union c_wl_arg *a
   c_wl_surface->conn = conn;
 
   c_wl_object_add(conn, wl_surface_id, self->version, c_wl_interface_get("wl_surface"), c_wl_surface);
+
+  struct c_wl_display *dpy = c_wl_connection_get_dpy(conn);
+  c_wl_display_notify(dpy, c_wl_surface, C_WL_DISPLAY_ON_SURFACE_NEW);
+
   return 0;
 }
 
@@ -506,8 +499,6 @@ int wl_subcompositor_get_subsurface(struct c_wl_connection *conn, union c_wl_arg
         args[0].o, WL_SUBCOMPOSITOR_ERROR_BAD_SURFACE,
         "parent surface is one of the child's descendants");
 
-  c_log(C_LOG_DEBUG, "new sub %d: adding %p to %p", wl_subsurface_id, subsurface->surface, subsurface->parent);
-
   if (!surface_parent->sub.children)
     surface_parent->sub.children = c_list_new();
 
@@ -542,7 +533,7 @@ int wl_subsurface_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_wl_surface    *surface_parent = subsurface->parent;
 
   if (surface_parent)
-    c_list_remove_ptr(&surface_parent->sub.children, subsurface);
+    c_list_remove(&surface_parent->sub.children, subsurface);
 
   surface->role = 0;
   surface->sub.surface = NULL;
@@ -559,7 +550,7 @@ int wl_subsurface_place_above(struct c_wl_connection *conn, union c_wl_arg *args
   struct c_wl_surface    *sibling = wl_surface_sibling->data;
   struct c_wl_surface    *parent = surface->parent;
 
-  c_list_remove_ptr(&parent->sub.children, surface);
+  c_list_remove(&parent->sub.children, surface);
   int sibling_idx = c_list_idx(parent->sub.children, sibling);
   assert(sibling_idx != -1);
 
@@ -575,7 +566,7 @@ int wl_subsurface_place_below(struct c_wl_connection *conn, union c_wl_arg *args
   struct c_wl_surface    *sibling = wl_surface_sibling->data;
   struct c_wl_surface    *parent = surface->parent;
 
-  c_list_remove_ptr(&parent->sub.children, surface);
+  c_list_remove(&parent->sub.children, surface);
   int sibling_idx = c_list_idx(parent->sub.children, sibling);
   assert(sibling_idx != -1);
 

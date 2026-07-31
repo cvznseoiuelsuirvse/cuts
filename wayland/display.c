@@ -80,7 +80,7 @@ C_EVENT_CALLBACK client_epoll_callback(struct c_event_loop *loop, int fd, void *
 
   switch (ret) {
     case DISPATCH_FATAL_ERR:
-      c_list_remove_ptr(&dpy->connections, connection);
+      c_list_remove(&dpy->connections, connection);
       c_wl_connection_free(connection);
       return C_EVENT_ERROR_FATAL;
 
@@ -89,7 +89,8 @@ C_EVENT_CALLBACK client_epoll_callback(struct c_event_loop *loop, int fd, void *
       return C_EVENT_OK;
 
     case DISPATCH_CLIENT_ERR:
-      c_list_remove_ptr(&dpy->connections, connection);
+      c_wl_display_notify(dpy, connection, C_WL_DISPLAY_ON_CONNECTION_GONE);
+      c_list_remove(&dpy->connections, connection);
       c_wl_connection_free(connection);
       return C_EVENT_ERROR_FD_GONE;
   }
@@ -144,12 +145,13 @@ void c_wl_display_notify(struct c_wl_display *display, void *data, enum c_wl_dis
     }
 
   switch (notifier) {
+    case C_WL_DISPLAY_ON_SURFACE_NEW:         notify(on_surface_new); break;
     case C_WL_DISPLAY_ON_SURFACE_COMMIT:      notify(on_surface_commit); break;
     case C_WL_DISPLAY_ON_SURFACE_DESTROY:     notify(on_surface_destroy); break;
-    case C_WL_DISPLAY_ON_SUBSURFACE_DESTROY:  notify(on_subsurface_destroy); break;
-    case C_WL_DISPLAY_ON_BUFFER_DESTROY:      notify(on_buffer_destroy); break;
     case C_WL_DISPLAY_ON_TOPLEVEL_NEW:        notify(on_toplevel_new); break;
     case C_WL_DISPLAY_ON_TOPLEVEL_DESTROY:    notify(on_toplevel_destroy); break;
+    case C_WL_DISPLAY_ON_BUFFER_DESTROY:      notify(on_buffer_destroy); break;
+    case C_WL_DISPLAY_ON_CONNECTION_GONE:     notify(on_connection_gone); break;
     default: break;
   }
 
@@ -191,7 +193,7 @@ void c_wl_display_add_supported_interface(struct c_wl_display *display, const ch
   struct c_wl_display_supported_iface i = {
     .iface = iface,
     .on_bind = on_bind,
-    .userdata = userdata,
+    .on_bind_userdata = userdata,
   };
   c_list_push(display->supported_ifaces, &i, sizeof(i));
 }

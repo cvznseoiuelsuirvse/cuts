@@ -28,7 +28,9 @@ void c_map_destroy(c_map *m) {
       struct c_map_pair *pair = m->pairs[i];
       while (pair) {
         struct c_map_pair *next = pair->next;
-        free(pair->value);
+        if (pair->copied)
+          free(pair->value);
+
         free(pair);
         pair = next;
       }

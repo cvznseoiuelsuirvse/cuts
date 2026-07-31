@@ -89,7 +89,7 @@ void *c_list_insert(c_list **head, uint32_t i, void *data, size_t data_size) {
   return c_list_push(l, data, data_size);
 }
 
-void c_list_remove_ptr(c_list **head, void *data) {
+void c_list_remove(c_list **head, void *data) {
   c_list *l = *head;
 
   for (size_t i = 0; l; l = l->next, i++) {
@@ -116,7 +116,6 @@ void c_list_remove_ptr(c_list **head, void *data) {
       break;
     }
   }
-
 }
 
 void *c_list_get(c_list *l, uint32_t index) {

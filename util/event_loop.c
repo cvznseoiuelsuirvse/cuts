@@ -41,7 +41,7 @@ int c_event_loop_del(struct c_event_loop *loop, struct c_event_resource *resourc
     return -1;
   }
   close(resource->fd);
-  c_list_remove_ptr(&loop->resources, resource);
+  c_list_remove(&loop->resources, resource);
   return 0;
 }
 

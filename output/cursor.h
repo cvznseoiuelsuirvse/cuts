@@ -1,0 +1,26 @@
+#ifndef CUTS_BACKEND_DRM_CURSOR_H
+#define CUTS_BACKEND_DRM_CURSOR_H
+
+#include <stdint.h>
+#include <gbm.h>
+
+#include "seat/input.h"
+#include "output/output.h"
+
+#define CURSOR_INSIDE(px, py, area) \
+	(((area)->x + (area)->width + (area)->y + (area)->x == 0) || \
+	((area)->x <= (px) && (px) <= (area)->x + (area)->width &&   \
+	 (area)->y <= (py) && (py) <= (area)->y + (area)->height)) \
+
+struct c_cursor {
+	uint32_t       width, height;
+	double         x,     y;
+	struct gbm_bo *gbm_bo;
+};
+
+struct c_cursor *c_cursor_init(struct c_output_manager *mgr, struct c_input *input);
+void c_cursor_free(struct c_cursor *cursor);
+int c_cursor_update(struct c_output_manager *mgr, struct c_output *output, uint32_t *buffer,
+                    size_t buffer_size);
+
+#endif

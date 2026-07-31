@@ -1,13 +1,18 @@
 #include <assert.h>
 #include <unistd.h>
 #include <inttypes.h>
+#include <gbm.h>
+#include <stdlib.h>
+#include <sys/stat.h>
 
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
 
-#include "render/render.h"
+#include "output/drm/util.h"
+#include "render/renderer.h"
 #include "render/gl/egl.h"
 #include "render/gl/gles.h"
+#include "render/framebuffer.h"
 #include "compositor/scene.h"
 
 #include "util/log.h"
@@ -39,13 +44,10 @@ struct vert_pos {
 	float tr_x, tr_y;
 };
 
-static int __needs_redraw = 0;
-float __gl_bg_color[4] = {0.4f, 0.4f, 0.4f, 1.0f};
-
 #define GL_COLOR_VEC4(v) v[0], v[1], v[2], v[3]
 
-static void clear_color() {
-  glClearColor(GL_COLOR_VEC4(__gl_bg_color));
+static void clear_color(float color[4]) {
+  glClearColor(GL_COLOR_VEC4(color));
   glClear(GL_COLOR_BUFFER_BIT);
 }
 
@@ -73,9 +75,9 @@ static void create_verts(uint32_t width, uint32_t height, int32_t x, int32_t y,
 	vp->tr_y = value_transform_y(y, max_height);
 }
 
-static void render_quad(struct c_renderer *render, struct c_scene_quad *quad, GLuint gl_texture) {
+static void render_quad(struct c_renderer *render, struct c_output *output, struct c_scene_quad *quad, GLuint gl_texture) {
 	struct c_gles *gl = render->gl;
-	struct c_output_mode *preferred_mode = c_drm_get_preferred_mode(render->drm);
+	struct c_output_mode *mode = output->current_mode;
 
 	glUseProgram(gl->program);
 	glBindBuffer(GL_ARRAY_BUFFER, gl->vbo);
@@ -90,8 +92,8 @@ static void render_quad(struct c_renderer *render, struct c_scene_quad *quad, GL
       quad->x,
       quad->y,
       &vp, 
-      preferred_mode->width,
-      preferred_mode->height
+      mode->width,
+      mode->height
     );
 
   float verts[] = VERTS(vp);
@@ -197,15 +199,7 @@ static GLuint ensure_imported(struct c_renderer *render, struct c_wl_buffer *buf
 	assert(0);
 }
 
-static void page_flip_handler(int fd, unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec, void *userdata) {
-  struct c_renderer *render = userdata;
-
-  render->swapchain.front ^= 1;
-  render->drm->connector.waiting_for_flip = 0;
-}
-
-
-static int get_ft_fd(struct c_renderer *render) {
+int c_renderer_create_format_table(struct c_renderer *render) {
   int rfd, rwfd;
   size_t table_size = render->n_formats * sizeof(*render->formats); 
 
@@ -231,36 +225,6 @@ static int get_ft_fd(struct c_renderer *render) {
   return rfd;
 }
 
-static void *on_linux_dmabuf_bind(struct c_wl_connection *conn, c_wl_object_id new_id, c_wl_uint version, void *userdata) {
-  struct c_renderer *render = userdata;
-  struct c_wl_linux_dmabuf_ctx *ctx = c_malloc(sizeof(*ctx));
-
-  if (!ctx) {
-    c_log(C_LOG_ERROR, "malloc(c_wl_linux_dmabuf_ctx) failed");
-    return NULL;
-  }
-
-  if (c_drm_dev_id(render->drm, &ctx->drm_dev_id) == -1)  {
-    c_log_errno(C_LOG_ERROR, "failed to get drm rdev"); 
-    goto error;
-  }
-
-  ctx->ft_fd = get_ft_fd(render);
-  if (ctx->ft_fd == -1) {
-    c_log(C_LOG_ERROR, "failed to get format table fd");
-    goto error;
-  }
-
-  ctx->n_ft_entries = render->n_formats;
-
-  return ctx;
-
-error:
-  c_free(ctx);
-  return NULL;
-
-}
-
 static void *on_wl_shm_bind(struct c_wl_connection *conn, c_wl_object_id new_id, c_wl_uint version, void *userdata) {
   struct c_renderer *render = userdata;
 
@@ -281,81 +245,70 @@ static void *on_wl_shm_bind(struct c_wl_connection *conn, c_wl_object_id new_id,
   return wl_formats;
 }
 
-static int c_renderer_handle_event(struct c_renderer *render) {
-  drmEventContext ctx = {
-    .version = DRM_EVENT_CONTEXT_VERSION,
-    .page_flip_handler = page_flip_handler,
-  };
-
-  if (drmHandleEvent(render->drm->fd, &ctx) < 0) {
-    c_log_errno(C_LOG_ERROR, "drmHandleEvent failed");
-    return -1;
+static int get_dev_id(int drm_fd, dev_t *dev_id) {
+	struct stat stat;
+	if (fstat(drm_fd, &stat) != 0) {
+    c_log_errno(C_LOG_ERROR, "failed to call fstat on DRM fd");
+		return -1;
   }
 
+	*dev_id = stat.st_rdev;
   return 0;
 }
 
+static void *on_linux_dmabuf_bind(struct c_wl_connection *conn, c_wl_object_id new_id, c_wl_uint version, void *userdata) {
+  struct c_output_manager *mgr = userdata;
+  struct c_wl_linux_dmabuf_ctx *ctx = c_malloc(sizeof(*ctx));
 
-void c_renderer_draw_scene(struct c_renderer *render) {
-  if (render->drm->connector.waiting_for_flip) {
-    __needs_redraw = 1;
-    return;
+  if (!ctx) {
+    c_log(C_LOG_ERROR, "failed to allocate c_wl_linux_dmabuf_ctx");
+    return NULL;
   }
 
-  struct c_renderer_buffer *back_buffer = render->swapchain.buffers[render->swapchain.front ^ 1];
+  if (get_dev_id(mgr->drm_fd, &ctx->drm_dev_id) == -1)  {
+    c_log_errno(C_LOG_ERROR, "failed to get drm rdev"); 
+    goto error;
+  }
+
+  ctx->ft_fd = c_renderer_create_format_table(mgr->renderer);
+  if (ctx->ft_fd == -1) {
+    c_log(C_LOG_ERROR, "failed to create format table");
+    goto error;
+  }
+
+  ctx->n_ft_entries = mgr->renderer->n_formats;
+
+  return ctx;
+
+error:
+  c_free(ctx);
+  return NULL;
+}
+
+void c_renderer_draw(struct c_renderer *render, struct c_output *output,
+                     struct c_scene_quad quads[C_SCENE_MAX_WINDOWS],
+                     size_t quad_n, float backgroup[4]) {
+  struct c_framebuffer *back_buffer = output->swapchain.buffers[output->swapchain.front ^ 1];
 
   glBindFramebuffer(GL_FRAMEBUFFER, back_buffer->fbo);
-  clear_color();
+  clear_color(backgroup);
 
-	struct c_scene_quad quads[C_SCENE_MAX_WINDOWS];
-	int n = c_scene_collect(quads, C_SCENE_MAX_WINDOWS);
-	for (int i = 0; i < n; i++) {
+	for (size_t i = 0; i < quad_n; i++) {
     struct c_wl_buffer *buf = quads[i].buffer;
 		GLuint tex = ensure_imported(render, buf);
 		if (tex == 0) {
       c_log(C_LOG_WARNING, "failed to import %s buffer#%d", buf->type == C_WL_BUFFER_DMA ? "DMA" : "SHM", buf->id);
       continue;
     }
-		render_quad(render, &quads[i], tex);
+		render_quad(render, output, &quads[i], tex);
 	}
 
   glFlush();
   glFinish();
+
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-  drmModePageFlip(render->drm->fd, render->drm->connector.crtc_id,
-                  back_buffer->drm_fb_id, DRM_MODE_PAGE_FLIP_EVENT, render);
-
-  render->drm->connector.waiting_for_flip = 1;
-  __needs_redraw = 0;
-}
-
-static int create_swapchain(struct c_renderer *render) {
-  struct c_output_mode *preferred_mode = c_drm_get_preferred_mode(render->drm);
-  uint32_t width = preferred_mode->width;
-  uint32_t height = preferred_mode->height;
-
-  if (!(render->swapchain.buffers[0] = c_renderer_buffer_create(render, width, height))) {
-    c_log(C_LOG_ERROR, "failed to create swapchain buffer(0)");
-    return -1;
-  }
-
-  if (!(render->swapchain.buffers[1] = c_renderer_buffer_create(render, width, height))) {
-    c_log(C_LOG_ERROR, "failed to create swapchain buffer(1)");
-    return -1;
-  }
-
-  render->swapchain.front = 0;
-
-  return 0;
-}
-
-static void on_surface_commit_cb(struct c_wl_surface *surface, void *userdata) {
-  c_renderer_draw_scene(userdata);
-}
-
-static void on_surface_destroy_cb(struct c_wl_surface *surface, void *userdata) {
-  c_renderer_draw_scene(userdata);
+  output->need_redraw = 0;
 }
 
 static int destroy_buffer(struct c_renderer *render, struct c_wl_buffer *buf) {
@@ -378,23 +331,12 @@ static void on_buffer_destroy(struct c_wl_buffer *buffer, void *userdata) {
   destroy_buffer(render, buffer);
 }
 
-C_EVENT_CALLBACK render_callback(struct c_event_loop *loop, int fd, void *userdata) {
-  if (c_renderer_handle_event((struct c_renderer *)userdata) == -1) 
-    return C_EVENT_ERROR_FATAL;
-
-  if (__needs_redraw)
-    c_renderer_draw_scene((struct c_renderer *)userdata);
-
-  return C_EVENT_OK;
-}
-
-struct c_renderer *c_renderer_init(struct c_event_loop *loop, struct c_wl_display *display, struct c_drm *drm) {
+struct c_renderer *c_renderer_init(struct c_output_manager *mgr, struct c_wl_display *display) {
   struct c_renderer *render = calloc(1, sizeof(struct c_renderer));
   if (!render) 
     return NULL;
 
-  render->drm = drm;
-  render->egl = c_egl_init(render->drm->gbm_device);
+  render->egl = c_egl_init(mgr->gbm_device);
   if (!render->egl) goto error;
 
   render->gl = c_gles_init();
@@ -403,39 +345,18 @@ struct c_renderer *c_renderer_init(struct c_event_loop *loop, struct c_wl_displa
   render->formats = c_egl_query_formats(render->egl, &render->n_formats);
   render->wl_formats = malloc(sizeof(uint32_t) * render->n_formats);
 
-  if (create_swapchain(render) < 0) goto error;
-
   for (size_t i = 0; i < render->n_formats; i++) {
     uint32_t wl_format = drm_to_wl_shm_format(render->formats[i].drm_format);
     render->wl_formats[i] = wl_format;
   }
 
-  struct c_output_mode *preferred_mode = c_drm_get_preferred_mode(drm);
-  struct c_renderer_buffer *front_buffer = render->swapchain.buffers[0];
-  if (drmModeSetCrtc(drm->fd, drm->connector.crtc_id, front_buffer->drm_fb_id,
-                  0, 0, &drm->connector.id, 1, preferred_mode->info) != 0) {
-    c_log_errno(C_LOG_ERROR, "drmModeSetCrtc failed");
-    goto error;
-  }
-
-  c_scene_init(preferred_mode->width, preferred_mode->height);
-
-  glViewport(0, 0, preferred_mode->width, preferred_mode->height);
-  c_renderer_draw_scene(render);
-  c_event_loop_add(loop, drm->fd, render_callback, render);
-
   struct c_wl_display_listener dpy_listeners = {
-    .on_surface_commit = on_surface_commit_cb,
-    .on_surface_destroy = on_surface_destroy_cb,
-
-    .on_subsurface_destroy = on_surface_destroy_cb,
     .on_buffer_destroy = on_buffer_destroy,
   };
 
   c_wl_display_add_listener(display, &dpy_listeners, render);
-
   c_wl_display_add_supported_interface(display, "wl_shm", on_wl_shm_bind, render);
-  c_wl_display_add_supported_interface(display, "zwp_linux_dmabuf_v1", on_linux_dmabuf_bind, render);
+  c_wl_display_add_supported_interface(display, "zwp_linux_dmabuf_v1", on_linux_dmabuf_bind, mgr);
 
   return render;
 
@@ -445,19 +366,11 @@ error:
 }
 
 void c_renderer_free(struct c_renderer *render) {
-  if (render->swapchain.buffers[0])
-    c_renderer_buffer_destroy(render, render->swapchain.buffers[0]);
+  if (render->egl) c_egl_free(render->egl);
+  if (render->gl)  c_gles_free(render->gl);
 
-  if (render->swapchain.buffers[1])
-    c_renderer_buffer_destroy(render, render->swapchain.buffers[1]);
+  if (render->formats)    free(render->formats);
+  if (render->wl_formats) free(render->wl_formats);
 
-
-  if (render->egl)             c_egl_free(render->egl);
-  if (render->gl)              c_gles_free(render->gl);
-
-  if (render->formats)        free(render->formats);
-  if (render->wl_formats)     free(render->wl_formats);
-
-  c_scene_destroy();
   free(render);
 }

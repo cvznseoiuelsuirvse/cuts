@@ -29,6 +29,11 @@ typedef struct c_wl_array {
 } c_wl_array;
 
 
+struct c_wl_output {
+  c_wl_object_id id;
+  struct c_output *output;
+};
+
 struct c_wl_formats {
 	size_t    n_formats;
 	uint32_t *formats;
@@ -79,7 +84,6 @@ struct c_wl_surface {
 	c_wl_object_id          id;
 	struct c_wl_connection *conn;
 
-
   c_wl_object_id frame_id;
   c_wl_object_id frames[4];
   size_t         n_frames;
@@ -103,6 +107,8 @@ struct c_wl_surface {
 
 	struct c_wl_buffer 	*pending;
 	struct c_wl_buffer 	*active;
+
+  struct c_wl_output *output;
 };
 
 struct c_wl_subsurface {

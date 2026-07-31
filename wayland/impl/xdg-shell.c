@@ -101,7 +101,7 @@ int xdg_surface_get_toplevel(struct c_wl_connection *conn, union c_wl_arg *args)
   xdg_surface_configure(conn, xdg_surface_id, c_wl_serial());
 
   struct c_wl_display *dpy = c_wl_connection_get_dpy(conn);
-  c_wl_display_notify(dpy, xdg_surface->surface, C_WL_DISPLAY_ON_TOPLEVEL_NEW);
+  c_wl_display_notify(dpy, xdg_surface, C_WL_DISPLAY_ON_TOPLEVEL_NEW);
 
   return 0;
 }
@@ -157,7 +157,7 @@ int xdg_toplevel_set_parent(struct c_wl_connection *conn, union c_wl_arg *args) 
 
   if (args[1].o == 0) {
     if (parent)
-      c_list_remove_ptr(&parent->children, xdg_surface);
+      c_list_remove(&parent->children, xdg_surface);
 
     xdg_surface->parent = NULL;
     return 0;
@@ -181,11 +181,11 @@ int xdg_toplevel_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_xdg_surface *parent = xdg_surface->parent;
 
   struct c_wl_display *dpy = c_wl_connection_get_dpy(conn);
-  c_wl_display_notify(dpy, xdg_surface->surface, C_WL_DISPLAY_ON_TOPLEVEL_DESTROY);
+  c_wl_display_notify(dpy, xdg_surface, C_WL_DISPLAY_ON_TOPLEVEL_DESTROY);
 
   xdg_surface->surface->role = 0;
   if (parent)
-    c_list_remove_ptr(&parent->children, xdg_surface);
+    c_list_remove(&parent->children, xdg_surface);
 
   if (xdg_surface->toplevel.title)  free(xdg_surface->toplevel.title);
   if (xdg_surface->toplevel.app_id) free(xdg_surface->toplevel.app_id);
@@ -307,7 +307,7 @@ int xdg_popup_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   memset(&xdg_surface->popup, 0, sizeof(xdg_surface->popup));
   xdg_surface->surface->role = 0;
 
-  c_list_remove_ptr(&xdg_surface->parent->children, xdg_surface);
+  c_list_remove(&xdg_surface->parent->children, xdg_surface);
 
   c_wl_object_del(conn, args[0].o);
   return 0;

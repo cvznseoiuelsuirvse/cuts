@@ -8,7 +8,7 @@
 #include "wayland/proto/linux-dmabuf-v1.h"
 #include "wayland/server.h"
 
-#include "render/render.h"
+#include "render/framebuffer.h"
 
 #include "util/log.h"
 #include "util/malloc.h"
@@ -118,7 +118,7 @@ int zwp_linux_buffer_params_v1_add(struct c_wl_connection *conn, union c_wl_arg 
   c_wl_uint modifier_hi = args[5].u;
   c_wl_uint modifier_lo = args[6].u;
 
-  if (plane_idx >= C_DMABUF_MAX_PLANES)
+  if (plane_idx >= 4)
     c_wl_error_set_and_return(args[0].o, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_PLANE_IDX, "only 4 planes are supported");
 
   if (plane_idx != dma->n_planes)

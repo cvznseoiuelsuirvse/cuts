@@ -25,8 +25,8 @@
 }
 
 void print_buffer(char *buffer, size_t buffer_len);
-uint32_t drm_format_to_bpp(uint32_t format);
 int set_nonblocking(int fd);
 int starts_with(const char *string, const char *prefix);
+uint32_t hash_string(char *string);
 
 #endif

@@ -4,7 +4,7 @@
 #include <unistd.h>
 
 #include "sock.h"
-#include "backend/seat/seat.h"
+#include "seat/session/seat.h"
 
 #include "util/log.h"
 

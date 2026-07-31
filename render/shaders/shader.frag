@@ -26,5 +26,5 @@ void main() {
     content_uv = (content_uv - border_size) / (1.0 - 2.0 * border_size);
   }
 
-  fragColor = texture(tex, (content_uv + uv_offset) * uv_scale);
+  fragColor = texture(tex, uv_offset + content_uv * uv_scale);
 }

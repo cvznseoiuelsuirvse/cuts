@@ -13,10 +13,6 @@ enum c_input_keyboard_mods {
 	C_KEYBOARD_MOD_LOGO =  1 << 6,
 };
 
-enum c_input_mouse_buttons {
-	C_MOUSE_BUTTON_RIGHT,
-};
-
 enum c_input_mouse_axis_source {
 	C_MOUSE_AXIS_SOURCE_WHEEL,
 	C_MOUSE_AXIS_SOURCE_FINGER,
@@ -27,10 +23,10 @@ enum c_input_mouse_axis_source {
 struct c_input_mouse_event {
 	struct libinput_event_pointer *libinput_event;
 	double x, y;
-	int     abs;
+  int abs;
 
-	enum c_input_mouse_buttons button;
-	int      button_pressed;
+	uint32_t button;
+	int      is_pressed;
 
 	double axis;
 	double axis_discrete;
@@ -71,14 +67,32 @@ struct c_input {
 	struct {
 		struct xkb_context    *ctx;
 		struct xkb_keymap 	  *keymap;
-		struct xkb_state	  *state;
+		struct xkb_state	    *state;
 		struct xkb_rule_names *rule_names;
 	} xkb;
 
 	uint8_t capabilities;
 
 	c_list *event_listeners;
-	c_list *shortcut_listeners;
+	c_list *combo_listeners;
+
+  struct {
+    uint32_t mod_mask;
+    uint32_t button;
+
+    void    (*drag_handler)(int, void *);
+    void     *drag_handler_userdata;
+  } state;
+};
+
+struct c_input_combo {
+  struct {
+  } keyboard;
+
+  struct {
+    uint32_t btn;
+    int      drag;
+  } mouse;
 };
 
 struct c_input *c_input_init(struct c_event_loop *loop, struct c_input_libinput_interface *libinput_interface);
@@ -93,7 +107,12 @@ void c_input_add_event_listener_mouse(struct c_input *input,
 void c_input_add_event_listener_keyboard(struct c_input *input, 
 									struct c_input_event_listener_keyboard *listener, void *userdata);
 
-void c_input_add_shortcut_handler(struct c_input *input, uint32_t mod_mask, xkb_keysym_t keysym, 
-                                  void(*handler)(void *userdata), void *userdata);
+void c_input_add_combo_handler(struct c_input *input, uint32_t mod_mask,
+                               xkb_keysym_t keysym, uint32_t btn,
+                               void (*handler)(void *userdata), void *userdata);
+
+void c_input_add_drag_combo_handler(
+    struct c_input *input, uint32_t mod_mask, xkb_keysym_t keysym, uint32_t btn,
+    void (*handler)(int done, void *userdata), void *userdata);
 
 #endif

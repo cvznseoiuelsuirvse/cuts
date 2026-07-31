@@ -6,8 +6,6 @@
 #include <EGL/eglext.h>
 #include <GL/gl.h>
 
-#define C_DMABUF_MAX_PLANES 4
-
 struct c_format {
 	uint32_t drm_format;
 	uint64_t modifier;
@@ -27,7 +25,7 @@ struct c_dmabuf {
 	uint64_t modifier;
 
 	uint32_t              n_planes;
-	struct c_dmabuf_plane planes[C_DMABUF_MAX_PLANES];
+	struct c_dmabuf_plane planes[4];
 
 	EGLImageKHR image;
 	GLuint      texture;

@@ -1,49 +1,53 @@
-#include <gbm.h>
-#include <xf86drm.h>
+#include <drm_fourcc.h>
 #include <xf86drmMode.h>
 #include <EGL/egl.h>
-#include <EGL/eglext.h>
 #include <unistd.h>
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
-#include <fcntl.h>
 #include <inttypes.h>
+#include <stdlib.h>
 
-#include "render/render.h"
+#include "render/framebuffer.h"
 #include "render/gl/egl.h"
 #include "render/gl/gles.h"
 
 #include "util/log.h"
-#include "util/malloc.h"
 
-void c_renderer_buffer_destroy(struct c_renderer *render, struct c_renderer_buffer *buf) {
+#define MAX_PLANES 4
+
+void c_framebuffer_destroy(struct c_framebuffer *buf) {
   if (buf->texture) glDeleteTextures(1, &buf->texture);
-  if (buf->drm_fb_id) drmModeRmFB(render->drm->fd, buf->drm_fb_id);
-  if (buf->egl_image) eglDestroyImage(render->egl->display, buf->egl_image);
+  if (buf->drm_fb_id) drmModeRmFB(buf->drm_fd, buf->drm_fb_id);
+  if (buf->egl_image) eglDestroyImage(buf->display, buf->egl_image);
   free(buf);
 }
 
-struct c_renderer_buffer *c_renderer_buffer_create(struct c_renderer *render, uint32_t width, uint32_t height) { 
+struct c_framebuffer *c_framebuffer_create(struct c_renderer *renderer,
+                                           int drm_fd,
+                                           struct gbm_device *gbm_device,
+                                           uint32_t width, uint32_t height) {
   int success = 1;
-  struct c_renderer_buffer *buf = calloc(1, sizeof(*buf));
+  struct c_framebuffer *buf = calloc(1, sizeof(*buf));
   if (!buf) {
     return NULL;
   }
 
+  buf->drm_fd = drm_fd;
+
   uint32_t format = DRM_FORMAT_XRGB8888;
 
-  struct gbm_bo *gbm_bo = gbm_bo_create(render->drm->gbm_device, width, height, format, 
+  struct gbm_bo *gbm_bo = gbm_bo_create(gbm_device, width, height, format, 
       GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING);
   if (!gbm_bo) {
     c_log_errno(C_LOG_ERROR, "gbm_bo_create failed");
-    c_renderer_buffer_destroy(render, buf);
+    c_framebuffer_destroy(buf);
     return NULL;
   }
 
-  uint32_t handles[C_DMABUF_MAX_PLANES] = {0};
-  uint32_t pitches[C_DMABUF_MAX_PLANES] = {0};
-  uint32_t offsets[C_DMABUF_MAX_PLANES] = {0};
-  uint64_t modifier[C_DMABUF_MAX_PLANES] = {0};
+  uint32_t handles[MAX_PLANES] = {0};
+  uint32_t pitches[MAX_PLANES] = {0};
+  uint32_t offsets[MAX_PLANES] = {0};
+  uint64_t modifier[MAX_PLANES] = {0};
 
   struct c_dmabuf_params params = {
     .width = width,
@@ -51,7 +55,7 @@ struct c_renderer_buffer *c_renderer_buffer_create(struct c_renderer *render, ui
     .drm_format = format,
     .modifier = gbm_bo_get_modifier(gbm_bo),
     .n_planes = gbm_bo_get_plane_count(gbm_bo),
-    .planes = calloc(C_DMABUF_MAX_PLANES, sizeof(*params.planes)),
+    .planes = calloc(MAX_PLANES, sizeof(*params.planes)),
   };
 
   for (size_t i = 0; i < params.n_planes; i++) {
@@ -67,13 +71,15 @@ struct c_renderer_buffer *c_renderer_buffer_create(struct c_renderer *render, ui
   }
 
   int ret;
-  ret = drmModeAddFB2WithModifiers(render->drm->fd, width, height, format, handles, pitches, offsets, modifier, &buf->drm_fb_id, DRM_MODE_FB_MODIFIERS);
+  ret = drmModeAddFB2WithModifiers(drm_fd, width, height, format, handles,
+                                   pitches, offsets, modifier, &buf->drm_fb_id,
+                                   DRM_MODE_FB_MODIFIERS);
 
   if (ret < 0) {
     c_log_errno(C_LOG_WARNING, "falling back to drmModeAddFB2. "
         "drmModeAddFB2WithModifiers(format=0x%"PRIX32", modifier=0x%"PRIX64") failed", format, modifier[0]);
 
-    if (drmModeAddFB2(render->drm->fd, width, height, format, handles, pitches, offsets, &buf->drm_fb_id, 0) < 0) {
+    if (drmModeAddFB2(drm_fd, width, height, format, handles, pitches, offsets, &buf->drm_fb_id, 0) < 0) {
       c_log_errno(C_LOG_ERROR, "drmModeAddFB2(format=0x%"PRIX32") failed", format);
       success = 0;
       goto out;
@@ -81,7 +87,7 @@ struct c_renderer_buffer *c_renderer_buffer_create(struct c_renderer *render, ui
     }
   }
 
-  buf->egl_image = c_egl_create_image_from_dmabuf(render->egl, &params);
+  buf->egl_image = c_egl_create_image_from_dmabuf(renderer->egl, &params);
 
   for (uint32_t i = 0; i < params.n_planes; i++) {
     close(params.planes[i].fd);
@@ -102,7 +108,7 @@ struct c_renderer_buffer *c_renderer_buffer_create(struct c_renderer *render, ui
   glGenTextures(1, &buf->texture);
   glBindTexture(tex_target, buf->texture);
 
-  render->gl->proc.glEGLImageTargetTexture2DOES(tex_target, buf->egl_image);
+  renderer->gl->proc.glEGLImageTargetTexture2DOES(tex_target, buf->egl_image);
   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, tex_target, buf->texture, 0);
 
   if ((status = glCheckFramebufferStatus(GL_FRAMEBUFFER)) != GL_FRAMEBUFFER_COMPLETE) {
@@ -120,7 +126,7 @@ out:
 
   gbm_bo_destroy(gbm_bo);
   if (!success) {
-    c_renderer_buffer_destroy(render, buf);
+    c_framebuffer_destroy(buf);
     buf = NULL;
   }
 

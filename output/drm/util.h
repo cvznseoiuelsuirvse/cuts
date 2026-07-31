@@ -7,5 +7,6 @@
 int drm_format_num_planes(uint32_t format);
 int drm_refresh_rate_mhz(drmModeModeInfo *mode);
 const char *drm_connector_str(uint32_t connector_type);
+enum wl_shm_format_enum drm_to_wl_shm_format(uint32_t format);
 
 #endif

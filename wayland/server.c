@@ -80,7 +80,6 @@ static int c_wl_connection_read(struct c_wl_connection *conn, char *buffer, size
     int *fds = (int *)CMSG_DATA(cmsghdr);
     size_t n_fds = (cmsghdr->cmsg_len - CMSG_LEN(0)) / sizeof(int);
 
-    c_log_value(n_fds, "%d");
     for (size_t i = 0; i < n_fds; i++) {
       req_fds[(*n_req_fds)++] = fds[i];
     }
@@ -457,6 +456,11 @@ int c_wl_connection_free(struct c_wl_connection *conn) {
 
             if (wl_surface->sub.children)
               c_list_destroy(wl_surface->sub.children);
+
+          CASE_STR("xdg_surface")
+            struct c_xdg_surface *surface = o->data;
+            if (surface->children)
+              c_list_destroy(surface->children);
 
         SWITCH_STR_END;
 

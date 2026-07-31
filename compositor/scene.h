@@ -6,7 +6,7 @@
 #include "compositor/window.h"
 #include "wayland/types.h"
 
-#define C_SCENE_MAX_WINDOWS 256
+#define C_SCENE_MAX_WINDOWS 16
 
 struct c_scene_quad {
 	struct c_wl_buffer *buffer;
@@ -18,18 +18,20 @@ struct c_scene_quad {
 
   float    border_color[4];
   uint32_t border_width;
-
 };
 
-void c_scene_init(uint32_t width, uint32_t height);
-void c_scene_destroy();
+struct c_scene {
+	c_list *windows;
+  float bg_color[4];
+};
 
-void c_scene_add_window(struct c_window *window);
-void c_scene_remove_window(struct c_window *window);
+struct c_scene *c_scene_init(struct c_output_manager *mgr);
+void c_scene_free(struct c_scene *scene);
 
-int c_scene_collect(struct c_scene_quad *out, int max_quads);
-void c_scene_clear();
+void c_scene_add_window(struct c_scene *scene, struct c_window *window);
+void c_scene_remove_window(struct c_scene *scene, struct c_window *window);
+void c_scene_clear(struct c_scene *scene, struct c_output *output);
 
-void c_scene_set_background(float color[4]);
+void c_scene_set_background(struct c_scene *scene, float color[4]);
 
 #endif

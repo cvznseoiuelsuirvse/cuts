@@ -129,7 +129,7 @@ static void seat_close_device(int client_fd, struct diazepam_msg_params *params)
     if (d->id == id) {
       close(d->fd);
       client->n_devices--;
-      c_list_remove_ptr(&client->devices, d);
+      c_list_remove(&client->devices, d);
       send_ack(client_fd);
       return;
     }
@@ -294,7 +294,7 @@ static void seat_close_seat(int client_fd) {
     if (d->is_drm) drm_drop_master(d->fd);
 
   c_list_destroy(client->devices);
-  c_list_remove_ptr(&serv.clients, client);
+  c_list_remove(&serv.clients, client);
 
 }
 

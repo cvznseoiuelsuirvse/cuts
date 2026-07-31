@@ -1,6 +1,6 @@
 #include <stdlib.h>
 
-#include "backend/seat/seat.h"
+#include "seat/session/seat.h"
 
 #include "util/log.h"
 #include "util/helpers.h"

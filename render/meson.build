@@ -5,8 +5,8 @@ gbm_dep = dependency('gbm')
 render_sources = files(
   'gl/egl.c',
   'gl/gles.c',
-  'buffer.c',
-  'render.c',
+  'framebuffer.c',
+  'renderer.c',
 )
      
 render_dep = declare_dependency(

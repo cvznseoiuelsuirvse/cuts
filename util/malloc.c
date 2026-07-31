@@ -2,8 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "util/log.h"
-
 struct c_metadata {
   int ref_count;
 };
@@ -28,14 +26,12 @@ void c_free(void *data) {
 
 void c_ref(void *data) {
   struct c_metadata *m = (struct c_metadata *)data - 1;
-  c_log(C_LOG_DEBUG, "[C_REF] data: %p refcount: %d", data, m->ref_count);
   m->ref_count++;
 }
 
 
 void c_unref(void *data) {
   struct c_metadata *m = (struct c_metadata *)data - 1;
-  c_log(C_LOG_DEBUG, "[C_UNREF] data: %p refcount: %d", data, m->ref_count);
   if (--m->ref_count == 0)
     c_free(data);
 }

@@ -10,8 +10,8 @@
 #include "util/log.h"
 #include "util/helpers.h"
 
-#define VERTEX_SHADER_PATH   "render/gl/shaders/shader.vert"
-#define FRAGMENT_SHADER_PATH "render/gl/shaders/shader.frag"
+#define VERTEX_SHADER_PATH   "render/shaders/shader.vert"
+#define FRAGMENT_SHADER_PATH "render/shaders/shader.frag"
 
 static GLuint compile_shader(GLenum type) {
   GLuint shader = glCreateShader(type);

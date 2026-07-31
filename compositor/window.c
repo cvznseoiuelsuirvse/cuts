@@ -2,16 +2,14 @@
 
 #include "wayland/proto/xdg-shell.h"
 #include "wayland/proto/wayland.h"
-#include "backend/input.h"
 #include "compositor/window.h"
 #include "util/log.h"
 #include "util/helpers.h"
 
-#define window_conn(window) (window)->surface->conn
+#define window_conn(window) (window)->surface->surface->conn
 
-void c_window_resize(struct c_window *window, uint32_t width, uint32_t height, int activate) {
-  struct c_wl_surface *toplevel = window->surface;
-  struct c_xdg_surface *xdg_surface = toplevel->xdg_surface;
+void c_window_resize(struct c_window *window, uint32_t width, uint32_t height) {
+  struct c_xdg_surface *xdg_surface = window->surface;
 
   c_wl_enum states[2] = {XDG_TOPLEVEL_STATE_RESIZING, XDG_TOPLEVEL_STATE_ACTIVATED};
 
@@ -32,8 +30,7 @@ void c_window_resize(struct c_window *window, uint32_t width, uint32_t height, i
 void c_window_hide(struct c_window *window) {};
 
 void c_window_deactivate(struct c_window *window) {
-  struct c_wl_surface *surface = window->surface;
-  struct c_xdg_surface *xdg_surface = surface->xdg_surface;
+  struct c_xdg_surface *xdg_surface = window->surface;
 
   // uint32_t width = window->width - window->border_width * 2;
   // uint32_t height = window->height - window->border_width * 2;
@@ -47,8 +44,7 @@ void c_window_deactivate(struct c_window *window) {
 }
 
 void c_window_activate(struct c_window *window) {
-  struct c_wl_surface *surface = window->surface;
-  struct c_xdg_surface *xdg_surface = surface->xdg_surface;
+  struct c_xdg_surface *xdg_surface = window->surface;
   
   c_wl_enum state = XDG_TOPLEVEL_STATE_ACTIVATED;
   c_wl_array arr = {
@@ -65,7 +61,7 @@ void c_window_activate(struct c_window *window) {
 };
 
 void c_window_focus(struct c_window *window, double mx, double my) {
-  struct c_wl_surface *surface = window->surface;
+  struct c_wl_surface *surface = window->surface->surface;
 
   int wl_keyboard_serial = c_wl_serial();
   int wl_keyboard_modifiers_serial = c_wl_serial();
@@ -96,7 +92,7 @@ void c_window_focus(struct c_window *window, double mx, double my) {
 }
 
 void c_window_unfocus(struct c_window *window) {
-  struct c_wl_surface *surface = window->surface;
+  struct c_wl_surface *surface = window->surface->surface;
 
   int wl_keyboard_serial = c_wl_serial();
   int wl_pointer_serial = c_wl_serial();
@@ -120,13 +116,20 @@ void c_window_unfocus(struct c_window *window) {
 }
 
 void c_window_close(struct c_window *window) {
-  struct c_wl_surface *surface = window->surface;
-  xdg_toplevel_close(window_conn(window), surface->xdg_surface->toplevel.id);
+  struct c_xdg_surface *surface = window->surface;
+  xdg_toplevel_close(window_conn(window), surface->toplevel.id);
 }
 
 void c_window_pointer_move(struct c_window *window, double x, double y) {
-  c_wl_fixed hotspot_x = c_wl_fixed_from_double(x - window->x);
-  c_wl_fixed hotspot_y = c_wl_fixed_from_double(y - window->y);
+  x -= window->x;
+  y -= window->y;
+  if (window->surface && (window->surface->x > 0 || window->surface->y > 0)) {
+    x += window->surface->x;
+    y += window->surface->y;
+  }
+
+  c_wl_fixed hotspot_x = c_wl_fixed_from_double(x);
+  c_wl_fixed hotspot_y = c_wl_fixed_from_double(y);
 
   struct c_wl_object *o = NULL;
   c_wl_objects_for_each(window_conn(window), o) {
@@ -137,7 +140,7 @@ void c_window_pointer_move(struct c_window *window, double x, double y) {
   }
 }
 
-void c_window_pointer_button(struct c_window *window, enum c_input_mouse_buttons button, int pressed) {
+void c_window_pointer_button(struct c_window *window, uint32_t button, int pressed) {
   int serial = c_wl_serial();
 
   struct c_wl_object *o = NULL;

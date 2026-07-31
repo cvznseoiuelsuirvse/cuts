@@ -19,7 +19,6 @@ void print_buffer(char *buffer, size_t buffer_len) {
   }
 }
 
-
 int set_nonblocking(int fd) {
   int flags;
 
@@ -36,4 +35,14 @@ int starts_with(const char *string, const char *prefix) {
 
   if (s_len < p_len) return 0;
   return strncmp(string, prefix, p_len) == 0;
+}
+
+uint32_t hash_string(char *string) {
+  unsigned long hash = 5381;
+  int c;
+
+  while ((c = *string++))
+    hash = ((hash << 5) + hash) + c;
+
+  return hash;
 }

@@ -1,0 +1,71 @@
+#ifndef CUTS_OUTPUT_H
+#define CUTS_OUTPUT_H
+
+#include <stdint.h>
+#include <xf86drm.h>
+#include <xf86drmMode.h>
+#include <drm_fourcc.h>
+#include <gbm.h>
+
+#include "util/list.h"
+#include "util/event_loop.h"
+#include "wayland/display.h"
+#include "seat/session/session.h"
+
+#define c_output_backbuffer(output) (output)->swapchain.buffers[(output)->swapchain.front ^ 1]
+#define c_output_frontbuffer(output) (output)->swapchain.buffers[(output)->swapchain.front]
+
+struct c_output_mode {
+	uint32_t width, height;
+	double refresh_rate;
+	int preferred;
+	drmModeModeInfoPtr drm_info;
+};
+
+struct c_output {
+	char name[64], make[64], model[64];
+	uint32_t mm_width, mm_height;
+	int subpixel;
+
+  uint32_t x, y;
+
+	c_list *modes;
+  struct c_output_mode *current_mode;
+
+	uint32_t connector_id;
+	uint32_t crtc_id;
+	drmModeCrtcPtr orig_crtc;
+
+	struct c_cursor *cursor;
+
+	int waiting_for_flip;
+	int need_redraw;
+
+	struct {
+		int front;
+		struct c_framebuffer *buffers[2];
+	} swapchain;
+};
+
+struct c_output_manager;
+typedef void (*on_redraw_handler)(struct c_output_manager *mgr, struct c_output *output, void *userdata);
+
+struct c_output_manager {
+  int drm_fd;
+  struct gbm_device *gbm_device;
+  struct c_renderer *renderer;
+
+  void *on_redraw_userdata;
+  on_redraw_handler on_redraw;
+
+  c_list *outputs;
+  struct c_output *cursor_output;
+};
+
+struct c_output_manager *c_output_manager_init(struct c_session *session, struct c_event_loop *loop, struct c_wl_display *display);
+void c_output_manager_free(struct c_output_manager *mgr);
+void c_output_set_mode(struct c_output_manager *mgr, struct c_output *output, struct c_output_mode *mode);
+void c_output_damage(struct c_output_manager *mgr, struct c_output *output);
+void c_output_register_on_redraw(struct c_output_manager *mgr, on_redraw_handler handler, void *userdata);
+
+#endif

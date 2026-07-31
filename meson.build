@@ -16,9 +16,10 @@ c_args = [
 
 subdir('util')
 subdir('compositor')
-subdir('backend')
+subdir('seat')
 subdir('wayland')
 subdir('render')
+subdir('output')
 
 sources = [
   'cuts.c',
@@ -28,7 +29,8 @@ executable('cuts',
   sources,
   c_args: c_args,
   dependencies: [
-    backend_dep,
+    output_dep,
+    seat_dep,
     compositor_dep,
     util_dep,
     wayland_dep,

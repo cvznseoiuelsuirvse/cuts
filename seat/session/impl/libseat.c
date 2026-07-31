@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <libseat.h>
 
-#include "backend/seat/seat.h"
+#include "seat/session/seat.h"
 
 #include "util/log.h"
 

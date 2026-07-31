@@ -10,10 +10,8 @@
 #include <GLES3/gl3.h>
 
 #include "render/gl/egl.h"
+#include "output/drm/util.h"
 
-#include "backend/drm/util.h"
-
-#include "util/malloc.h"
 #include "util/log.h"
 #include "util/helpers.h"
 

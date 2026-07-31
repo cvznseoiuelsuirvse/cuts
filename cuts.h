@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <xkbcommon/xkbcommon.h>
+#include <linux/input-event-codes.h>
 
 struct border {
   uint32_t width;
@@ -16,13 +17,29 @@ typedef union {
 	uint32_t    u;
 } bind_args;
 
-typedef void(*bind_func)(bind_args *args);
+typedef void(*bind_handler)(bind_args *);
+typedef void(*bind_drag_handler)(int, bind_args *);
 
-struct bind {
+struct key_bind {
   uint32_t 	   	modmask;
   xkb_keysym_t 	keysym;
-  bind_func     func;
+
+  bind_handler  handler;
   bind_args     args;
+};
+
+struct mouse_bind {
+  uint32_t 	   	modmask;
+  xkb_keysym_t 	keysym;
+  uint32_t      btn;
+  int           drag;
+
+  union {
+    bind_handler      handler;
+    bind_drag_handler drag_handler;
+  };
+
+  bind_args         args;
 };
 
 struct layout {
@@ -31,11 +48,16 @@ struct layout {
 };
 
 // bind functions
-void quit(bind_args *args);
-void sh(bind_args *args);
-void kill_window(bind_args *args);
-void move_focus(bind_args *args);
-void switch_tag(bind_args *args);
+void quit(bind_args *);
+void spawn(bind_args *);
+void window_kill(bind_args *);
+void move_focus(bind_args *);
+void switch_tag(bind_args *);
+void window_toggle_floating(bind_args *);
+
+// bind drag functions
+void window_move(int, bind_args *);
+void window_resize(int, bind_args *);
 
 // layout functions
 void tile();

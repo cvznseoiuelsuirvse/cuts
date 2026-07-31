@@ -7,21 +7,25 @@
 enum c_wl_display_notifier {
 	C_WL_DISPLAY_ON_TOPLEVEL_NEW,
 	C_WL_DISPLAY_ON_TOPLEVEL_DESTROY,
+
+	C_WL_DISPLAY_ON_SURFACE_NEW,
 	C_WL_DISPLAY_ON_SURFACE_COMMIT,
 	C_WL_DISPLAY_ON_SURFACE_DESTROY,
-	C_WL_DISPLAY_ON_SUBSURFACE_DESTROY,
+
 	C_WL_DISPLAY_ON_BUFFER_DESTROY,
+  C_WL_DISPLAY_ON_CONNECTION_GONE,
 };
 
 struct c_wl_display_listener {
-	void (*on_toplevel_new)        (struct c_wl_surface *, void *);
-	void (*on_toplevel_destroy)    (struct c_wl_surface *, void *);
+	void (*on_toplevel_new)        (struct c_xdg_surface *, void *);
+	void (*on_toplevel_destroy)    (struct c_xdg_surface *, void *);
 
+	void (*on_surface_new)         (struct c_wl_surface *, void *);
 	void (*on_surface_commit)      (struct c_wl_surface *, void *);
 	void (*on_surface_destroy)     (struct c_wl_surface *, void *);
 
-	void (*on_subsurface_destroy)  (struct c_wl_surface *, void *);
 	void (*on_buffer_destroy)      (struct c_wl_buffer *, void *);
+  void (*on_connection_gone)     (struct c_wl_connection *, void *);
 };
 
 typedef void*(*c_wl_display_on_bind)(struct c_wl_connection *, c_wl_object_id, c_wl_uint, void *);
@@ -29,7 +33,7 @@ typedef void*(*c_wl_display_on_bind)(struct c_wl_connection *, c_wl_object_id, c
 struct c_wl_display_supported_iface {
   struct c_wl_interface *iface;
   c_wl_display_on_bind on_bind;
-  void *userdata;
+  void *on_bind_userdata;
 };
 
 struct c_wl_display {
