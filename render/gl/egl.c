@@ -236,8 +236,11 @@ struct c_format *c_egl_query_formats(struct c_egl *egl, size_t *n_entries) {
   return table;
 }
 
-EGLImageKHR c_egl_create_image_from_dmabuf(struct c_egl *egl, struct c_dmabuf_params *params) {
-  uint64_t modifier = params->modifier;
+EGLImageKHR c_egl_create_image_from_dmabuf(struct c_egl *egl, struct c_dmabuf *dmabuf) {
+  uint64_t modifier = dmabuf->modifier;
+  uint32_t width = dmabuf->width;
+  uint32_t height = dmabuf->height;
+
   int use_modifier = modifier != DRM_FORMAT_MOD_INVALID && egl->ext_support.EXT_image_dma_buf_import_modifiers;
 
   int image_attribs_size = 0;
@@ -247,14 +250,14 @@ EGLImageKHR c_egl_create_image_from_dmabuf(struct c_egl *egl, struct c_dmabuf_pa
   image_attribs[image_attribs_size++] = (key); \
   image_attribs[image_attribs_size++] = (value);
 
-  add_attrib(EGL_WIDTH,                          params->width);
-  add_attrib(EGL_HEIGHT,                         params->height);
-  add_attrib(EGL_LINUX_DRM_FOURCC_EXT,           params->drm_format);
+  add_attrib(EGL_WIDTH,  width);
+  add_attrib(EGL_HEIGHT, height);
+  add_attrib(EGL_LINUX_DRM_FOURCC_EXT, dmabuf->drm_format);
 
-  for (size_t i = 0; i < params->n_planes; i++) {
-    add_attrib(EGL_DMA_BUF_PLANEX_FD_EXT(i), params->planes[i].fd);
-    add_attrib(EGL_DMA_BUF_PLANEX_OFFSET_EXT(i), params->planes[i].offset);
-    add_attrib(EGL_DMA_BUF_PLANEX_PITCH_EXT(i), params->planes[i].stride);
+  for (size_t i = 0; i < dmabuf->n_planes; i++) {
+    add_attrib(EGL_DMA_BUF_PLANEX_FD_EXT(i), dmabuf->planes[i].fd);
+    add_attrib(EGL_DMA_BUF_PLANEX_OFFSET_EXT(i), dmabuf->planes[i].offset);
+    add_attrib(EGL_DMA_BUF_PLANEX_PITCH_EXT(i), dmabuf->planes[i].stride);
     if (use_modifier) {
       add_attrib(EGL_DMA_BUF_PLANEX_MODIFIER_HI_EXT(i), modifier >> 32);
       add_attrib(EGL_DMA_BUF_PLANEX_MODIFIER_LO_EXT(i), modifier & 0xFFFFFFFF);

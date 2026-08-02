@@ -4,17 +4,16 @@
 #include <stdint.h>
 
 #include "compositor/window.h"
-#include "wayland/types.h"
+#include "render/types.h"
 
 #define C_SCENE_MAX_WINDOWS 16
 
 struct c_scene_quad {
-	struct c_wl_buffer *buffer;
-	int32_t  x, y;
-	uint32_t width, height;
+	void *buffer;
+  enum c_render_buffer_type buffer_type;
 
-  float uv_offset[2];
-  float uv_scale[2];
+	double  x, y;
+	uint32_t width, height;
 
   float    border_color[4];
   uint32_t border_width;

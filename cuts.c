@@ -5,11 +5,6 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-#include "wayland/display.h"
-#include "wayland/server.h"
-#include "wayland/types.h"
-#include "wayland/proto/wayland.h"
-
 #include "compositor/window.h"
 #include "compositor/scene.h"
 
@@ -22,15 +17,14 @@
 #include "util/helpers.h"
 #include "util/signal.h"
 #include "util/log.h"
-#include "util/malloc.h"
 
 #include "config.h"
 
 #define LAYOUT(output)                                                         \
   {                                                                            \
-    c_scene_clear(cuts.scene, output->o);                                      \
+    c_scene_clear(cuts.scene, output);                                         \
     cuts.layout.func();                                                        \
-    c_output_damage(cuts.mgr, output->o);                                      \
+    c_output_damage(cuts.mgr, output);                                         \
   }
 
 #define clients_for_each_in_tag(comp, client) \
@@ -49,15 +43,22 @@
 #define pointer_x_prev(comp) (comp).pointer.x[(comp).pointer.coords ^ 1]
 #define pointer_y_prev(comp) (comp).pointer.y[(comp).pointer.coords ^ 1]
 
-struct output {
-  c_wl_object_id wl_id;
-  struct c_output *o;
+typedef enum bar_pos {
+  BAR_TOP = 1,
+  BAR_BOTTOM,
+  BAR_RIGHT,
+  BAR_LEFT,
+} bar_pos;
+
+struct bar {
+  uint32_t width, height;
+  bar_pos pos;
 };
 
 struct client {
   uint32_t tag;
   struct c_wl_connection *connection;
-  struct output *output;
+  struct c_output *output;
   struct c_window *window;
 };
 
@@ -77,16 +78,16 @@ struct {
 
   c_list *clients;
   struct client *focused_client;
-
-  c_list *outputs;
-  struct output *focused_output;
+  struct c_output *focused_output;
 
   uint32_t focused_tag;
 	struct layout layout;
+  struct bar bar;
+
 } cuts = {0};
 
-struct {
-  uint32_t y, height, width;
+struct tile_layout {
+  uint32_t x, y, height, width;
 
   struct {
     uint32_t x, width;
@@ -96,7 +97,7 @@ struct {
     uint32_t x, width;
   } stack;
 
-} tile_layout = {0};
+};
 
 struct client *client_new();
 void client_free(struct client *client);
@@ -105,7 +106,7 @@ void client_close(struct client *client);
 void client_toggle_floating(struct client *client);
 
 int count_tiled();
-void calc_tile_layout();
+void calc_tile_layout(struct c_output *output, struct tile_layout *layout);
 
 int wl_seat_get_keyboard(struct c_wl_connection *conn, union c_wl_arg *args);
 int wl_seat_get_pointer(struct c_wl_connection *conn, union c_wl_arg *args);
@@ -190,33 +191,33 @@ void client_close(struct client *client) {
   }
 }
 
-static void *on_wl_output_bind(struct c_wl_connection *conn, c_wl_object_id new_id, c_wl_uint version, void *userdata) {
-  struct output *output;
-  c_list_for_each(cuts.outputs, output) {
-    output->wl_id = new_id;
-    struct c_output *c_output = output->o;
+static void *on_wl_output_bind(struct c_wl_connection *conn,
+                               struct c_wl_object *wl_output, void *userdata) {
+  struct c_output *output = userdata;
 
-    if (version >= 4)
-      wl_output_name(conn, new_id, c_output->name);
+  if (wl_output->version >= 4)
+    wl_output_name(conn, wl_output->id, output->name);
 
-    wl_output_scale(conn, new_id, 1);
-    wl_output_geometry(conn, new_id, 0, 0, c_output->mm_width,
-                       c_output->mm_height, c_output->subpixel - 1, "unknown",
-                       "unknown", WL_OUTPUT_TRANSFORM_NORMAL);
+  wl_output_scale(conn, wl_output->id, 1);
+  wl_output_geometry(conn, wl_output->id, 0, 0, output->mm_width,
+                     output->mm_height, output->subpixel - 1, "unknown",
+                     "unknown", WL_OUTPUT_TRANSFORM_NORMAL);
 
-    struct c_output_mode *mode;
-    c_list_for_each(c_output->modes, mode) {
-      if (mode->preferred)
-        wl_output_mode(conn, new_id,
-                       WL_OUTPUT_MODE_PREFERRED | WL_OUTPUT_MODE_CURRENT,
-                       mode->width, mode->height, mode->refresh_rate * 1000);
-      else
-        wl_output_mode(conn, new_id, 0, mode->width, mode->height, mode->refresh_rate * 1000);
-    }
+  struct c_output_mode *mode;
+  c_list_for_each(output->modes, mode) {
+    int flags = 0;
+    if (mode->preferred)
+      flags |= WL_OUTPUT_MODE_PREFERRED;
+
+    if (mode == output->current_mode)
+      flags |= WL_OUTPUT_MODE_CURRENT;
+
+    wl_output_mode(conn, wl_output->id, flags, mode->width, mode->height, mode->refresh_rate * 1000);
+
   }
 
-  wl_output_done(conn, new_id);
-  return output;
+  wl_output_done(conn, wl_output->id);
+  return NULL;
 }
 
 int wl_seat_get_keyboard(struct c_wl_connection *conn, union c_wl_arg *args) {
@@ -275,7 +276,6 @@ void on_mouse_movement(struct c_input_mouse_event *event, void *userdata) {
     if (CURSOR_INSIDE(event->x, event->y, window))
         focused = client;
   }
-  if (!client) return;
 
   if (focused == cuts.focused_client) {
     c_window_pointer_move(focused->window, event->x, event->y);
@@ -305,23 +305,34 @@ void on_keyboard_key(struct c_input_keyboard_event *event, void *userdata) {
                         event->mods_locked, event->group, event->changed);
 }
 
-void on_surface_new(struct c_wl_surface *surface, void *userdata) {
-  struct c_wl_object *wl_output = c_wl_object_get(surface->conn, cuts.focused_output->wl_id);
-  assert(wl_output);
+static struct c_wl_surface *find_root_surface(struct c_wl_surface *surface) {
+ while (surface->sub.surface && surface->sub.surface->parent) {
+   surface = surface->sub.surface->parent;
+ }
 
-  surface->output = wl_output->data;
-  c_ref(wl_output->data);
+ while (surface->xdg_surface && surface->xdg_surface->parent) {
+   surface = surface->xdg_surface->parent->surface;
+ }
+ return surface;
+}
 
-  c_log(C_LOG_DEBUG, "surface id: %d output id: %d", surface->id, wl_output->id);
-  wl_surface_enter(surface->conn, surface->id, wl_output->id);
-};
+static void damage_from_surface(struct c_wl_surface *surface) {
+  struct c_wl_surface *root_surface = find_root_surface(surface);
+  struct client *client;
+  c_list_for_each(cuts.clients, client) {
+    if (client->window->surface->surface == root_surface) {
+      c_output_damage(cuts.mgr, client->output);
+      break;
+    }
+  }
+}
 
 void on_surface_commit_cb(struct c_wl_surface *surface, void *userdata) {
-  c_output_damage(cuts.mgr, surface->output->output);
+  damage_from_surface(surface);
 }
 
 void on_surface_destroy_cb(struct c_wl_surface *surface, void *userdata) {
-  c_output_damage(cuts.mgr, surface->output->output);
+  damage_from_surface(surface);
 }
 
 void on_window_new(struct c_xdg_surface *surface, void *userdata) {
@@ -331,14 +342,7 @@ void on_window_new(struct c_xdg_surface *surface, void *userdata) {
     return;
   }
 
-  struct output *o;
-  c_list_for_each(cuts.outputs, o) {
-    if (o->wl_id == surface->surface->output->id) {
-      client->output = o;
-      break;
-    }
-  }
-
+  client->output = cuts.focused_output;
   client->connection = surface->surface->conn;
   client->window->surface = surface;
   client->window->border_width = border.width;
@@ -355,7 +359,7 @@ void on_window_close(struct c_xdg_surface *surface, void *userdata) {
   c_list_for_each(cuts.clients, client) {
     if (client->window->surface == surface) {
       int is_visible = client->tag & cuts.focused_tag;
-      struct output *output = client->output;
+      struct c_output *output = client->output;
 
       client_close(client);
       if (is_visible) {
@@ -371,7 +375,7 @@ void on_connection_gone(struct c_wl_connection *conn, void *userdata) {
   c_list_for_each(cuts.clients, client) {
     if (client->connection == conn) {
       int is_visible = client->tag & cuts.focused_tag;
-      struct output *output = client->output;
+      struct c_output *output = client->output;
 
       client_close(client);
       if (is_visible) {
@@ -423,23 +427,43 @@ int count_tiled() {
   return i;
 }
 
-void calc_tile_layout() {
-  struct c_output_mode *mode = cuts.focused_output->o->current_mode;
+void calc_tile_layout(struct c_output *output, struct tile_layout *layout) {
+  struct c_output_mode *mode = cuts.focused_output->current_mode;
 
-  tile_layout.width = mode->width - gap * 2;
-  tile_layout.height = mode->height - gap * 2;
-  tile_layout.y = gap;
+  layout->width = mode->width - gap * 2;
+  layout->height = mode->height - gap * 2;
+  layout->y = layout->x = gap;
 
-  tile_layout.master.x = gap;
-  tile_layout.master.width = mode->width * mfact - gap * 2;
+  if (cuts.bar.pos == BAR_TOP) {
+    layout->height -= cuts.bar.height;
+    layout->y += cuts.bar.height;
+  }
 
-  tile_layout.stack.x = tile_layout.master.width + gap * 2;
-  tile_layout.stack.width = mode->width - tile_layout.master.width - gap * 3;
+  if (cuts.bar.pos == BAR_BOTTOM) {
+    layout->height -= cuts.bar.height;
+  }
+
+  if (cuts.bar.pos == BAR_RIGHT) {
+    layout->width -= cuts.bar.width;
+  }
+
+  if (cuts.bar.pos == BAR_LEFT) {
+    layout->width -= cuts.bar.width;
+    layout->x += cuts.bar.width;
+
+  }
+
+  layout->master.x = layout->x;
+  layout->master.width = mode->width * mfact - gap * 2;
+
+  layout->stack.x = layout->master.width + gap * 2;
+  layout->stack.width = mode->width - layout->master.width - gap * 3;
 }
 
 void tile() {
-  if (tile_layout.height == 0)
-    calc_tile_layout();
+  // FIXME: map tags to outputs and get output from current tag or something
+  struct tile_layout layout;
+  calc_tile_layout(cuts.focused_output, &layout);
 
   if (cuts.clients->size == 0) return;
 
@@ -450,8 +474,8 @@ void tile() {
     stack_clients = (tiled_clients - nmaster) & -(tiled_clients >= nmaster);
     master_clients = tiled_clients - stack_clients;
 
-    master_client_height = (tile_layout.height - gap * (master_clients -1)) / master_clients;
-    stack_client_height = stack_clients ? (tile_layout.height - gap * (stack_clients - 1)) / stack_clients : 0;
+    master_client_height = (layout.height - gap * (master_clients -1)) / master_clients;
+    stack_client_height = stack_clients ? (layout.height - gap * (stack_clients - 1)) / stack_clients : 0;
 
   } else {
     stack_clients = master_clients = master_client_height = stack_client_height = 0;
@@ -462,23 +486,22 @@ void tile() {
   clients_for_each_in_tag(cuts, client) {
     struct c_window *window = client->window;
     c_scene_add_window(cuts.scene, window);
-    c_log(C_LOG_DEBUG, "window %s", *window->title);
 
     if (window->state & C_WINDOW_FLOAT) continue;
 
     if (i < nmaster) {
-      window->x = tile_layout.master.x;
-      window->width = stack_clients > 0 ? tile_layout.master.width : tile_layout.width;
+      window->x = layout.master.x;
+      window->width = stack_clients > 0 ? layout.master.width : layout.width;
 
       window->height = master_client_height;
-      window->y = tile_layout.y + master_client_height * i + gap * i;
+      window->y = layout.y + master_client_height * i + gap * i;
         
     } else {
-      window->x = tile_layout.stack.x;
-      window->width = tile_layout.stack.width;
+      window->x = layout.stack.x;
+      window->width = layout.stack.width;
 
       window->height = stack_client_height;
-      window->y = tile_layout.y + stack_client_height * (i - master_clients) + gap * (i - master_clients);
+      window->y = layout.y + stack_client_height * (i - master_clients) + gap * (i - master_clients);
     }
 
     c_window_resize(window, window->width, window->height);
@@ -511,8 +534,8 @@ void window_move(int done, bind_args *args) {
   if (!(focused->window->state & C_WINDOW_FLOAT))
     client_toggle_floating(focused);
     
-  float dist_x = pointer_x(cuts) - pointer_x_prev(cuts);
-  float dist_y = pointer_y(cuts) - pointer_y_prev(cuts);
+  double dist_x = pointer_x(cuts) - pointer_x_prev(cuts);
+  double dist_y = pointer_y(cuts) - pointer_y_prev(cuts);
 
   focused->window->x+=dist_x;
   focused->window->y+=dist_y;
@@ -541,6 +564,29 @@ void window_resize(int done, bind_args *args) {
   cuts.pointer.is_dragging = !done;
 
   LAYOUT(focused->output);
+}
+
+
+void create_bar() {}
+
+void set_cursor(struct c_output *output, int size) {
+  struct c_cursor *cursor = output->cursor;
+  uint32_t buffer[cursor->width * cursor->height];
+  memset(buffer, 0, sizeof(buffer));
+  int b = 3;
+
+  for (int y = 0; y < size; y++) {
+    for (int x = 0; x < size; x++) {
+      int dist_x = MIN(x, size - x - 1);
+      int dist_y = MIN(y, size - y - 1);
+      if (dist_x < b || dist_y < b) {
+        buffer[y * cursor->height + x] = 0xffffffff;
+      } else {
+        buffer[y * cursor->height + x] = 0xff000000;
+      }
+    } 
+  }
+  c_cursor_update(cuts.mgr, output, buffer, sizeof(buffer));
 }
 
 void cleanup(int err, void *userdata) {
@@ -572,11 +618,6 @@ void cleanup(int err, void *userdata) {
     cuts.loop = NULL;
   }
 
-  if (cuts.outputs) {
-    c_list_destroy(cuts.outputs);
-    cuts.outputs = NULL;
-  }
-
   if (cuts.mgr) {
     c_output_manager_free(cuts.mgr);
     cuts.mgr = NULL;
@@ -584,7 +625,6 @@ void cleanup(int err, void *userdata) {
 
   exit(err);
 }
-
 
 int main() {
   int ret = 0;
@@ -597,7 +637,7 @@ int main() {
   struct c_log_config cfg;
   cfg.level_mask = C_LOG_INFO | C_LOG_DEBUG | C_LOG_ERROR | C_LOG_WARNING;
   cfg.level_mask |= C_LOG_WAYLAND;
-  cfg.color = 1;
+  // cfg.color = 1;
   c_log_setup(&cfg);
 
   struct c_event_loop *loop = c_event_loop_init();
@@ -626,47 +666,37 @@ int main() {
   cuts.clients = c_list_new();
   cuts.layout = layouts[0];
 
-  // FIXME: create high level cursor management in cursor/ based of low level
-  // (the existing one)
-  uint32_t cursor_buffer[32 * 32];
-  int cursor_size = 20;
-
-  for (int y = 0; y < cursor_size; y++) {
-    for (int x = 0; x < cursor_size; x++) {
-      if (y == 0 || y == (cursor_size - 1) || x == 0 || x == (cursor_size - 1)) {
-        cursor_buffer[y * cursor_size + x] = 0xFF000000;
-      } else {
-        cursor_buffer[y * cursor_size + x] = 0xFFFFFFFF;
-      }
-    }
-  }
-
-  cuts.outputs = c_list_new();
-
   struct c_output *output;
   c_list_for_each(mgr->outputs, output) {
-    // FIXME: user high level something like comp.pointer = c_pointer_init("CursorTheme", 24);
-    output->cursor = c_cursor_init(mgr, session->input);
-    c_cursor_update(mgr, output, cursor_buffer, cursor_size * 2);
-    check_init(output->cursor, ret, out);
+    set_cursor(output, 20);
 
-    c_log(C_LOG_INFO, "%s:", output->name);
+    c_log(C_LOG_INFO, "Monitor %s:", output->name);
 
+    struct c_output_mode *preferred;
     struct c_output_mode *mode;
     c_list_for_each(output->modes, mode) {
-      c_log(C_LOG_INFO, "  %dx%d@%f preferred: %s", mode->width, mode->height,
-            mode->refresh_rate, mode->preferred ? "yes" : "no");
-      if (mode->preferred) {
-        c_output_set_mode(mgr, output, mode);
+      c_log(C_LOG_INFO, "   %s%dx%d@%.3fHz", mode->preferred ? "*" : " ",
+            mode->width, mode->height, mode->refresh_rate);
+      if (mode->preferred)
+        preferred = mode;
+
+      for (size_t i = 0; i < LENGTH(monitors); i++) {
+        struct monitor m = monitors[i];
+        if (STREQ(m.name, output->name) && m.width == mode->width &&
+            m.height == mode->height && m.refresh_rate == (uint32_t)mode->refresh_rate) {
+          c_output_set_mode(mgr, output, mode);
+          goto mode_iter_end;
+        }
       }
     }
 
-    struct output *o = c_malloc(sizeof(*o));
-    o->o = output;
-    c_list_push(cuts.outputs, o, 0);
+    c_output_set_mode(mgr, output, preferred);
+
+mode_iter_end:
+    c_wl_display_add_supported_interface(display, "wl_output", on_wl_output_bind, output);
 
     if (!cuts.focused_output)
-      cuts.focused_output = o;
+      cuts.focused_output = output;
   }
 
   if (c_input_init_xkb_state(session->input, &xkb_rules) < 0) goto out;
@@ -702,7 +732,6 @@ int main() {
 
   struct c_wl_display_listener dpy_listener = {
     .on_connection_gone = on_connection_gone,
-    .on_surface_new = on_surface_new,
     .on_surface_commit = on_surface_commit_cb,
     .on_surface_destroy = on_surface_destroy_cb,
     .on_toplevel_new = on_window_new,
@@ -711,7 +740,9 @@ int main() {
 
   c_wl_display_add_listener(display, &dpy_listener, NULL);
   
-  c_wl_display_add_supported_interface(display, "wl_output", on_wl_output_bind, NULL);
+
+  cuts.bar.pos = BAR_TOP;
+  cuts.bar.height = 30;
 
   ret = c_event_loop_run(loop);
 

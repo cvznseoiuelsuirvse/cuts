@@ -32,8 +32,6 @@ void c_window_hide(struct c_window *window) {};
 void c_window_deactivate(struct c_window *window) {
   struct c_xdg_surface *xdg_surface = window->surface;
 
-  // uint32_t width = window->width - window->border_width * 2;
-  // uint32_t height = window->height - window->border_width * 2;
   uint32_t width = window->width - window->border_width * 2;
   uint32_t height = window->height - window->border_width * 2;
 

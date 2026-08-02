@@ -28,7 +28,7 @@ struct c_wl_display_listener {
   void (*on_connection_gone)     (struct c_wl_connection *, void *);
 };
 
-typedef void*(*c_wl_display_on_bind)(struct c_wl_connection *, c_wl_object_id, c_wl_uint, void *);
+typedef void*(*c_wl_display_on_bind)(struct c_wl_connection *, struct c_wl_object *, void *);
 
 struct c_wl_display_supported_iface {
   struct c_wl_interface *iface;

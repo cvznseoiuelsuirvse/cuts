@@ -19,31 +19,6 @@
 #include "util/shm.h"
 #include "util/malloc.h"
 
-
-#define VERT_POS_TOP_LEFT(vp)     vp.tl_x, -(vp.tl_y)
-#define VERT_POS_BOTTOM_LEFT(vp)  vp.bl_x, -(vp.bl_y)
-#define VERT_POS_TOP_RIGHT(vp)    vp.tr_x, -(vp.tr_y)
-#define VERT_POS_BOTTOM_RIGHT(vp) vp.br_x, -(vp.br_y)
-
-#define VERT_TOP_LEFT(vp)     VERT_POS_TOP_LEFT(vp),     0.0f, 0.0f
-#define VERT_BOTTOM_LEFT(vp)  VERT_POS_BOTTOM_LEFT(vp),  0.0f, 1.0f
-#define VERT_BOTTOM_RIGHT(vp) VERT_POS_BOTTOM_RIGHT(vp), 1.0f, 1.0f
-#define VERT_TOP_RIGHT(vp)    VERT_POS_TOP_RIGHT(vp),    1.0f, 0.0f
-
-#define VERTS(vp)                                                          \
-  {                                                                            \
-      VERT_TOP_LEFT(vp),     VERT_BOTTOM_LEFT(vp),                     \
-      VERT_BOTTOM_RIGHT(vp), VERT_TOP_LEFT(vp),                        \
-      VERT_BOTTOM_RIGHT(vp), VERT_TOP_RIGHT(vp),                       \
-  }
-
-struct vert_pos {
-	float tl_x, tl_y;
-	float bl_x, bl_y;
-	float br_x, br_y;
-	float tr_x, tr_y;
-};
-
 #define GL_COLOR_VEC4(v) v[0], v[1], v[2], v[3]
 
 static void clear_color(float color[4]) {
@@ -51,83 +26,17 @@ static void clear_color(float color[4]) {
   glClear(GL_COLOR_BUFFER_BIT);
 }
 
-static inline float value_transform_x(int value, int max_value) {
-	return -1 + (float)value/max_value * 2;
-}
+static int import_raw(struct c_renderer *render, struct c_rawbuf *shm) {
+	if (c_gles_texture_from_raw(shm, shm->width, shm->height) == -1) {
+    c_log(C_LOG_ERROR, "failed to create a texture from shm");
+    return -1;
+  }
 
-static inline float value_transform_y(int value, int max_value) {
-	return 1 + (float)value/max_value * -2;
-}
-
-static void create_verts(uint32_t width, uint32_t height, int32_t x, int32_t y,
-		struct vert_pos *vp, uint32_t max_width, uint32_t max_height) {
-
-	vp->tl_x = value_transform_x(x, max_width);
-	vp->tl_y = value_transform_y(y, max_height);
-
-	vp->bl_x = value_transform_x(x, max_width);
-	vp->bl_y = value_transform_y(y + height, max_height);
-
-	vp->br_x = value_transform_x(x + width, max_width);
-	vp->br_y = value_transform_y(y + height, max_height);
-
-	vp->tr_x = value_transform_x(x + width, max_width);
-	vp->tr_y = value_transform_y(y, max_height);
-}
-
-static void render_quad(struct c_renderer *render, struct c_output *output, struct c_scene_quad *quad, GLuint gl_texture) {
-	struct c_gles *gl = render->gl;
-	struct c_output_mode *mode = output->current_mode;
-
-	glUseProgram(gl->program);
-	glBindBuffer(GL_ARRAY_BUFFER, gl->vbo);
-  
-  glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, gl_texture);
-
-	struct vert_pos vp = {0};
-	create_verts(
-      quad->width,
-      quad->height,
-      quad->x,
-      quad->y,
-      &vp, 
-      mode->width,
-      mode->height
-    );
-
-  float verts[] = VERTS(vp);
-  glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
-
-  GLint tex_loc = glGetUniformLocation(gl->program, "tex");
-  GLint border_size_loc = glGetUniformLocation(gl->program, "border_size");
-  GLint border_color_loc = glGetUniformLocation(gl->program, "border_color");
-  GLint draw_border_loc = glGetUniformLocation(gl->program, "draw_border");
-  GLint uv_offset_loc = glGetUniformLocation(gl->program, "uv_offset");
-  GLint uv_scale_loc = glGetUniformLocation(gl->program, "uv_scale");
-
-#define border_color_args quad->border_color[0], quad->border_color[1], quad->border_color[2], quad->border_color[3]
-
-	glUniform1i(tex_loc, 0);
-  glUniform1i(draw_border_loc, quad->border_width > 0);
-  glUniform2f(border_size_loc, (float)quad->border_width / quad->width, (float)quad->border_width / quad->height);
-  glUniform4f(border_color_loc, border_color_args);
-
-  glUniform2f(uv_offset_loc, quad->uv_offset[0], quad->uv_offset[1]);
-  glUniform2f(uv_scale_loc, quad->uv_scale[0], quad->uv_scale[1]);
-
-	glDrawArrays(GL_TRIANGLES, 0, 6);
-}
-
-static int import_shm(struct c_renderer *render, struct c_wl_buffer *buf) {
-	struct c_shm *shm = buf->shm;
-	c_gles_texture_from_shm(shm, buf->width / buf->scale, buf->height / buf->scale);
 	return 0;
 }
 
-static int import_dmabuf(struct c_renderer *render, struct c_wl_buffer *buf) {
+static int import_dmabuf(struct c_renderer *render, struct c_dmabuf *dmabuf) {
 	int ret = 0;
-	struct c_dmabuf *dmabuf = buf->dma;
 
 	struct c_format *format = NULL;
 	for (size_t i = 0; i < render->n_formats; i++) {
@@ -151,30 +60,25 @@ static int import_dmabuf(struct c_renderer *render, struct c_wl_buffer *buf) {
 		goto out;
 	}
 
-	if (buf->width > format->max_width || buf->height > format->max_height) {
+	if (dmabuf->width > format->max_width || dmabuf->height > format->max_height) {
 		c_log(C_LOG_ERROR, "buffer is too large. %s (0x%08"PRIx32") max resolution: %ux%u",
 		      format_name, format->drm_format, format->max_width, format->max_height);
 		ret = -1;
 		goto out;
 	}
 
-	struct c_dmabuf_params params = {
-		.width      = buf->width / buf->scale,
-		.height     = buf->height / buf->scale,
-		.modifier   = dmabuf->modifier,
-		.drm_format = dmabuf->drm_format,
-		.n_planes   = dmabuf->n_planes,
-		.planes     = dmabuf->planes,
-	};
-
-	dmabuf->image = c_egl_create_image_from_dmabuf(render->egl, &params);
+	dmabuf->image = c_egl_create_image_from_dmabuf(render->egl, dmabuf);
 	if (!dmabuf->image) {
 		c_log(C_LOG_ERROR, "failed to import dmabuf");
 		ret = -1;
 		goto out;
 	}
 
-	c_gles_texture_from_dmabuf_image(render->gl, dmabuf);
+	if (c_gles_texture_from_dma(render->gl, dmabuf) == -1) {
+    c_log(C_LOG_ERROR, "failed to create a texture from dmabuf");
+    ret = -1;
+    goto out;
+  }
 
 	for (uint32_t i = 0; i < dmabuf->n_planes; i++) {
 		close(dmabuf->planes[i].fd);
@@ -185,15 +89,20 @@ out:
 	return ret;
 }
 
-static GLuint ensure_imported(struct c_renderer *render, struct c_wl_buffer *buf) {
-	if (buf->type == C_WL_BUFFER_DMA) {
-		if (buf->dma->texture == 0)
-			if (import_dmabuf(render, buf) < 0) return 0;
-		return buf->dma->texture;
-	} else if (buf->type == C_WL_BUFFER_SHM) {
-		if (buf->shm->texture == 0)
-			if (import_shm(render, buf) < 0) return 0;
-		return buf->shm->texture;
+static struct c_gles_texture *ensure_imported(struct c_renderer *render, void *buffer, enum c_render_buffer_type buf_type) {
+	if (buf_type == C_BUFFER_DMA) {
+    struct c_dmabuf *buf = buffer;
+		if (!buf->texture)
+			if (import_dmabuf(render, buf) < 0) return NULL;
+
+		return buf->texture;
+
+	} else if (buf_type == C_BUFFER_RAW) {
+    struct c_rawbuf *buf = buffer;
+		if (!buf->texture)
+			if (import_raw(render, buf) < 0) return NULL;
+
+		return buf->texture;
 	}
 
 	assert(0);
@@ -225,7 +134,7 @@ int c_renderer_create_format_table(struct c_renderer *render) {
   return rfd;
 }
 
-static void *on_wl_shm_bind(struct c_wl_connection *conn, c_wl_object_id new_id, c_wl_uint version, void *userdata) {
+static void *on_wl_shm_bind(struct c_wl_connection *conn, struct c_wl_object *wl_shm, void *userdata) {
   struct c_renderer *render = userdata;
 
   struct c_wl_formats *wl_formats = c_malloc(sizeof(*wl_formats));
@@ -239,7 +148,7 @@ static void *on_wl_shm_bind(struct c_wl_connection *conn, c_wl_object_id new_id,
 
   for (size_t i = 0; i < wl_formats->n_formats; i++) {
     if (i > 0 && wl_formats->formats[i-1] != wl_formats->formats[i])
-      wl_shm_format(conn, new_id, wl_formats->formats[i]);
+      wl_shm_format(conn, wl_shm->id, wl_formats->formats[i]);
   }
 
   return wl_formats;
@@ -256,7 +165,7 @@ static int get_dev_id(int drm_fd, dev_t *dev_id) {
   return 0;
 }
 
-static void *on_linux_dmabuf_bind(struct c_wl_connection *conn, c_wl_object_id new_id, c_wl_uint version, void *userdata) {
+static void *on_linux_dmabuf_bind(struct c_wl_connection *conn, struct c_wl_object *object, void *userdata) {
   struct c_output_manager *mgr = userdata;
   struct c_wl_linux_dmabuf_ctx *ctx = c_malloc(sizeof(*ctx));
 
@@ -294,13 +203,14 @@ void c_renderer_draw(struct c_renderer *render, struct c_output *output,
   clear_color(backgroup);
 
 	for (size_t i = 0; i < quad_n; i++) {
-    struct c_wl_buffer *buf = quads[i].buffer;
-		GLuint tex = ensure_imported(render, buf);
-		if (tex == 0) {
-      c_log(C_LOG_WARNING, "failed to import %s buffer#%d", buf->type == C_WL_BUFFER_DMA ? "DMA" : "SHM", buf->id);
+    struct c_scene_quad quad = quads[i];
+
+		struct c_gles_texture *texture = ensure_imported(render, quad.buffer, quad.buffer_type);
+		if (!texture) {
+      c_log(C_LOG_WARNING, "failed to import %s buffer", quad.buffer_type == C_BUFFER_DMA ? "DMA" : "SHM");
       continue;
     }
-		render_quad(render, output, &quads[i], tex);
+		c_gles_draw_quad(render->gl, output, &quads[i], texture);
 	}
 
   glFlush();
@@ -311,24 +221,24 @@ void c_renderer_draw(struct c_renderer *render, struct c_output *output,
   output->need_redraw = 0;
 }
 
-static int destroy_buffer(struct c_renderer *render, struct c_wl_buffer *buf) {
-	if (buf->type == C_WL_BUFFER_DMA) {
-		eglDestroyImage(render->egl->display, buf->dma->image);
-		glDeleteTextures(1, &buf->dma->texture);
-	} else if (buf->type == C_WL_BUFFER_SHM) {
-		glDeleteTextures(1, &buf->shm->texture);
-	}
-
-	c_free(buf->dma);
-	buf->dma = NULL;
-
-	return 0;
-}
-
-
 static void on_buffer_destroy(struct c_wl_buffer *buffer, void *userdata) {
   struct c_renderer *render = userdata;
-  destroy_buffer(render, buffer);
+  if (buffer->dma && !buffer->shm) {
+    struct c_dmabuf *buf = buffer->dma;
+    if (buf->image)
+      eglDestroyImage(render->egl->display, buf->image);
+
+    if (buf->texture)
+      glDeleteTextures(1, &buf->texture->texture);
+
+    free(buf->texture);
+
+  } else if (buffer->shm && !buffer->dma) {
+    struct c_rawbuf *buf = buffer->shm;
+    if (buf->texture)
+      glDeleteTextures(1, &buf->texture->texture);
+    free(buf->texture);
+  }
 }
 
 struct c_renderer *c_renderer_init(struct c_output_manager *mgr, struct c_wl_display *display) {

@@ -8,15 +8,15 @@
 #define MOUSE_CLICK(func) 0, .handler=func
 
 static const uint32_t gap = 15;
-static const uint32_t background = 0x2d862dff;
+static const uint32_t background = 0x93A3BCff;
 
 static const float mfact =      0.45f;
 static const uint32_t nmaster = 2;
 
 static struct border border = {
   .width = 3,
-  .c_focus =   0xff99ffff,
-  .c_default = 0xccccffff,
+  .c_focus = 0x48ACF0ff,
+  .c_default = 0x6F584Bff,
 };
 
 static struct xkb_rule_names xkb_rules = {
@@ -24,6 +24,9 @@ static struct xkb_rule_names xkb_rules = {
     .options = "grp:toggle,caps:escape",
 };
 
+static struct monitor monitors[] = {
+  {"eDP-1", 0, 0, 2560, 1600, 165},
+};
 
 static struct key_bind keys[] = {
 	{LEADER,                        XKB_KEY_q,                         quit, 			     {}},

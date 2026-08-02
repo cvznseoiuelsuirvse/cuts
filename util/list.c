@@ -86,7 +86,8 @@ void *c_list_insert(c_list **head, uint32_t i, void *data, size_t data_size) {
   }
 
   // last
-  return c_list_push(l, data, data_size);
+  (*head)->size--;
+  return c_list_push(*head, data, data_size);
 }
 
 void c_list_remove(c_list **head, void *data) {

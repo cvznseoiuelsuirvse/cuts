@@ -1,4 +1,5 @@
 #include <sys/mman.h>
+#include <unistd.h>
 #include <errno.h>
 #include <assert.h>
 #include <stdlib.h>
@@ -59,13 +60,12 @@ int wl_registry_bind(struct c_wl_connection *conn, union c_wl_arg *args) {
 
   if (!interface) c_wl_error_set_and_return(new_id, WL_DISPLAY_ERROR_IMPLEMENTATION, "interface is not supported");
 
-  c_wl_object_add(conn, new_id, version, interface->iface, NULL);
+  struct c_wl_object *object = c_wl_object_add(conn, new_id, version, interface->iface, NULL);
 
   if (interface->on_bind) {
-    void *bind_data = interface->on_bind(conn, new_id, version, interface->on_bind_userdata);
+    void *bind_data = interface->on_bind(conn, object, interface->on_bind_userdata);
     if (bind_data)
-      c_wl_object_get(conn, new_id)->data = bind_data;
-    
+      object->data = bind_data;
   }
 
   return 0;
@@ -156,23 +156,24 @@ format_supported:
   }
 
   struct c_wl_buffer *c_wl_buffer = c_malloc(sizeof(*c_wl_buffer));
-  struct c_shm *c_shm = c_malloc(sizeof(*c_shm));
+  struct c_rawbuf *buf = c_malloc(sizeof(*buf));
 
   c_wl_buffer->id = wl_buffer_id;
   c_wl_buffer->conn = conn;
-  c_wl_buffer->width = width;
-  c_wl_buffer->height = height;
-  c_wl_buffer->type = C_WL_BUFFER_SHM;
   c_wl_buffer->scale = 1;
 
-  c_shm->stride = stride;
-  c_shm->format = format;
-  c_shm->offset = offset;
-  c_shm->base_ptr = &pool->ptr;
-  c_wl_buffer->shm = c_shm;
+  buf->width = width;
+  buf->height = height;
+  buf->stride = stride;
+  buf->format = format;
+  buf->offset = offset;
+  buf->base_ptr = &pool->ptr;
+
+  c_wl_buffer->shm = buf;
 
   struct c_wl_interface *iface = c_wl_interface_get("wl_buffer");
   c_wl_object_add(conn, wl_buffer_id, iface->version, iface, c_wl_buffer);
+
   return 0;
 }
 
@@ -198,6 +199,8 @@ int wl_shm_pool_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_wl_shm_pool *pool = c_wl_object_get(conn, wl_shm_pool_id)->data;
 
   munmap(pool->ptr, pool->size);
+  close(pool->fd);
+
   c_wl_object_del(conn, wl_shm_pool_id);
   return 0;
 }
@@ -223,6 +226,12 @@ int wl_buffer_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
 
   struct c_wl_display *dpy = c_wl_connection_get_dpy(conn);
   c_wl_display_notify(dpy, wl_buffer, C_WL_DISPLAY_ON_BUFFER_DESTROY);
+
+  if (wl_buffer->dma)
+    c_free(wl_buffer->dma);
+
+  if (wl_buffer->shm)
+    c_free(wl_buffer->shm);
 
   wl_buffer->id = 0;
   c_wl_object_del(conn, self->id);

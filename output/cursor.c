@@ -6,6 +6,7 @@
 #include "output/cursor.h"
 #include "seat/input.h"
 #include "util/log.h"
+#include "util/helpers.h"
 
 struct __pointer_area {
   uint32_t x, y, width, height;
@@ -29,11 +30,8 @@ static void on_mouse_movement_cb(struct c_input_mouse_event *event, void *userda
     new_y = libinput_event_pointer_get_absolute_y_transformed(event->libinput_event, height);
   }
 
-  if (new_x < 0) new_x = 0;
-  if (new_x > width) new_x = width;
-
-  if (new_y < 0) new_y = 0;
-  if (new_y > height) new_y = height;
+  new_x = MAX(0, MIN(new_x, width));
+  new_y = MAX(0, MIN(new_y, height));
 
   output->cursor->x = new_x;
   output->cursor->y = new_y;
@@ -58,10 +56,10 @@ static void on_mouse_movement_cb(struct c_input_mouse_event *event, void *userda
   drmModeMoveCursor(mgr->drm_fd, output->crtc_id, new_x, new_y);
 }
 
-int c_cursor_update(struct c_output_manager *mgr, struct c_output *output, uint32_t *buffer,
+int c_cursor_update(struct c_output_manager *mgr, struct c_output *output, void *buffer,
                     size_t buffer_size) {
   struct c_cursor *cursor = output->cursor;
-  if (gbm_bo_write(cursor->gbm_bo, buffer, buffer_size * sizeof(uint32_t)) != 0) {
+  if (gbm_bo_write(cursor->gbm_bo, buffer, buffer_size) != 0) {
     c_log_errno(C_LOG_ERROR, "gbm_bo_write failed");
     return -1;
   }
@@ -80,21 +78,19 @@ void c_cursor_free(struct c_cursor *cursor) {
   free(cursor);
 }
 
-struct c_cursor *c_cursor_init(struct c_output_manager *mgr, struct c_input *input) {
+struct c_cursor *c_cursor_init(struct c_output_manager *mgr,
+                               struct c_input *input, uint32_t width,
+                               uint32_t height) {
   struct c_cursor *cursor = calloc(1, sizeof(*cursor));
   if (!cursor) {
     c_log(C_LOG_ERROR, "calloc failed");
     return NULL;
   }
 
-  uint64_t w, h;
-  if (drmGetCap(mgr->drm_fd, DRM_CAP_CURSOR_WIDTH, &w) != 0) w = 32;
-  if (drmGetCap(mgr->drm_fd, DRM_CAP_CURSOR_HEIGHT, &h) != 0) h = 32;
+  cursor->width = width;
+  cursor->height = height;
 
-  cursor->width = w;
-  cursor->height = h;
-
-  cursor->gbm_bo = gbm_bo_create(mgr->gbm_device, w, h, GBM_FORMAT_ARGB8888, GBM_BO_USE_CURSOR | GBM_BO_USE_WRITE);
+  cursor->gbm_bo = gbm_bo_create(mgr->gbm_device, width, height, GBM_FORMAT_ARGB8888, GBM_BO_USE_CURSOR | GBM_BO_USE_WRITE);
   if (!cursor->gbm_bo) {
     c_log_errno(C_LOG_ERROR, "gbm_bo_create failed");
     goto error;
@@ -103,6 +99,7 @@ struct c_cursor *c_cursor_init(struct c_output_manager *mgr, struct c_input *inp
   struct c_input_event_listener_mouse input_listener_mouse = {
     .on_mouse_movement = on_mouse_movement_cb,
   };
+
   c_input_add_event_listener_mouse(input, &input_listener_mouse, mgr);
 
   return cursor;

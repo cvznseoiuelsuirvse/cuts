@@ -9,21 +9,34 @@
 #include "util/log.h"
 #include "util/helpers.h"
 
+static void get_surface_buf_size(struct c_wl_surface *surface, uint32_t *width, uint32_t *height) {
+  if (surface->active->dma) {
+    *width = surface->active->dma->width / surface->active->scale;
+    *height = surface->active->dma->height / surface->active->scale;
+  } else {
+    *width = surface->active->shm->width / surface->active->scale;
+    *height = surface->active->shm->height / surface->active->scale;
+  }
+}
+
 static void collect_surface_tree(struct c_window *window, struct c_wl_surface *surface,
                                   int depth, struct c_scene_quad *out, int *count, int max) {
   if (!surface->active) return;
   if (*count >= max) return;
 
+  uint32_t buf_width, buf_height;
+  get_surface_buf_size(surface, &buf_width, &buf_height);
+
   struct c_scene_quad q = {
-    .buffer = surface->active,
+    .buffer = surface->active->dma ? (void *)surface->active->dma : (void *)surface->active->shm,
+    .buffer_type = surface->active->dma ? C_BUFFER_DMA : C_BUFFER_RAW,
+
     .width  = window->width,
     .height = window->height,
     .x = window->x,
     .y = window->y,
     .border_width = window->border_width,
     .border_color = HEX_TO_VEC4(window->border_color),
-    .uv_scale = {1.0f, 1.0f},
-    .uv_offset = {0.0f},
   };
 
   struct {
@@ -36,12 +49,6 @@ static void collect_surface_tree(struct c_window *window, struct c_wl_surface *s
     win_geom.y = surface->xdg_surface->y;
     win_geom.w = surface->xdg_surface->width;
     win_geom.h = surface->xdg_surface->height;
-
-    q.uv_offset[0] = (float)win_geom.x / surface->active->width;
-    q.uv_offset[1] = (float)win_geom.y / surface->active->height;
-
-    q.uv_scale[0] = (float)win_geom.w / surface->active->width;
-    q.uv_scale[1] = (float)win_geom.h / surface->active->height;
   }
 
   c_log(C_LOG_DEBUG, "%-*s surface#%d %p width=%d height=%d x=%d y=%d depth=%d",
@@ -55,15 +62,18 @@ static void collect_surface_tree(struct c_window *window, struct c_wl_surface *s
 		if (!sub_s->surface->active) continue;
 		if (*count >= max) return;
 
+    uint32_t s_buf_width, s_buf_height;
+    get_surface_buf_size(sub_s->surface, &s_buf_width, &s_buf_height);
+
     struct c_scene_quad q_sub = {
-      .buffer = sub_s->surface->active,
-      .width = sub_s->surface->active->width,
-      .height = sub_s->surface->active->height,
+      .buffer = sub_s->surface->active->dma ? (void *)sub_s->surface->active->dma : (void *)sub_s->surface->active->shm,
+      .buffer_type = sub_s->surface->active->dma ? C_BUFFER_DMA : C_BUFFER_RAW,
+
+      .width = s_buf_width,
+      .height = s_buf_height,
       .border_width = 0,
       .x = window->x + sub_s->x - win_geom.x + window->border_width,
       .y = window->y + sub_s->y - win_geom.y + window->border_width,
-      .uv_offset = {0},
-      .uv_scale = {1.0f, 1.0f},
     };
 
 		c_log(C_LOG_DEBUG, "%-*s SUB-surface#%d %p width=%d height=%d x=%d y=%d depth=%d",

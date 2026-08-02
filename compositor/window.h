@@ -13,8 +13,8 @@ enum c_window_states {
 };
 
 struct c_window {
-  int32_t x;
-  int32_t y;
+  double x;
+  double y;
   uint32_t width;
   uint32_t height;
 

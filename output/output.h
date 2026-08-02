@@ -19,7 +19,7 @@ struct c_output_mode {
 	uint32_t width, height;
 	double refresh_rate;
 	int preferred;
-	drmModeModeInfoPtr drm_info;
+	drmModeModeInfo drm_info;
 };
 
 struct c_output {

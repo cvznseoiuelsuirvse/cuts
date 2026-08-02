@@ -49,17 +49,16 @@ struct c_framebuffer *c_framebuffer_create(struct c_renderer *renderer,
   uint32_t offsets[MAX_PLANES] = {0};
   uint64_t modifier[MAX_PLANES] = {0};
 
-  struct c_dmabuf_params params = {
+  struct c_dmabuf dmabuf = {
     .width = width,
     .height = height,
     .drm_format = format,
     .modifier = gbm_bo_get_modifier(gbm_bo),
     .n_planes = gbm_bo_get_plane_count(gbm_bo),
-    .planes = calloc(MAX_PLANES, sizeof(*params.planes)),
   };
 
-  for (size_t i = 0; i < params.n_planes; i++) {
-    struct c_dmabuf_plane *plane = &params.planes[i];
+  for (size_t i = 0; i < dmabuf.n_planes; i++) {
+    struct c_dmabuf_plane *plane = &dmabuf.planes[i];
     plane->fd = gbm_bo_get_fd(gbm_bo);
     plane->stride = gbm_bo_get_stride(gbm_bo);
     plane->offset = gbm_bo_get_offset(gbm_bo, i);
@@ -67,7 +66,7 @@ struct c_framebuffer *c_framebuffer_create(struct c_renderer *renderer,
     handles[i] = gbm_bo_get_handle(gbm_bo).u32;
     pitches[i] = plane->stride;
     offsets[i] = plane->offset;
-    modifier[i] = params.modifier;
+    modifier[i] = dmabuf.modifier;
   }
 
   int ret;
@@ -87,17 +86,16 @@ struct c_framebuffer *c_framebuffer_create(struct c_renderer *renderer,
     }
   }
 
-  buf->egl_image = c_egl_create_image_from_dmabuf(renderer->egl, &params);
+  buf->egl_image = c_egl_create_image_from_dmabuf(renderer->egl, &dmabuf);
 
-  for (uint32_t i = 0; i < params.n_planes; i++) {
-    close(params.planes[i].fd);
+  for (uint32_t i = 0; i < dmabuf.n_planes; i++) {
+    close(dmabuf.planes[i].fd);
   } 
 
   if (!buf->egl_image) {
     success = 0;
     goto out;
   }
-
  
   GLenum status;
   GLenum tex_target = GL_TEXTURE_2D;
@@ -122,8 +120,6 @@ struct c_framebuffer *c_framebuffer_create(struct c_renderer *renderer,
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 out:
-  free(params.planes);
-
   gbm_bo_destroy(gbm_bo);
   if (!success) {
     c_framebuffer_destroy(buf);

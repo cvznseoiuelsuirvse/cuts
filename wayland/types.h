@@ -56,16 +56,10 @@ enum c_wl_buffer_type {
 struct c_wl_buffer {
 	c_wl_object_id id;
   struct c_wl_connection *conn;
-  c_wl_int       scale;
+	 c_wl_int scale;
 
-	c_wl_uint width;
-	c_wl_uint height;
-
-	enum c_wl_buffer_type type;	
-	union {
-		struct c_dmabuf *dma;
-		struct c_shm    *shm;
-	};
+  struct c_dmabuf *dma;
+  struct c_rawbuf *shm;
 };
 
 struct c_wl_region {

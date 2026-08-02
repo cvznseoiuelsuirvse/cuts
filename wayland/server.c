@@ -1,5 +1,7 @@
+#include <sys/mman.h>
 #include <assert.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <sys/socket.h>
 #include <stdarg.h>
 
@@ -354,10 +356,11 @@ out:
   return ret;
 }
 
-int c_wl_object_add(struct c_wl_connection *conn, c_wl_new_id id,
+struct c_wl_object *c_wl_object_add(struct c_wl_connection *conn, c_wl_new_id id,
                     uint32_t version, const struct c_wl_interface *interface,
                     void *data) {
-  if (c_wl_object_get(conn, id)) return -1;
+
+  if (c_wl_object_get(conn, id)) return NULL;
   assert(interface);
 
   struct c_wl_object new_object = {
@@ -367,18 +370,19 @@ int c_wl_object_add(struct c_wl_connection *conn, c_wl_new_id id,
     .data = data,
   };
 
-  c_map_set(conn->objects, id, &new_object, sizeof(struct c_wl_object));
-
-  if (0 < id && id < 0xFF000000) 
+  if (0 < id && id < 0xFF000000) {
     c_bitmap_set(conn->client_id_pool, id - 1);
-  else if (id == 0) {
+
+  } else if (id == 0) {
     c_wl_object_id free_id = c_bitmap_get_free(conn->server_id_pool);
     c_bitmap_set(conn->server_id_pool, free_id);
-    return free_id + 0xFF000000;
-  } else
-    c_bitmap_set(conn->server_id_pool, id - 1);
+    id = free_id + 0xFF000000;
 
-  return id;
+  } else {
+    c_bitmap_set(conn->server_id_pool, id - 1);
+  }
+
+  return c_map_set(conn->objects, id, &new_object, sizeof(struct c_wl_object));
 }
 
 inline struct c_wl_object *c_wl_object_get(struct c_wl_connection *conn, c_wl_object_id id) {
@@ -409,9 +413,9 @@ struct c_wl_connection *c_wl_connection_init(int client_fd, struct c_wl_display 
     return NULL;
   }
 
-  conn->objects = c_map_new(512);
-  conn->client_id_pool = c_bitmap_new(4096);
-  conn->server_id_pool = c_bitmap_new(4096);
+  conn->objects = c_map_new(1024 * 8);
+  conn->client_id_pool = c_bitmap_new(1024 * 8);
+  conn->server_id_pool = c_bitmap_new(1024 * 8);
   conn->client_fd = client_fd;
   conn->dpy = display;
 
@@ -440,7 +444,14 @@ int c_wl_connection_free(struct c_wl_connection *conn) {
       if (refcount == 1) {
         SWITCH_STR(o->iface->name)
           CASE_STR("wl_buffer")
-            c_wl_display_notify(conn->dpy, o->data, C_WL_DISPLAY_ON_BUFFER_DESTROY);
+            struct c_wl_buffer *buf = o->data;
+            c_wl_display_notify(conn->dpy, buf, C_WL_DISPLAY_ON_BUFFER_DESTROY);
+
+            if (buf->dma)
+              c_free(buf->dma);
+
+            if (buf->shm)
+              c_free(buf->shm);
 
           CASE_STR("wl_surface")
             struct c_wl_surface *wl_surface = o->data;
@@ -461,6 +472,15 @@ int c_wl_connection_free(struct c_wl_connection *conn) {
             struct c_xdg_surface *surface = o->data;
             if (surface->children)
               c_list_destroy(surface->children);
+
+          CASE_STR("zwp_linux_dmabuf_v1")
+            struct c_wl_linux_dmabuf_ctx *ctx = o->data;
+            close(ctx->ft_fd);
+
+          CASE_STR("wl_shm_pool")
+          struct c_wl_shm_pool *pool = o->data;
+            munmap(pool->ptr, pool->size);
+            close(pool->fd);
 
         SWITCH_STR_END;
 

@@ -88,7 +88,6 @@ static int _libseat_device_close(void *backend, int id) {
 
 static int _libseat_dispatch(void *backend) {
   struct libseat_backend *b = backend;
-  c_log(C_LOG_DEBUG, "backend %p", b);
   if (libseat_dispatch(b->libseat, 0) < 0) {
     c_log_errno(C_LOG_ERROR, "libseat_dispatch failed");
     return -1;

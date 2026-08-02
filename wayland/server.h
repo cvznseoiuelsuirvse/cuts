@@ -84,7 +84,7 @@ struct c_wl_interface {
 void c_wl_interface_add(struct c_wl_interface *interface);
 struct c_wl_interface *c_wl_interface_get(const char *interface_name);
 
-int c_wl_object_add(struct c_wl_connection *conn, c_wl_new_id id,
+struct c_wl_object *c_wl_object_add(struct c_wl_connection *conn, c_wl_new_id id,
                     uint32_t version, const struct c_wl_interface *interface,
                     void *data);
 

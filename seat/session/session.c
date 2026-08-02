@@ -44,10 +44,10 @@ static void input_close_restricted(int fd, void *userdata) {
   }
 }
 
-static void *on_wl_seat_bind(struct c_wl_connection *conn, c_wl_object_id new_id, c_wl_uint version, void *userdata) {
+static void *on_wl_seat_bind(struct c_wl_connection *conn, struct c_wl_object *wl_seat, void *userdata) {
   struct c_input *input = userdata;
-  wl_seat_name(conn, new_id, "seat0");
-  wl_seat_capabilities(conn, new_id, input->capabilities);
+  wl_seat_name(conn, wl_seat->id, "seat0");
+  wl_seat_capabilities(conn, wl_seat->id, input->capabilities);
   return NULL;
 }
 

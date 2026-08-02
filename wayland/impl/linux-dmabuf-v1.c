@@ -8,7 +8,7 @@
 #include "wayland/proto/linux-dmabuf-v1.h"
 #include "wayland/server.h"
 
-#include "render/framebuffer.h"
+#include "render/types.h"
 
 #include "util/log.h"
 #include "util/malloc.h"
@@ -48,6 +48,7 @@ int zwp_linux_dmabuf_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *ar
   C_WL_CHECK_IF_REGISTERED(zwp_linux_buffer_v1_id, zwp_linux_buffer_v1);
 
   struct c_wl_linux_dmabuf_ctx *ctx = c_wl_object_get(conn, args[0].o)->data;
+
   close(ctx->ft_fd);
   c_wl_object_del(conn, zwp_linux_buffer_v1_id);
 
@@ -111,10 +112,10 @@ int zwp_linux_buffer_params_v1_add(struct c_wl_connection *conn, union c_wl_arg 
   c_wl_object_id zwp_linux_buffer_params_v1_id = args[0].o;
   struct c_dmabuf *dma = c_wl_object_get(conn, zwp_linux_buffer_params_v1_id)->data;
 
-  c_wl_fd   fd =          args[1].F;
-  c_wl_uint plane_idx =   args[2].u;
-  c_wl_uint offset =      args[3].u;
-  c_wl_uint stride =      args[4].u;
+  c_wl_fd fd            = args[1].F;
+  c_wl_uint plane_idx   = args[2].u;
+  c_wl_uint offset      = args[3].u;
+  c_wl_uint stride      = args[4].u;
   c_wl_uint modifier_hi = args[5].u;
   c_wl_uint modifier_lo = args[6].u;
 
@@ -133,7 +134,6 @@ int zwp_linux_buffer_params_v1_add(struct c_wl_connection *conn, union c_wl_arg 
   plane->fd = fd;
   plane->offset = offset;
   plane->stride = stride;
-
   dma->modifier = modifier;
 
   return 0;
@@ -144,9 +144,9 @@ int zwp_linux_buffer_params_v1_create_immed(struct c_wl_connection *conn, union 
   struct c_dmabuf *dma = self->data;
 
   c_wl_new_id wl_buffer_id = args[1].n;
-  c_wl_int    width =        args[2].i;
-  c_wl_int    height =       args[3].i;
-  c_wl_uint   format =       args[4].u;
+  c_wl_int width           = args[2].i;
+  c_wl_int height          = args[3].i;
+  c_wl_uint format         = args[4].u;
   // enum zwp_linux_buffer_params_v1_flags_enum flags = args[5].e;
 
   if (width <= 0)
@@ -159,17 +159,16 @@ int zwp_linux_buffer_params_v1_create_immed(struct c_wl_connection *conn, union 
   if (!c_wl_buffer)
         c_wl_error_set_and_return(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed");
 
-  dma->drm_format = format;
-  // dma->flags = flags;
-
   c_wl_buffer->id = wl_buffer_id;
   c_wl_buffer->conn = conn;
   c_wl_buffer->scale = 1;
-  c_wl_buffer->width = width;
-  c_wl_buffer->height = height;
-  c_wl_buffer->type = C_WL_BUFFER_DMA;
-  c_wl_buffer->dma = c_malloc(sizeof(*c_wl_buffer->dma));
-  memcpy(c_wl_buffer->dma, dma, sizeof(*dma));
+
+  dma->drm_format = format;
+  dma->width = width;
+  dma->height = height;
+
+  c_wl_buffer->dma = dma;
+  c_ref(dma);
 
   c_wl_object_add(conn, wl_buffer_id, self->version, c_wl_interface_get("wl_buffer"), c_wl_buffer);
   return 0;

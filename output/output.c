@@ -128,7 +128,7 @@ void c_output_set_mode(struct c_output_manager *mgr, struct c_output *output, st
 
   drmModeSetCrtc(mgr->drm_fd, output->crtc_id,
                  output->swapchain.buffers[output->swapchain.front]->drm_fb_id,
-                 0, 0, &output->connector_id, 1, mode->drm_info);
+                 0, 0, &output->connector_id, 1, &mode->drm_info);
 
   glViewport(0, 0, mode->width, mode->height);
   c_output_damage(mgr, output);
@@ -196,6 +196,16 @@ struct c_output_manager *c_output_manager_init(struct c_session *session, struct
   if (!mgr->outputs) {
     c_log(C_LOG_ERROR, "failed to get connectors");
     goto error;
+  }
+
+
+  uint64_t w, h;
+  if (drmGetCap(mgr->drm_fd, DRM_CAP_CURSOR_WIDTH, &w) != 0) w = 64;
+  if (drmGetCap(mgr->drm_fd, DRM_CAP_CURSOR_HEIGHT, &h) != 0) h = 64;
+
+  struct c_output *output;
+  c_list_for_each(mgr->outputs, output) {
+    output->cursor = c_cursor_init(mgr, session->input, w, h);
   }
 
   mgr->cursor_output = c_list_get(mgr->outputs, 0);

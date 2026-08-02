@@ -3,6 +3,7 @@
 #include <xf86drmMode.h>
 
 #include "wayland/proto/wayland.h"
+#include "util/log.h"
 
 const char *drm_connector_str(uint32_t conn_type) {
 	switch (conn_type) {
@@ -76,19 +77,19 @@ int drm_format_num_planes(uint32_t format) {
     }
 }
 
-double drm_refresh_rate_mhz(drmModeModeInfo *mode) {
-  double refresh = (mode->clock * 1000.0) / ((double)mode->htotal * mode->vtotal);
+double drm_refresh_rate(drmModeModeInfo *mode) {
+	int res = (mode->clock * 1000000LL / mode->htotal + mode->vtotal / 2) / mode->vtotal;
 
-  if (mode->flags & DRM_MODE_FLAG_INTERLACE)
-    refresh *= 2.0;
+	if (mode->flags & DRM_MODE_FLAG_INTERLACE)
+		res *= 2;
 
-  if (mode->flags & DRM_MODE_FLAG_DBLSCAN)
-    refresh /= 2.0;
+	if (mode->flags & DRM_MODE_FLAG_DBLSCAN)
+		res /= 2;
 
-  if (mode->vscan > 1)
-    refresh /= mode->vscan;
+	if (mode->vscan > 1)
+		res /= mode->vscan;
 
-  return refresh;
+	return (double)res / 1000.0f;
 }
 
 enum wl_shm_format_enum drm_to_wl_shm_format(uint32_t format) {

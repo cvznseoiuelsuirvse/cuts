@@ -187,7 +187,10 @@ struct c_wl_display *c_wl_display_init(struct c_event_loop *loop) {
 
 }
 
-void c_wl_display_add_supported_interface(struct c_wl_display *display, const char *name, c_wl_display_on_bind on_bind, void *userdata) {
+void c_wl_display_add_supported_interface(struct c_wl_display *display,
+                                          const char *name,
+                                          c_wl_display_on_bind on_bind,
+                                          void *userdata) {
   struct c_wl_interface *iface = c_wl_interface_get(name);
   assert(iface);
   struct c_wl_display_supported_iface i = {

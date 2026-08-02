@@ -5,6 +5,13 @@
 #include <xkbcommon/xkbcommon.h>
 #include <linux/input-event-codes.h>
 
+struct monitor {
+  const char *name;
+  uint32_t x, y;
+  uint32_t width, height;
+  uint32_t refresh_rate;
+};
+
 struct border {
   uint32_t width;
   uint32_t c_focus;

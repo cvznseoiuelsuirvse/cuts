@@ -6,6 +6,11 @@
 #include <EGL/eglext.h>
 #include <GL/gl.h>
 
+enum c_render_buffer_type {
+  C_BUFFER_RAW,
+  C_BUFFER_DMA,
+};
+
 struct c_format {
 	uint32_t drm_format;
 	uint64_t modifier;
@@ -21,38 +26,22 @@ struct c_dmabuf_plane {
 };
 
 struct c_dmabuf {
-	uint32_t drm_format;
-	uint64_t modifier;
-
-	uint32_t              n_planes;
-	struct c_dmabuf_plane planes[4];
-
-	EGLImageKHR image;
-	GLuint      texture;
-};
-
-struct c_shm {
-	uint8_t  **base_ptr;
-	uint32_t   format;
-	int        stride;
-	int        offset;
-	GLuint     texture;
-};
-
-struct c_dmabuf_params {
 	uint32_t width, height;
 	uint32_t drm_format;
 	uint64_t modifier;
 	uint32_t n_planes;
-	struct c_dmabuf_plane *planes;
+	struct c_dmabuf_plane planes[4];
+	EGLImageKHR image;
+	struct c_gles_texture *texture;
 };
 
-struct c_shm_params {
-	int      fd;
+struct c_rawbuf {
 	uint32_t width, height;
+	uint8_t **base_ptr;
 	uint32_t format;
-	int      stride;
-	int      offset;
+	int stride;
+	int offset;
+	struct c_gles_texture *texture;
 };
 
 #endif
