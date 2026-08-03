@@ -87,7 +87,7 @@ void c_session_free(struct c_session *backend) {
   free(backend);
 }
 
-struct c_session *c_session_init(struct c_event_loop *loop, struct c_wl_display *display) {
+struct c_session *c_session_init(struct c_event_loop *loop, struct c_wl_display *display, struct c_input_config *config) {
   struct c_session *backend = calloc(1, sizeof(*backend));
   if (!backend) {
     c_log(C_LOG_ERROR, "calloc failed");
@@ -112,7 +112,7 @@ struct c_session *c_session_init(struct c_event_loop *loop, struct c_wl_display 
     .userdata = backend,
   };
 
-  backend->input = c_input_init(loop, &libinput_interface);
+  backend->input = c_input_init(loop, &libinput_interface, config);
   if (!backend->input) goto error;
 
   c_wl_display_add_supported_interface(display, "wl_seat", on_wl_seat_bind, backend->input);

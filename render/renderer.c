@@ -237,6 +237,7 @@ static void on_buffer_destroy(struct c_wl_buffer *buffer, void *userdata) {
     struct c_rawbuf *buf = buffer->shm;
     if (buf->texture)
       glDeleteTextures(1, &buf->texture->texture);
+
     free(buf->texture);
   }
 }

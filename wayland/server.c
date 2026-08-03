@@ -16,8 +16,9 @@
 #include "util/bitmap.h"
 
 #define MAX_CMSG_FDS 1024
+#define MAX_INTERFACES 2048
 
-static struct c_wl_interface *__interface[C_WL_MAX_INTERFACES];
+static struct c_wl_interface *__interface[MAX_INTERFACES];
 static size_t                 __ninterfaces = 0;
 
 static char            __error_msg[C_WL_STRING_SIZE] = {0};
@@ -46,7 +47,7 @@ struct c_wl_callback {
 };
 
 inline void c_wl_interface_add(struct c_wl_interface *interface) {
-  assert(__ninterfaces < C_WL_MAX_INTERFACES);
+  assert(__ninterfaces < MAX_INTERFACES);
   __interface[__ninterfaces++] = interface; 
 }
 
@@ -91,7 +92,6 @@ static int c_wl_connection_read(struct c_wl_connection *conn, char *buffer, size
 
 void c_wl_connection_callback_done(struct c_wl_connection *conn, c_wl_object_id id) {
     wl_callback_done(conn, id, c_wl_serial());
-    wl_display_delete_id(conn, 1, id);
     c_wl_object_del(conn, id);
 }
 
@@ -132,7 +132,7 @@ int c_wl_connection_send(struct c_wl_connection *conn, struct c_wl_message *msg,
     abort();
   }
 
-  char buffer[C_WL_BUFFER_SIZE] = {0};
+  char buffer[C_WL_CONN_BUF_SIZE] = {0};
   uint32_t offset = 0;
   write_u32(buffer, &offset, msg->id);
   write_u16(buffer, &offset, msg->op);
@@ -221,7 +221,7 @@ static int dispatch(struct c_wl_connection *conn,
   c_wl_array arr = {0};
   args[0].o = object_id;
 
-  uint32_t offset = C_WL_HEADER_SIZE;
+  uint32_t offset = C_WL_CONN_HEADER_SIZE;
   for (size_t i = 1; i <= request.nargs; i++) {
     uint8_t c = request.signature[i-1];
     assert(c != 'a');
@@ -269,10 +269,9 @@ static int dispatch(struct c_wl_connection *conn,
     }
   }
 
-
   c_log_wl_request(conn, object, &request, args);
   if (!request.handler) {
-    c_log(C_LOG_ERROR, "%s.%s method not implemented", iface->name, request.name);
+    c_log(C_LOG_ERROR, "%s.%s request not implemented", iface->name, request.name);
     return DISPATCH_FATAL_ERR;
   }
 
@@ -286,12 +285,12 @@ static int dispatch(struct c_wl_connection *conn,
 
 int c_wl_connection_dispatch(struct c_wl_connection *conn) {
   int ret;
-  char buffer[C_WL_BUFFER_SIZE];
+  char buffer[C_WL_CONN_BUF_SIZE];
 
   int req_fds[MAX_CMSG_FDS];
   size_t n_req_fds = 0;
 
-  int received = c_wl_connection_read(conn, buffer, C_WL_BUFFER_SIZE, req_fds, &n_req_fds);
+  int received = c_wl_connection_read(conn, buffer, C_WL_CONN_BUF_SIZE, req_fds, &n_req_fds);
   if (received <= 0) return DISPATCH_CLIENT_ERR;
 
   size_t msg_count = 0;
@@ -303,7 +302,7 @@ int c_wl_connection_dispatch(struct c_wl_connection *conn) {
   c_wl_object_id sync_requests[16] = {0};
 
   while (buffer_offset < received) {
-    if ((received - buffer_offset) < C_WL_HEADER_SIZE) return -1;
+    if ((received - buffer_offset) < C_WL_CONN_HEADER_SIZE) return -1;
     if (msg_count > LENGTH(msgs))                    return -1;
 
     uint32_t tmp = 0;
@@ -315,7 +314,7 @@ int c_wl_connection_dispatch(struct c_wl_connection *conn) {
       read_u16(buffer+buffer_offset, &tmp);
 
 
-    if (object_id == 1 && op == 0 && message_size == C_WL_HEADER_SIZE + sizeof(uint32_t)) {
+    if (object_id == 1 && op == 0 && message_size == C_WL_CONN_HEADER_SIZE + sizeof(uint32_t)) {
       c_wl_object_id wl_callback_id = read_u32(buffer+buffer_offset, &tmp);
       if (c_wl_object_get(conn, wl_callback_id))
         c_wl_error_set_and_return(1, WL_DISPLAY_ERROR_INVALID_OBJECT,
@@ -403,6 +402,7 @@ int c_wl_object_del(struct c_wl_connection *conn, c_wl_object_id id) {
   else
     c_bitmap_unset(conn->server_id_pool, id - 1);
 
+  wl_display_delete_id(conn, 1, id);
   return 0;
 }
 
@@ -414,8 +414,8 @@ struct c_wl_connection *c_wl_connection_init(int client_fd, struct c_wl_display 
   }
 
   conn->objects = c_map_new(1024);
-  conn->client_id_pool = c_bitmap_new(1024 * 8);
-  conn->server_id_pool = c_bitmap_new(1024 * 8);
+  conn->client_id_pool = c_bitmap_new(1024 * 4);
+  conn->server_id_pool = c_bitmap_new(1024 * 4);
   conn->client_fd = client_fd;
   conn->dpy = display;
 
@@ -441,59 +441,69 @@ int c_wl_connection_free(struct c_wl_connection *conn) {
       int refcount = c_get_refcount(o->data);
       c_log(C_LOG_DEBUG, "rc:%d %p %s#%d", refcount, o->data, o->iface->name, o->id);
 
-      if (refcount == 1) {
-        SWITCH_STR(o->iface->name)
-          CASE_STR("wl_buffer")
-            struct c_wl_buffer *buf = o->data;
-            c_wl_display_notify(conn->dpy, buf, C_WL_DISPLAY_ON_BUFFER_DESTROY);
+      if (refcount > 1) goto unref;
 
-            if (buf->dma)
-              c_free(buf->dma);
+      SWITCH_STR(o->iface->name)
+        CASE_STR("wl_buffer")
+          struct c_wl_buffer *buf = o->data;
+          c_wl_display_notify(conn->dpy, buf, C_WL_DISPLAY_ON_BUFFER_DESTROY);
 
-            if (buf->shm)
-              c_free(buf->shm);
+          if (buf->dma)
+            c_free(buf->dma);
 
-          CASE_STR("wl_surface")
-            struct c_wl_surface *wl_surface = o->data;
-            c_wl_display_notify(conn->dpy, o->data, C_WL_DISPLAY_ON_SURFACE_DESTROY);
+          if (buf->shm)
+            c_free(buf->shm);
 
-            if (wl_surface->active) {
-              c_unref(wl_surface->active);
-            }
+        CASE_STR("wl_surface")
+          struct c_wl_surface *wl_surface = o->data;
+          c_wl_display_notify(conn->dpy, o->data, C_WL_DISPLAY_ON_SURFACE_DESTROY);
 
-            if (wl_surface->pending && wl_surface->pending != wl_surface->active) {
-              c_unref(wl_surface->pending);
-            }
+          if (wl_surface->active) {
+            c_unref(wl_surface->active);
+          }
 
-            if (wl_surface->sub.children)
-              c_list_destroy(wl_surface->sub.children);
+          if (wl_surface->pending && wl_surface->pending != wl_surface->active) {
+            c_unref(wl_surface->pending);
+          }
 
-          CASE_STR("xdg_surface")
-            struct c_xdg_surface *surface = o->data;
-            if (surface->children)
-              c_list_destroy(surface->children);
+          if (wl_surface->sub.children)
+            c_list_destroy(wl_surface->sub.children);
 
-          CASE_STR("zwp_linux_dmabuf_v1")
-            struct c_wl_linux_dmabuf_ctx *ctx = o->data;
-            close(ctx->ft_fd);
+          if (wl_surface->xdg_surface) {
+            if (wl_surface->xdg_surface->toplevel.title)  free(wl_surface->xdg_surface->toplevel.title);
+            if (wl_surface->xdg_surface->toplevel.app_id) free(wl_surface->xdg_surface->toplevel.app_id);
+          }
 
-          CASE_STR("wl_shm_pool")
-          struct c_wl_shm_pool *pool = o->data;
-            munmap(pool->ptr, pool->size);
-            close(pool->fd);
+        CASE_STR("xdg_surface")
+          struct c_xdg_surface *surface = o->data;
+          if (surface->children)
+            c_list_destroy(surface->children);
 
-        SWITCH_STR_END;
+        CASE_STR("zwp_linux_dmabuf_v1")
+          struct c_wl_linux_dmabuf_ctx *ctx = o->data;
+          close(ctx->ft_fd);
 
-      } else {
-        SWITCH_STR(o->iface->name)
-          CASE_STR("xdg_toplevel")
-            struct c_xdg_surface *xdg_surface = o->data;
-            if (xdg_surface->toplevel.title)  free(xdg_surface->toplevel.title);
-            if (xdg_surface->toplevel.app_id) free(xdg_surface->toplevel.app_id);
+        CASE_STR("wl_shm_pool")
+        struct c_wl_shm_pool *pool = o->data;
+          munmap(pool->ptr, pool->size);
+          close(pool->fd);
 
-        SWITCH_STR_END;
-      }
+        CASE_STR("wl_data_source")
+          struct c_wl_data_source *data_source = o->data;
 
+          for (size_t i = 0; i < data_source->mimes; i++) {
+            const char *mime = data_source->mimetypes[i];
+            free((char *)mime);
+          }
+
+        CASE_STR("wl_data_device")
+          struct c_wl_data_device *data_device = o->data;
+          if (data_device->data_source)
+            c_unref(data_device->data_source);
+
+      SWITCH_STR_END;
+
+unref:
       c_unref(o->data);
 
   }

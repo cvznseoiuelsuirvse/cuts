@@ -14,9 +14,13 @@ enum c_wl_display_notifier {
 
 	C_WL_DISPLAY_ON_BUFFER_DESTROY,
   C_WL_DISPLAY_ON_CONNECTION_GONE,
+
+  C_WL_DISPLAY_ON_DATA_DEVICE_SET_SELECTION,
 };
 
 struct c_wl_display_listener {
+  void (*on_connection_gone)     (struct c_wl_connection *, void *);
+
 	void (*on_toplevel_new)        (struct c_xdg_surface *, void *);
 	void (*on_toplevel_destroy)    (struct c_xdg_surface *, void *);
 
@@ -25,7 +29,6 @@ struct c_wl_display_listener {
 	void (*on_surface_destroy)     (struct c_wl_surface *, void *);
 
 	void (*on_buffer_destroy)      (struct c_wl_buffer *, void *);
-  void (*on_connection_gone)     (struct c_wl_connection *, void *);
 };
 
 typedef void*(*c_wl_display_on_bind)(struct c_wl_connection *, struct c_wl_object *, void *);

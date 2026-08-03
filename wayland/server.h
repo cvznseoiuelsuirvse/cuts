@@ -5,6 +5,11 @@
 #define DISPATCH_FATAL_ERR  -2
 #define DISPATCH_CLIENT_ERR -3
 
+#define C_WL_CONN_BUF_SIZE 4096
+#define C_WL_CONN_HEADER_SIZE 8
+#define C_WL_STRING_SIZE (C_WL_CONN_BUF_SIZE - C_WL_CONN_HEADER_SIZE - 4) // 4 (string prefix)
+
+
 #include <time.h>
 
 #include "wayland/types.h"

@@ -29,6 +29,7 @@ struct c_input_mouse_event {
 	int      is_pressed;
 
 	double axis;
+	double axis120;
 	double axis_discrete;
 	enum c_input_mouse_axis_source axis_source;
 };
@@ -61,8 +62,13 @@ struct c_input_libinput_interface {
 	void (*close_restricted)(int fd, void *userdata);
 };
 
+struct c_input_config {
+  enum libinput_config_accel_profile accel_profile;
+};
+
 struct c_input {
 	struct libinput *libinput;
+  struct c_input_config *config;
 
 	struct {
 		struct xkb_context    *ctx;
@@ -95,7 +101,10 @@ struct c_input_combo {
   } mouse;
 };
 
-struct c_input *c_input_init(struct c_event_loop *loop, struct c_input_libinput_interface *libinput_interface);
+struct c_input *
+c_input_init(struct c_event_loop *loop,
+             struct c_input_libinput_interface *libinput_interface,
+             struct c_input_config *config);
 void c_input_free(struct c_input *input);
 
 int c_input_init_xkb_state(struct c_input *input, struct xkb_rule_names *rule_names);

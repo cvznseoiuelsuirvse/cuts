@@ -1,7 +1,6 @@
 wayland_sources = files(
   'server.c',
   'display.c',
-  'types.c',
   'util.c',
 
   'proto/wayland.c',

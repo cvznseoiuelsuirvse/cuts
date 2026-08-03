@@ -191,8 +191,6 @@ int c_gles_texture_from_raw(struct c_rawbuf *buf, uint32_t width, uint32_t heigh
   buf->texture = texture;
   texture->target = GL_TEXTURE_2D;
 
-  c_log(C_LOG_DEBUG, "created a texture for shm: %p", buf->texture);
-
   glGenTextures(1, &texture->texture);
   glBindTexture(texture->target, texture->texture);
 

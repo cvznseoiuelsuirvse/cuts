@@ -37,7 +37,7 @@ void c_window_close(struct c_window *window);
 
 void c_window_pointer_move(struct c_window *window, double x, double y);
 void c_window_pointer_button(struct c_window *window, uint32_t button, int pressed);
-void c_window_pointer_scroll(struct c_window *window, double axis,
+void c_window_pointer_scroll(struct c_window *window, double axis, double axis120,
                            enum wl_pointer_axis_source_enum axis_source, int axis_discrete);
 
 void c_window_keyboard_key(struct c_window *window, int32_t key, int pressed, 

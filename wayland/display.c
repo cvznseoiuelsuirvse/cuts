@@ -80,6 +80,7 @@ C_EVENT_CALLBACK client_epoll_callback(struct c_event_loop *loop, int fd, void *
 
   switch (ret) {
     case DISPATCH_FATAL_ERR:
+      c_wl_display_notify(dpy, connection, C_WL_DISPLAY_ON_CONNECTION_GONE);
       c_list_remove(&dpy->connections, connection);
       c_wl_connection_free(connection);
       return C_EVENT_ERROR_FATAL;

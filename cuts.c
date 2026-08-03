@@ -202,7 +202,7 @@ void client_close(struct client *client) {
     c_window_unfocus(client->window);
     cuts.focused_client = NULL;
   }
-
+  
   c_scene_remove_window(cuts.scene, client->window);
   client_free(client);
   c_list_remove(&cuts.clients, client);
@@ -314,6 +314,7 @@ void on_mouse_movement(struct c_input_mouse_event *event, void *userdata) {
 void on_mouse_scroll(struct c_input_mouse_event *event, void *userdata) {
   if (!cuts.focused_client) return;
   c_window_pointer_scroll(cuts.focused_client->window, event->axis,
+                          event->axis120,
                           (enum wl_pointer_axis_source_enum)event->axis_source,
                           event->axis_discrete);
 }
@@ -380,6 +381,7 @@ void on_window_new(struct c_xdg_surface *surface, void *userdata) {
 
   c_list_insert(&cuts.clients, 0, client, 0);
   client_change_focus(client, pointer_x, pointer_y);
+
   LAYOUT(client->output);
 }
 
@@ -686,7 +688,7 @@ int main() {
   struct c_log_config cfg;
   cfg.level_mask = C_LOG_INFO | C_LOG_DEBUG | C_LOG_ERROR | C_LOG_WARNING;
   cfg.level_mask |= C_LOG_WAYLAND;
-  // cfg.color = 1;
+  cfg.color = 1;
   c_log_setup(&cfg);
 
   struct c_event_loop *loop = c_event_loop_init();
@@ -697,7 +699,10 @@ int main() {
   check_init(display, ret, out);
   cuts.display = display;
 
-  struct c_session *session = c_session_init(loop, display);
+  struct c_input_config input_config = {
+    .accel_profile = accel_profile,
+  };
+  struct c_session *session = c_session_init(loop, display, &input_config);
   check_init(session, ret, out);
   cuts.session = session;
 

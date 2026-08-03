@@ -165,6 +165,7 @@ static void handle_event_mouse(struct c_input *input, struct libinput_event_poin
 
     case LIBINPUT_EVENT_POINTER_SCROLL_WHEEL:
       mouse_event.axis = libinput_event_pointer_get_scroll_value(event, LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL);
+      mouse_event.axis120 = libinput_event_pointer_get_scroll_value_v120(event, LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL);
       mouse_event.axis_discrete = mouse_event.axis < 0 ? -1 : 1;
       mouse_event.axis_source = C_MOUSE_AXIS_SOURCE_WHEEL;
 
@@ -177,7 +178,7 @@ static void handle_event_mouse(struct c_input *input, struct libinput_event_poin
   }
 
 }
-static void handle_event_keyboard(struct c_input *input, struct libinput_event_keyboard *event, struct libinput_device *li_dev) {
+static void handle_event_keyboard(struct c_input *input, struct libinput_event_keyboard *event, struct libinput_device *libinput_dev) {
   assert(event);
 
   struct xkb_state *state = get_xkb_state(input);
@@ -226,37 +227,62 @@ static void handle_event_keyboard(struct c_input *input, struct libinput_event_k
   c_input_notify_keyboard(input, &keyboard_event, C_INPUT_NOTIFY_ON_keyboard_KEY);
 }
 
-static void handle_event_dev_added(struct c_input *input, struct libinput_device *li_dev) {
-  assert(li_dev);
-
-  if (libinput_device_has_capability(li_dev, LIBINPUT_DEVICE_CAP_POINTER)) {
-    input->capabilities |= 1;
+static void set_accel_profile(struct libinput_device *dev, enum libinput_config_accel_profile profile) {
+  const char *profile_str;
+  switch (profile) {
+    case LIBINPUT_CONFIG_ACCEL_PROFILE_ADAPTIVE:
+      profile_str = "adaptive";
+      break;
+    case LIBINPUT_CONFIG_ACCEL_PROFILE_FLAT:
+      profile_str = "flat";
+      break;
+    case LIBINPUT_CONFIG_ACCEL_PROFILE_CUSTOM:
+      profile_str = "custom";
+      break;
+    case LIBINPUT_CONFIG_ACCEL_PROFILE_NONE:
+      profile_str = "none";
+      break;
   }
 
-  if (libinput_device_has_capability(li_dev, LIBINPUT_DEVICE_CAP_KEYBOARD)) {
+  enum libinput_config_status status = libinput_device_config_accel_set_profile(dev, profile);
+  if (status == LIBINPUT_CONFIG_STATUS_INVALID) {
+    c_log(C_LOG_WARNING, "failed to set %s acceleration profile: invalid", profile_str);
+  } else if (status == LIBINPUT_CONFIG_STATUS_UNSUPPORTED) {
+    c_log(C_LOG_WARNING, "failed to set %s acceleration profile: unsupported", profile_str);
+  }
+}
+
+static void handle_event_dev_added(struct c_input *input, struct libinput_device *libinput_dev) {
+  assert(libinput_dev);
+
+  if (libinput_device_has_capability(libinput_dev, LIBINPUT_DEVICE_CAP_POINTER)) {
+    input->capabilities |= 1;
+    set_accel_profile(libinput_dev, input->config->accel_profile);
+  }
+
+  if (libinput_device_has_capability(libinput_dev, LIBINPUT_DEVICE_CAP_KEYBOARD)) {
     input->capabilities |= 2;
   }
 
-  if (libinput_device_has_capability(li_dev, LIBINPUT_DEVICE_CAP_TOUCH)) {
+  if (libinput_device_has_capability(libinput_dev, LIBINPUT_DEVICE_CAP_TOUCH)) {
     input->capabilities |= 4;
+    set_accel_profile(libinput_dev, input->config->accel_profile);
   }
-
-  // c_log(C_LOG_DEBUG, "caps: %d", input->capabilities);
 
 }
 
-static void handle_event_dev_removed(struct c_input *input, struct libinput_device *li_dev) {
-  assert(li_dev);
+static void handle_event_dev_removed(struct c_input *input, struct libinput_device *libinput_dev) {
+  assert(libinput_dev);
 
-  if (libinput_device_has_capability(li_dev, LIBINPUT_DEVICE_CAP_POINTER)) {
+  if (libinput_device_has_capability(libinput_dev, LIBINPUT_DEVICE_CAP_POINTER)) {
     input->capabilities &= ~1;
   }
 
-  if (libinput_device_has_capability(li_dev, LIBINPUT_DEVICE_CAP_KEYBOARD)) {
+  if (libinput_device_has_capability(libinput_dev, LIBINPUT_DEVICE_CAP_KEYBOARD)) {
     input->capabilities &= ~2;
   }
 
-  if (libinput_device_has_capability(li_dev, LIBINPUT_DEVICE_CAP_TOUCH)) {
+  if (libinput_device_has_capability(libinput_dev, LIBINPUT_DEVICE_CAP_TOUCH)) {
     input->capabilities &= ~4;
   }
 
@@ -442,13 +468,14 @@ void c_input_free(struct c_input *input) {
   free(input);
 }
 
-struct c_input *c_input_init(struct c_event_loop *loop, struct c_input_libinput_interface *libinput_interface) {
+struct c_input * c_input_init(struct c_event_loop *loop, struct c_input_libinput_interface *libinput_interface, struct c_input_config *config) {
   struct c_input *input = calloc(1, sizeof(*input));
   if (!input) {
     c_log(C_LOG_ERROR, "calloc failed");
     goto error;
   }
 
+  input->config = config;
   struct libinput_interface interface = {
     .open_restricted = libinput_interface->open_restricted,
     .close_restricted = libinput_interface->close_restricted,

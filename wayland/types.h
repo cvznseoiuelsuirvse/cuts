@@ -9,14 +9,12 @@
 #define C_WL_REQUEST __attribute__((weak)) int
 #define C_WL_EVENT int
 
-#define C_WL_MAX_INTERFACES 2048
-#define C_WL_HEADER_SIZE 8
-#define C_WL_BUFFER_SIZE 4096
-#define C_WL_STRING_SIZE (C_WL_BUFFER_SIZE - C_WL_HEADER_SIZE - 4) // 4 -> string prefix size
+#define C_WL_FIXED_TO_DOUBLE(v) (double)((v) / 256.0f)
+#define C_WL_FIXED_FROM_DOUBLE(v) (c_wl_fixed)((v) * 256.0f)
 
 typedef int32_t 	  		c_wl_int;
 typedef uint32_t	 		c_wl_uint;
-typedef uint32_t			c_wl_fixed;
+typedef int32_t			c_wl_fixed;
 typedef uint32_t			c_wl_object_id;
 typedef uint32_t			c_wl_new_id;
 typedef const char	   	   *c_wl_string;
@@ -177,7 +175,18 @@ struct c_wl_linux_dmabuf_ctx {
 	size_t   n_ft_entries;
 };
 
-double c_wl_fixed_to_double(c_wl_fixed f);
-c_wl_fixed c_wl_fixed_from_double(double d);
+struct c_wl_data_source {
+  c_wl_object_id id;
+
+  const char *mimetypes[32];
+  size_t mimes;
+
+  struct c_wl_data_device *data_device;
+};
+
+struct c_wl_data_device {
+  c_wl_object_id id;
+  struct c_wl_data_source *data_source;
+};
 
 #endif

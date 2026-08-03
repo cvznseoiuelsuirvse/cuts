@@ -81,24 +81,23 @@ int xdg_surface_set_window_geometry(struct c_wl_connection *conn, union c_wl_arg
 }
 
 int xdg_surface_get_toplevel(struct c_wl_connection *conn, union c_wl_arg *args) {
-  c_wl_object_id xdg_surface_id = args[0].o;
-  struct c_wl_object *xdg_surface_o = c_wl_object_get(conn, xdg_surface_id);
+  struct c_wl_object *self = c_wl_self(conn, args);
 
   c_wl_new_id xdg_toplevel_id = args[1].n;
   struct c_wl_object *xdg_toplevel;
   C_WL_CHECK_IF_NOT_REGISTERED(xdg_toplevel_id, xdg_toplevel);
 
-  struct c_xdg_surface *xdg_surface = xdg_surface_o->data;
+  struct c_xdg_surface *xdg_surface = self->data;
   xdg_surface->surface->role = C_WL_SURFACE_ROLE_XDG_TOPLEVEL;
   xdg_surface->toplevel.id = xdg_toplevel_id;
 
-  c_ref(xdg_surface_o->data);
-  c_wl_object_add(conn, xdg_toplevel_id, xdg_surface_o->version, c_wl_interface_get("xdg_toplevel"), xdg_surface_o->data);
+  c_ref(self->data);
+  c_wl_object_add(conn, xdg_toplevel_id, self->version, c_wl_interface_get("xdg_toplevel"), self->data);
 
   struct c_wl_array arr = {0};
 
   xdg_toplevel_configure(conn, xdg_toplevel_id, 0, 0, &arr);
-  xdg_surface_configure(conn, xdg_surface_id, c_wl_serial());
+  xdg_surface_configure(conn, self->id, c_wl_serial());
 
   struct c_wl_display *dpy = c_wl_connection_get_dpy(conn);
   c_wl_display_notify(dpy, xdg_surface, C_WL_DISPLAY_ON_TOPLEVEL_NEW);

@@ -600,18 +600,85 @@ int wl_keyboard_release(struct c_wl_connection *conn, union c_wl_arg *args) {
 int wl_data_device_manager_get_data_device(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_wl_object *self = c_wl_self(conn, args);
 
-  c_wl_object_id wl_data_device_id = args[1].n;
+  c_wl_object_id wl_data_device_id = args[1].o;
   struct c_wl_object *wl_data_device;
   C_WL_CHECK_IF_NOT_REGISTERED(wl_data_device_id, wl_data_device);
 
   struct c_wl_object *wl_seat;
   C_WL_CHECK_IF_REGISTERED(args[2].o, wl_seat);
 
-  c_wl_object_add(conn, wl_data_device_id, self->version, c_wl_interface_get("wl_data_device"), NULL);
+  struct c_wl_data_device *data_device = c_malloc(sizeof(*data_device));
+  if (!data_device)
+    c_wl_error_set_and_return(self->id, WL_DISPLAY_ERROR_NO_MEMORY, "failed to allocate a new data device");
+
+  data_device->id = wl_data_device_id;
+
+  c_wl_object_add(conn, wl_data_device_id, self->version, c_wl_interface_get("wl_data_device"), data_device);
+  return 0;
+}
+
+int wl_data_device_set_selection(struct c_wl_connection *conn, union c_wl_arg *args) {
+  struct c_wl_object *self = c_wl_self(conn, args);
+
+  c_wl_object_id wl_data_source_id = args[1].o;
+  struct c_wl_object *wl_data_source;
+  C_WL_CHECK_IF_REGISTERED(wl_data_source_id, wl_data_source);
+
+  struct c_wl_data_source *data_source = wl_data_source->data;
+  struct c_wl_data_device *data_device = self->data;
+
+  data_device->data_source = data_source;
+  c_ref(data_source);
+
   return 0;
 }
 
 int wl_data_device_release(struct c_wl_connection *conn, union c_wl_arg *args) {
+  struct c_wl_object *self = c_wl_self(conn, args);
+  struct c_wl_data_device *data_device = self->data;
+
+  if (data_device->data_source) c_unref(data_device->data_source);
+
+  c_wl_object_del(conn, args[0].o);
+  return 0;
+}
+
+int wl_data_device_manager_create_data_source(struct c_wl_connection *conn, union c_wl_arg *args) {
+  struct c_wl_object *self = c_wl_self(conn, args);
+  c_wl_object_id wl_data_source_id = args[1].o;
+
+  struct c_wl_data_source *data_source = c_malloc(sizeof(*data_source));
+  if (!data_source)
+    c_wl_error_set_and_return(self->id, WL_DISPLAY_ERROR_NO_MEMORY, "failed to allocate a new data source");
+
+  data_source->id = wl_data_source_id;
+
+  struct c_wl_object *wl_data_source;
+  C_WL_CHECK_IF_NOT_REGISTERED(wl_data_source_id, wl_data_source);
+
+  c_wl_object_add(conn, wl_data_source_id, self->version, c_wl_interface_get("wl_data_source"), data_source);
+  return 0;
+}
+
+int wl_data_source_offer(struct c_wl_connection *conn, union c_wl_arg *args) {
+  struct c_wl_object *self = c_wl_self(conn, args);
+  struct c_wl_data_source *data_source = self->data;
+
+  c_wl_string mime_type = args[1].s;
+
+  data_source->mimetypes[data_source->mimes++] = strdup(mime_type);
+  return 0;
+}
+
+int wl_data_source_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
+  struct c_wl_object *self = c_wl_self(conn, args);
+  struct c_wl_data_source *data_source = self->data;
+
+  for (size_t i = 0; i < data_source->mimes; i++) {
+    const char *mime = data_source->mimetypes[i];
+    free((char *)mime);
+  }
+
   c_wl_object_del(conn, args[0].o);
   return 0;
 }
