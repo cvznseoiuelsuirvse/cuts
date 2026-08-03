@@ -29,10 +29,8 @@ struct c_window {
   struct c_xdg_surface *surface;
 };
 
-void c_window_resize(struct c_window *window, uint32_t width, uint32_t height);
-void c_window_hide(struct c_window *window);
-void c_window_activate(struct c_window *window);
 void c_window_focus(struct c_window *window, double hotspot_x, double hotspot_y);
+void c_window_activate(struct c_window *window);
 void c_window_deactivate(struct c_window *window);
 void c_window_unfocus(struct c_window *window);
 void c_window_close(struct c_window *window);

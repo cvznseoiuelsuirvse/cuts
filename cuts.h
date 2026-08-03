@@ -60,7 +60,8 @@ void spawn(bind_args *);
 void window_kill(bind_args *);
 void move_focus(bind_args *);
 void switch_tag(bind_args *);
-void window_toggle_floating(bind_args *);
+void toggle_floating(bind_args *);
+void window_move_to_workspace(bind_args *);
 
 // bind drag functions
 void window_move(int, bind_args *);

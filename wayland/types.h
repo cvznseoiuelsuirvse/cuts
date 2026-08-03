@@ -110,6 +110,7 @@ struct c_wl_subsurface {
 
   c_wl_int x;
   c_wl_int y;
+
   int      sync;
 
   struct c_wl_surface *surface;

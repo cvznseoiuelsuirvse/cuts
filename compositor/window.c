@@ -8,27 +8,6 @@
 
 #define window_conn(window) (window)->surface->surface->conn
 
-void c_window_resize(struct c_window *window, uint32_t width, uint32_t height) {
-  struct c_xdg_surface *xdg_surface = window->surface;
-
-  c_wl_enum states[2] = {XDG_TOPLEVEL_STATE_RESIZING, XDG_TOPLEVEL_STATE_ACTIVATED};
-
-  c_wl_array arr = {
-    .size = sizeof(*states),
-    .data = states,
-  };
-
-  width -= window->border_width * 2;
-  height -= window->border_width * 2;
-
-  xdg_toplevel_configure(window_conn(window), xdg_surface->toplevel.id, width, height, &arr);
-  xdg_surface_configure(window_conn(window), xdg_surface->id, c_wl_serial());
-  
-};
-
-
-void c_window_hide(struct c_window *window) {};
-
 void c_window_deactivate(struct c_window *window) {
   struct c_xdg_surface *xdg_surface = window->surface;
 
@@ -121,6 +100,7 @@ void c_window_close(struct c_window *window) {
 void c_window_pointer_move(struct c_window *window, double x, double y) {
   x -= window->x;
   y -= window->y;
+
   if (window->surface && (window->surface->x > 0 || window->surface->y > 0)) {
     x += window->surface->x;
     y += window->surface->y;

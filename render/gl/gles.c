@@ -282,6 +282,12 @@ void c_gles_draw_quad(struct c_gles *gl, struct c_output *output,
   get_location(border_color);
   glUniform4f(border_color_loc, border_color_args);
 
+  get_location(uv_offset);
+  glUniform2f(uv_offset_loc, quad->uv_offset[0], quad->uv_offset[1]);
+
+  get_location(uv_scale);
+  glUniform2f(uv_scale_loc, quad->uv_scale[0], quad->uv_scale[1]);
+
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 }
 

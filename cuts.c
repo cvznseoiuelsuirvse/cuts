@@ -27,9 +27,9 @@
     c_output_damage(cuts.mgr, output);                                         \
   }
 
-#define clients_for_each_in_tag(comp, client) \
-  c_list_for_each((comp).clients, (client)) \
-    if ((client->tag & (comp).focused_tag))
+#define clients_for_each_in_tag(client) \
+  c_list_for_each(cuts.clients, (client)) \
+    if ((client->tag & cuts.focused_tag))
 
 #define check_init(t, ret, out_label)                                          \
   if ((t) == NULL) {                                                           \
@@ -38,10 +38,10 @@
     goto out_label;                                                            \
   }
 
-#define pointer_x(comp) (comp).pointer.x[(comp).pointer.coords]
-#define pointer_y(comp) (comp).pointer.y[(comp).pointer.coords]
-#define pointer_x_prev(comp) (comp).pointer.x[(comp).pointer.coords ^ 1]
-#define pointer_y_prev(comp) (comp).pointer.y[(comp).pointer.coords ^ 1]
+#define pointer_x cuts.pointer.x[cuts.pointer.coords]
+#define pointer_y cuts.pointer.y[cuts.pointer.coords]
+#define pointer_x_prev cuts.pointer.x[cuts.pointer.coords ^ 1]
+#define pointer_y_prev cuts.pointer.y[cuts.pointer.coords ^ 1]
 
 typedef enum bar_pos {
   BAR_TOP = 1,
@@ -81,6 +81,7 @@ struct {
   struct c_output *focused_output;
 
   uint32_t focused_tag;
+  int focused_client_idx;
 	struct layout layout;
   struct bar bar;
 
@@ -131,6 +132,29 @@ void window_move(int done, bind_args *args);
 
 void cleanup(int err, void *userdata);
 
+struct client *client_move_focus(int direction) {
+  uint32_t clients = 0;
+
+  struct client *client;
+  clients_for_each_in_tag(client)
+    clients++;
+
+  if (!clients) return NULL;
+
+  cuts.focused_client_idx =
+      (cuts.focused_client_idx + direction + clients) % clients;
+
+  int c = 0;
+  clients_for_each_in_tag(client) {
+    if (cuts.focused_client_idx == c++) {
+      return client;
+    }
+  }
+
+  return NULL;
+}
+
+
 struct client *client_new() {
   struct c_window *window = calloc(1, sizeof(*window));
   if (!window) {
@@ -155,14 +179,17 @@ void client_free(struct client *client) {
   free(client);
 }
 
+
 void client_change_focus(struct client *client, double hotspot_x, double hotspot_y) {
   if (client == cuts.focused_client) return;
 
   if (cuts.focused_client) {
+    c_window_deactivate(cuts.focused_client->window);
     c_window_unfocus(cuts.focused_client->window);
     cuts.focused_client->window->border_color = border.c_default;
   }
 
+  c_window_activate(client->window);
   c_window_focus(client->window, hotspot_x, hotspot_y);
   cuts.focused_client = client;
   cuts.focused_client->window->border_color = border.c_focus;
@@ -181,13 +208,13 @@ void client_close(struct client *client) {
   c_list_remove(&cuts.clients, client);
 
   if (is_focused) {
-    if (cuts.clients->size > 0) {
-      struct client *last = c_list_get(cuts.clients, cuts.clients->size - 1);
-      client_change_focus(last, 0, 0);
+    struct client *prev = client_move_focus(-1);
 
-    } else {
+    if (prev)
+      client_change_focus(prev, pointer_x, pointer_y);
+
+    else
       cuts.focused_client = NULL;
-    }
   }
 }
 
@@ -264,14 +291,14 @@ int wl_seat_get_pointer(struct c_wl_connection *conn, union c_wl_arg *args) {
 
 void on_mouse_movement(struct c_input_mouse_event *event, void *userdata) {
   cuts.pointer.coords ^= 1;
-  pointer_x(cuts) = event->x;
-  pointer_y(cuts) = event->y;
+  pointer_x = event->x;
+  pointer_y = event->y;
 
   if (cuts.pointer.is_dragging || cuts.clients->size == 0) return;
   struct client *focused = NULL;
 
   struct client *client;
-  clients_for_each_in_tag(cuts, client) {
+  clients_for_each_in_tag(client) {
     struct c_window *window = client->window;
     if (CURSOR_INSIDE(event->x, event->y, window))
         focused = client;
@@ -317,6 +344,8 @@ static struct c_wl_surface *find_root_surface(struct c_wl_surface *surface) {
 }
 
 static void damage_from_surface(struct c_wl_surface *surface) {
+  if (!cuts.clients) return;
+
   struct c_wl_surface *root_surface = find_root_surface(surface);
   struct client *client;
   c_list_for_each(cuts.clients, client) {
@@ -350,7 +379,7 @@ void on_window_new(struct c_xdg_surface *surface, void *userdata) {
   client->window->app_id = &surface->toplevel.app_id;
 
   c_list_insert(&cuts.clients, 0, client, 0);
-  client_change_focus(client, 0, 0);
+  client_change_focus(client, pointer_x, pointer_y);
   LAYOUT(client->output);
 }
 
@@ -387,7 +416,7 @@ void on_connection_gone(struct c_wl_connection *conn, void *userdata) {
 }
 
 void quit(bind_args *args) {
-  cleanup(0, NULL);
+  raise(SIGTERM);
 }
 
 void spawn(bind_args *args) {
@@ -405,14 +434,20 @@ void window_kill(bind_args *args) {
   c_window_close(cuts.focused_client->window);
 }
 
-void move_focus(bind_args *args) {}
+void move_focus(bind_args *args) {
+  struct client *next = client_move_focus(-1);
+
+  if (next)
+    client_change_focus(next, pointer_x, pointer_y);
+
+}
 
 void switch_tag(bind_args *args) {
   cuts.focused_tag = args->u;
   LAYOUT(cuts.focused_output);
 
   struct client *c;
-  clients_for_each_in_tag(cuts, c) {
+  clients_for_each_in_tag(c) {
     client_change_focus(c, 0, 0);
     break;
   }
@@ -421,7 +456,7 @@ void switch_tag(bind_args *args) {
 int count_tiled() {
   struct client *client;
   int i = 0;
-  clients_for_each_in_tag(cuts, client) {
+  clients_for_each_in_tag(client) {
     if (!(client->window->state & C_WINDOW_FLOAT)) i++;
   }
   return i;
@@ -483,7 +518,7 @@ void tile() {
 
   struct client *client;
   size_t i = 0;
-  clients_for_each_in_tag(cuts, client) {
+  clients_for_each_in_tag(client) {
     struct c_window *window = client->window;
     c_scene_add_window(cuts.scene, window);
 
@@ -504,12 +539,16 @@ void tile() {
       window->y = layout.y + stack_client_height * (i - master_clients) + gap * (i - master_clients);
     }
 
-    c_window_resize(window, window->width, window->height);
+    if (cuts.focused_client == client)
+      c_window_activate(window);
+    else
+      c_window_deactivate(window);
+
     i++;
   }
 }
 
-void client_bring_on_top(struct client *client) {
+void client_push(struct client *client) {
   c_list_remove(&cuts.clients, client);
   c_list_push(cuts.clients, client, 0);
 }
@@ -519,10 +558,10 @@ void client_toggle_floating(struct client *client) {
   LAYOUT(client->output);
 }
 
-void window_toggle_floating(bind_args *args) {
+void toggle_floating(bind_args *args) {
   if (!cuts.focused_client) return;
 
-  client_bring_on_top(cuts.focused_client);
+  client_push(cuts.focused_client);
   client_toggle_floating(cuts.focused_client);
 }
 
@@ -530,12 +569,12 @@ void window_move(int done, bind_args *args) {
   if (!cuts.focused_client) return;
   struct client *focused = cuts.focused_client;
 
-  client_bring_on_top(focused);
+  client_push(focused);
   if (!(focused->window->state & C_WINDOW_FLOAT))
     client_toggle_floating(focused);
     
-  double dist_x = pointer_x(cuts) - pointer_x_prev(cuts);
-  double dist_y = pointer_y(cuts) - pointer_y_prev(cuts);
+  double dist_x = pointer_x - pointer_x_prev;
+  double dist_y = pointer_y - pointer_y_prev;
 
   focused->window->x+=dist_x;
   focused->window->y+=dist_y;
@@ -545,23 +584,33 @@ void window_move(int done, bind_args *args) {
   LAYOUT(focused->output);
 }
 
+void window_move_to_workspace(bind_args *args) {
+  if (!cuts.focused_client) return;
+
+  cuts.focused_client->tag = args->u;
+  client_push(cuts.focused_client);
+
+  LAYOUT(cuts.focused_client->output);
+}
+
 void window_resize(int done, bind_args *args) {
   if (!cuts.focused_client) return;
   struct client *focused = cuts.focused_client;
 
-  client_bring_on_top(focused);
+  client_push(focused);
   if (!(focused->window->state & C_WINDOW_FLOAT))
     client_toggle_floating(focused);
     
-  float dist_x = pointer_x(cuts) - pointer_x_prev(cuts);
-  float dist_y = pointer_y(cuts) - pointer_y_prev(cuts);
+  float dist_x = pointer_x - pointer_x_prev;
+  float dist_y = pointer_y - pointer_y_prev;
 
   focused->window->width+=dist_x;
   focused->window->height+=dist_y;
 
-  c_window_resize(focused->window, focused->window->width, focused->window->height);
+  c_window_activate(focused->window);
 
   cuts.pointer.is_dragging = !done;
+
 
   LAYOUT(focused->output);
 }
@@ -595,6 +644,14 @@ void cleanup(int err, void *userdata) {
     cuts.session = NULL;
   }
 
+  if (cuts.clients) {
+    struct client *client;
+    c_list_for_each(cuts.clients, client)
+      client_free(client);
+    c_list_destroy(cuts.clients);
+    cuts.clients = NULL;
+  }
+
   if (cuts.display) {
     c_wl_display_free(cuts.display);
     cuts.display = NULL;
@@ -603,14 +660,6 @@ void cleanup(int err, void *userdata) {
   if (cuts.scene) {
     c_scene_free(cuts.scene);
     cuts.scene = NULL;
-  }
-
-  if (cuts.clients) {
-    struct client *client;
-    c_list_for_each(cuts.clients, client)
-      client_free(client);
-    c_list_destroy(cuts.clients);
-    cuts.clients = NULL;
   }
 
   if (cuts.loop) {
@@ -739,10 +788,6 @@ mode_iter_end:
   };
 
   c_wl_display_add_listener(display, &dpy_listener, NULL);
-  
-
-  cuts.bar.pos = BAR_TOP;
-  cuts.bar.height = 30;
 
   ret = c_event_loop_run(loop);
 

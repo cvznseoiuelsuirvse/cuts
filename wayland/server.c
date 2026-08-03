@@ -409,11 +409,11 @@ int c_wl_object_del(struct c_wl_connection *conn, c_wl_object_id id) {
 struct c_wl_connection *c_wl_connection_init(int client_fd, struct c_wl_display *display) {
   struct c_wl_connection *conn = calloc(1, sizeof(* conn));
   if (!conn) {
-    c_log(C_LOG_ERROR, "calloc failed");
+    c_log(C_LOG_ERROR, "failed to allocate new connection");
     return NULL;
   }
 
-  conn->objects = c_map_new(1024 * 8);
+  conn->objects = c_map_new(1024);
   conn->client_id_pool = c_bitmap_new(1024 * 8);
   conn->server_id_pool = c_bitmap_new(1024 * 8);
   conn->client_fd = client_fd;

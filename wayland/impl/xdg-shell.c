@@ -148,30 +148,31 @@ int xdg_toplevel_set_max_size(struct c_wl_connection *conn, union c_wl_arg *args
 }
 
 int xdg_toplevel_set_parent(struct c_wl_connection *conn, union c_wl_arg *args) {
-  if (args[0].o == args[1].o)
+  struct c_wl_object *self = c_wl_self(conn, args);
+
+  struct c_xdg_surface *xdg_surface = self->data;
+  c_wl_object_id xdg_parent_id = args[1].o;
+  
+  if (self->id == xdg_parent_id)
     c_wl_error_set_and_return(args[0].o, XDG_TOPLEVEL_ERROR_INVALID_PARENT,
-        "parent and child cannot be the same objects");
+                              "parent and child cannot be the same objects");
 
-  struct c_xdg_surface *xdg_surface = c_wl_object_get(conn, args[0].o)->data;
-  struct c_xdg_surface *parent = xdg_surface->parent;
-
-  if (args[1].o == 0) {
-    if (parent)
-      c_list_remove(&parent->children, xdg_surface);
+  if (!xdg_parent_id) {
+    if (xdg_surface->parent)
+      c_list_remove(&xdg_surface->parent->children, xdg_surface);
 
     xdg_surface->parent = NULL;
     return 0;
   }
 
-  struct c_xdg_surface *xdg_surface_parent = c_wl_object_get(conn, args[1].o)->data;
-  struct c_xdg_surface *parent2 = xdg_surface_parent->parent;
+  struct c_xdg_surface *xdg_parent = c_wl_object_get(conn, xdg_parent_id)->data;
 
-  if (!parent2->children)
-    parent2->children = c_list_new();
+  if (!xdg_parent->children)
+    xdg_parent->children = c_list_new();
 
 
-  c_list_push(parent2->children, xdg_surface, 0);
-  xdg_surface->parent = xdg_surface_parent;
+  c_list_push(xdg_parent->children, xdg_surface, 0);
+  xdg_surface->parent = xdg_parent;
 
   return 0;
 }

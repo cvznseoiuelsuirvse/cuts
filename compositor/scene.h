@@ -6,14 +6,15 @@
 #include "compositor/window.h"
 #include "render/types.h"
 
-#define C_SCENE_MAX_WINDOWS 16
-
 struct c_scene_quad {
 	void *buffer;
   enum c_render_buffer_type buffer_type;
 
 	double  x, y;
 	uint32_t width, height;
+
+  float uv_offset[2];
+  float uv_scale[2];
 
   float    border_color[4];
   uint32_t border_width;

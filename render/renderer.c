@@ -195,8 +195,8 @@ error:
 }
 
 void c_renderer_draw(struct c_renderer *render, struct c_output *output,
-                     struct c_scene_quad quads[C_SCENE_MAX_WINDOWS],
-                     size_t quad_n, float backgroup[4]) {
+                     struct c_scene_quad *quads, size_t quad_n,
+                     float backgroup[4]) {
   struct c_framebuffer *back_buffer = output->swapchain.buffers[output->swapchain.front ^ 1];
 
   glBindFramebuffer(GL_FRAMEBUFFER, back_buffer->fbo);
