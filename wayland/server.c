@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <stdarg.h>
+#include <signal.h>
 
 #include "wayland/util.h"
 #include "wayland/display.h"
@@ -59,7 +60,7 @@ inline struct c_wl_interface *c_wl_interface_get(const char *interface_name) {
   return NULL;
 }
 
-static int c_wl_connection_read(struct c_wl_connection *conn, char *buffer, size_t buffer_size, 
+static int connection_read(struct c_wl_connection *conn, char *buffer, size_t buffer_size, 
                                 int req_fds[MAX_CMSG_FDS], size_t *n_req_fds) {
   char cmsg[CMSG_SPACE(sizeof(int) * MAX_CMSG_FDS)];
 
@@ -129,7 +130,7 @@ int c_wl_connection_send(struct c_wl_connection *conn, struct c_wl_message *msg,
   struct c_wl_object *object = c_wl_object_get(conn, msg->id);
   if (!object) {
     c_log(C_LOG_ERROR, "no objects registered with id %d", msg->id);
-    abort();
+    raise(SIGTERM);
   }
 
   char buffer[C_WL_CONN_BUF_SIZE] = {0};
@@ -202,6 +203,34 @@ int c_wl_connection_send(struct c_wl_connection *conn, struct c_wl_message *msg,
   return 0;
 }
 
+static int handle_request(struct c_wl_connection *conn, struct c_wl_object *object, c_wl_args args, uint16_t op) {
+  struct c_wl_request request = object->iface->requests[op];
+  int destructor = object->iface->destructor;
+  void *userdata = object->listeners.userdata;
+  void **handlers = object->listeners.handlers;
+
+  c_wl_listener_handler handler = NULL;
+  if (handlers)
+     handler = handlers[op];
+
+  int status;
+  if (handler && destructor == op) {
+    status = handler(conn, args, userdata);
+    if (status) goto out;
+  }
+
+  if (request.impl) {
+    status = request.impl(conn, args);
+    if (status) goto out;
+  }
+
+  if (handler && destructor != op)
+    status = handler(conn, args, userdata);
+
+out:
+  return status;
+}
+
 static int dispatch(struct c_wl_connection *conn, 
                     c_wl_object_id object_id, uint16_t op, uint16_t message_size, 
                     char *buffer, int **req_fds) {
@@ -269,17 +298,17 @@ static int dispatch(struct c_wl_connection *conn,
     }
   }
 
+
   c_log_wl_request(conn, object, &request, args);
-  if (!request.handler) {
+
+  if (!request.impl) {
     c_log(C_LOG_ERROR, "%s.%s request not implemented", iface->name, request.name);
     return DISPATCH_FATAL_ERR;
   }
 
-  int ret = request.handler(conn, args);
-
+  int status = handle_request(conn, object, args, op);
   if (arr.data) free(arr.data);
-
-  return ret;
+  return status;
 
 }
 
@@ -290,7 +319,7 @@ int c_wl_connection_dispatch(struct c_wl_connection *conn) {
   int req_fds[MAX_CMSG_FDS];
   size_t n_req_fds = 0;
 
-  int received = c_wl_connection_read(conn, buffer, C_WL_CONN_BUF_SIZE, req_fds, &n_req_fds);
+  int received = connection_read(conn, buffer, C_WL_CONN_BUF_SIZE, req_fds, &n_req_fds);
   if (received <= 0) return DISPATCH_CLIENT_ERR;
 
   size_t msg_count = 0;
@@ -367,7 +396,11 @@ struct c_wl_object *c_wl_object_add(struct c_wl_connection *conn, c_wl_new_id id
     .version = version,
     .iface = interface,
     .data = data,
+    .listeners = {NULL, NULL},
   };
+
+  c_wl_display_get_listener(
+      conn->dpy, interface->name, &new_object.listeners.handlers, &new_object.listeners.userdata);
 
   if (0 < id && id < 0xFF000000) {
     c_bitmap_set(conn->client_id_pool, id - 1);
@@ -433,80 +466,34 @@ struct c_map *c_wl_connection_get_objects(struct c_wl_connection *conn) {
   return conn->objects;
 }
 
+
+void call_destroy(struct c_wl_connection *conn, struct c_wl_object *object) {
+  c_wl_arg arg = {.o = object->id};
+  handle_request(conn, object, &arg, object->iface->destructor);
+}
+
 int c_wl_connection_free(struct c_wl_connection *conn) {
-  c_wl_object_id id;
-  struct c_wl_object *o;
-  c_map_for_each(conn->objects, id, o)
-    if (o->data) {
-      int refcount = c_get_refcount(o->data);
-      c_log(C_LOG_DEBUG, "rc:%d %p %s#%d", refcount, o->data, o->iface->name, o->id);
+  for (size_t i = 0; i < conn->objects->size; i++) {
+    struct c_map_pair *mp = conn->objects->pairs[i];
 
-      if (refcount > 1) goto unref;
+    while (mp) {
+      struct c_map_pair *next = mp->next;
+      struct c_wl_object *object = mp->value;
 
-      SWITCH_STR(o->iface->name)
-        CASE_STR("wl_buffer")
-          struct c_wl_buffer *buf = o->data;
-          c_wl_display_notify(conn->dpy, buf, C_WL_DISPLAY_ON_BUFFER_DESTROY);
+      if (object->data) {
+        int refcount = c_get_refcount(object->data);
+        c_log(C_LOG_DEBUG, "rc:%d %p %s#%d", refcount, object->data, object->iface->name, object->id);
 
-          if (buf->dma)
-            c_free(buf->dma);
+        if (refcount == 1)
+          call_destroy(conn, object);
+        else
+          c_unref(object->data);
+      }
 
-          if (buf->shm)
-            c_free(buf->shm);
-
-        CASE_STR("wl_surface")
-          struct c_wl_surface *wl_surface = o->data;
-          c_wl_display_notify(conn->dpy, o->data, C_WL_DISPLAY_ON_SURFACE_DESTROY);
-
-          if (wl_surface->active) {
-            c_unref(wl_surface->active);
-          }
-
-          if (wl_surface->pending && wl_surface->pending != wl_surface->active) {
-            c_unref(wl_surface->pending);
-          }
-
-          if (wl_surface->sub.children)
-            c_list_destroy(wl_surface->sub.children);
-
-          if (wl_surface->xdg_surface) {
-            if (wl_surface->xdg_surface->toplevel.title)  free(wl_surface->xdg_surface->toplevel.title);
-            if (wl_surface->xdg_surface->toplevel.app_id) free(wl_surface->xdg_surface->toplevel.app_id);
-          }
-
-        CASE_STR("xdg_surface")
-          struct c_xdg_surface *surface = o->data;
-          if (surface->children)
-            c_list_destroy(surface->children);
-
-        CASE_STR("zwp_linux_dmabuf_v1")
-          struct c_wl_linux_dmabuf_ctx *ctx = o->data;
-          close(ctx->ft_fd);
-
-        CASE_STR("wl_shm_pool")
-        struct c_wl_shm_pool *pool = o->data;
-          munmap(pool->ptr, pool->size);
-          close(pool->fd);
-
-        CASE_STR("wl_data_source")
-          struct c_wl_data_source *data_source = o->data;
-
-          for (size_t i = 0; i < data_source->mimes; i++) {
-            const char *mime = data_source->mimetypes[i];
-            free((char *)mime);
-          }
-
-        CASE_STR("wl_data_device")
-          struct c_wl_data_device *data_device = o->data;
-          if (data_device->data_source)
-            c_unref(data_device->data_source);
-
-      SWITCH_STR_END;
-
-unref:
-      c_unref(o->data);
-
+      mp = next;
+    }
   }
+
   c_map_destroy(conn->objects);
 
   c_bitmap_destroy(conn->client_id_pool);

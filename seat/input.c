@@ -132,9 +132,6 @@ static void handle_event_mouse(struct c_input *input, struct libinput_event_poin
       if (mouse_event.is_pressed) {
         input->state.button = mouse_event.button;
 
-        c_log_value(input->state.mod_mask, "%d");
-        c_log_value(input->state.button, "%d");
-
         struct __input_combo_listener *cl;
         c_list_for_each(input->combo_listeners, cl) {
           if (IS_MOUSE_COMBO(cl, input)) {

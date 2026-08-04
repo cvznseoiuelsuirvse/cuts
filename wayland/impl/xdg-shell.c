@@ -1,13 +1,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "wayland/display.h"
 #include "wayland/types.h"
 #include "wayland/proto/xdg-shell.h"
 #include "wayland/proto/wayland.h"
 #include "wayland/util.h"
 
-#include "util/log.h"
 #include "util/malloc.h"
 
 int xdg_wm_base_get_xdg_surface(struct c_wl_connection *conn, union c_wl_arg *args) {
@@ -49,7 +47,6 @@ int xdg_surface_ack_configure(struct c_wl_connection *conn, union c_wl_arg *args
 int xdg_surface_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id xdg_surface_id = args[0].o;
   struct c_xdg_surface *xdg_surface = c_wl_object_get(conn, xdg_surface_id)->data;
-  c_log_value(xdg_surface, "%p");
 
   if (xdg_surface->children) {
     struct c_xdg_surface *s;
@@ -98,9 +95,6 @@ int xdg_surface_get_toplevel(struct c_wl_connection *conn, union c_wl_arg *args)
 
   xdg_toplevel_configure(conn, xdg_toplevel_id, 0, 0, &arr);
   xdg_surface_configure(conn, self->id, c_wl_serial());
-
-  struct c_wl_display *dpy = c_wl_connection_get_dpy(conn);
-  c_wl_display_notify(dpy, xdg_surface, C_WL_DISPLAY_ON_TOPLEVEL_NEW);
 
   return 0;
 }
@@ -179,9 +173,6 @@ int xdg_toplevel_set_parent(struct c_wl_connection *conn, union c_wl_arg *args) 
 int xdg_toplevel_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_xdg_surface *xdg_surface = c_wl_object_get(conn, args[0].o)->data;
   struct c_xdg_surface *parent = xdg_surface->parent;
-
-  struct c_wl_display *dpy = c_wl_connection_get_dpy(conn);
-  c_wl_display_notify(dpy, xdg_surface, C_WL_DISPLAY_ON_TOPLEVEL_DESTROY);
 
   xdg_surface->surface->role = 0;
   if (parent)

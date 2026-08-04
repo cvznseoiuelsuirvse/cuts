@@ -169,12 +169,6 @@ struct c_xdg_surface {
   struct c_xdg_surface *parent;
 };
 
-struct c_wl_linux_dmabuf_ctx {
-	dev_t    drm_dev_id;	
-	int      ft_fd;
-	size_t   n_ft_entries;
-};
-
 struct c_wl_data_source {
   c_wl_object_id id;
 

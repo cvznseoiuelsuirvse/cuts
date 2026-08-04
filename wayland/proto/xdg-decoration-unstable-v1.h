@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "wayland/server.h"
+#include "wayland/display.h"
 #include "wayland/types.h"
 
 
@@ -22,7 +23,7 @@ enum zxdg_toplevel_decoration_v1_mode_enum {
 
    /* Destroy the decoration manager. This doesn't destroy objects created
         with the manager. */
-C_WL_REQUEST zxdg_decoration_manager_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST zxdg_decoration_manager_v1_destroy(struct c_wl_connection *conn, c_wl_args args);
 
    /* Create a new decoration object associated with the given toplevel.
 
@@ -50,8 +51,13 @@ C_WL_REQUEST zxdg_decoration_manager_v1_destroy(struct c_wl_connection *conn, un
     @[1] id: c_wl_new_id [[zxdg_toplevel_decoration_v1]]
     @[2] toplevel: c_wl_object_id [[xdg_toplevel]]
    */
-C_WL_REQUEST zxdg_decoration_manager_v1_get_toplevel_decoration(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST zxdg_decoration_manager_v1_get_toplevel_decoration(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_zxdg_decoration_manager_v1_listeners {
+  c_wl_listener_handler destroy;
+  c_wl_listener_handler get_toplevel_decoration;
+};
+void zxdg_decoration_manager_v1_add_listener(struct c_wl_display *display, struct c_zxdg_decoration_manager_v1_listeners *listeners, void *userdata);
 
  /* The configure event configures the effective decoration mode. The
         configured state should not be applied immediately. Clients must send an
@@ -65,7 +71,7 @@ C_WL_EVENT zxdg_toplevel_decoration_v1_configure(struct c_wl_connection *conn, c
    /* Switch back to a mode without any server-side decorations at the next
         commit, unless a new xdg_toplevel_decoration is created for the surface
         first. */
-C_WL_REQUEST zxdg_toplevel_decoration_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST zxdg_toplevel_decoration_v1_destroy(struct c_wl_connection *conn, c_wl_args args);
 
    /* Set the toplevel surface decoration mode. This informs the compositor
         that the client prefers the provided decoration mode.
@@ -91,13 +97,19 @@ C_WL_REQUEST zxdg_toplevel_decoration_v1_destroy(struct c_wl_connection *conn, u
 
     @[1] mode: enum zxdg_toplevel_decoration_v1_mode_enum
    */
-C_WL_REQUEST zxdg_toplevel_decoration_v1_set_mode(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST zxdg_toplevel_decoration_v1_set_mode(struct c_wl_connection *conn, c_wl_args args);
 
    /* Unset the toplevel surface decoration mode. This informs the compositor
         that the client doesn't prefer a particular decoration mode.
 
         This request has the same semantics as set_mode. */
-C_WL_REQUEST zxdg_toplevel_decoration_v1_unset_mode(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST zxdg_toplevel_decoration_v1_unset_mode(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_zxdg_toplevel_decoration_v1_listeners {
+  c_wl_listener_handler destroy;
+  c_wl_listener_handler set_mode;
+  c_wl_listener_handler unset_mode;
+};
+void zxdg_toplevel_decoration_v1_add_listener(struct c_wl_display *display, struct c_zxdg_toplevel_decoration_v1_listeners *listeners, void *userdata);
 
 #endif

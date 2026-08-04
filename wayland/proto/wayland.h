@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "wayland/server.h"
+#include "wayland/display.h"
 #include "wayland/types.h"
 
 
@@ -413,7 +414,7 @@ C_WL_EVENT wl_display_delete_id(struct c_wl_connection *conn, c_wl_object_id wl_
 
     @[1] callback: c_wl_new_id [[wl_callback]]
    */
-C_WL_REQUEST wl_display_sync(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_display_sync(struct c_wl_connection *conn, c_wl_args args);
 
    /* This request creates a registry object that allows the client
 	to list and bind the global objects available from the
@@ -427,8 +428,13 @@ C_WL_REQUEST wl_display_sync(struct c_wl_connection *conn, union c_wl_arg *args)
 
     @[1] registry: c_wl_new_id [[wl_registry]]
    */
-C_WL_REQUEST wl_display_get_registry(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_display_get_registry(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_wl_display_listeners {
+  c_wl_listener_handler sync;
+  c_wl_listener_handler get_registry;
+};
+void wl_display_add_listener(struct c_wl_display *display, struct c_wl_display_listeners *listeners, void *userdata);
 
  /* Notify the client of global objects.
 
@@ -457,8 +463,12 @@ C_WL_EVENT wl_registry_global_remove(struct c_wl_connection *conn, c_wl_object_i
     @[3] version: c_wl_uint
     @[4] id: c_wl_new_id
    */
-C_WL_REQUEST wl_registry_bind(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_registry_bind(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_wl_registry_listeners {
+  c_wl_listener_handler bind;
+};
+void wl_registry_add_listener(struct c_wl_display *display, struct c_wl_registry_listeners *listeners, void *userdata);
 
  /* Notify the client when the related request is done. */
 C_WL_EVENT wl_callback_done(struct c_wl_connection *conn, c_wl_object_id wl_callback, c_wl_uint callback_data);
@@ -468,14 +478,19 @@ C_WL_EVENT wl_callback_done(struct c_wl_connection *conn, c_wl_object_id wl_call
 
     @[1] id: c_wl_new_id [[wl_surface]]
    */
-C_WL_REQUEST wl_compositor_create_surface(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_compositor_create_surface(struct c_wl_connection *conn, c_wl_args args);
 
    /* Ask the compositor to create a new region.
 
     @[1] id: c_wl_new_id [[wl_region]]
    */
-C_WL_REQUEST wl_compositor_create_region(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_compositor_create_region(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_wl_compositor_listeners {
+  c_wl_listener_handler create_surface;
+  c_wl_listener_handler create_region;
+};
+void wl_compositor_add_listener(struct c_wl_display *display, struct c_wl_compositor_listeners *listeners, void *userdata);
 
    /* Create a wl_buffer object from the pool.
 
@@ -496,14 +511,14 @@ C_WL_REQUEST wl_compositor_create_region(struct c_wl_connection *conn, union c_w
     @[5] stride: c_wl_int
     @[6] format: enum wl_shm_format_enum
    */
-C_WL_REQUEST wl_shm_pool_create_buffer(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_shm_pool_create_buffer(struct c_wl_connection *conn, c_wl_args args);
 
    /* Destroy the shared memory pool.
 
 	The mmapped memory will be released when all
 	buffers that have been created from this pool
 	are gone. */
-C_WL_REQUEST wl_shm_pool_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_shm_pool_destroy(struct c_wl_connection *conn, c_wl_args args);
 
    /* This request will cause the server to remap the backing memory
 	for the pool from the file descriptor passed when the pool was
@@ -518,8 +533,14 @@ C_WL_REQUEST wl_shm_pool_destroy(struct c_wl_connection *conn, union c_wl_arg *a
 
     @[1] size: c_wl_int
    */
-C_WL_REQUEST wl_shm_pool_resize(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_shm_pool_resize(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_wl_shm_pool_listeners {
+  c_wl_listener_handler create_buffer;
+  c_wl_listener_handler destroy;
+  c_wl_listener_handler resize;
+};
+void wl_shm_pool_add_listener(struct c_wl_display *display, struct c_wl_shm_pool_listeners *listeners, void *userdata);
 
  /* Informs the client about a valid pixel format that
 	can be used for buffers. Known formats include
@@ -536,14 +557,19 @@ C_WL_EVENT wl_shm_format(struct c_wl_connection *conn, c_wl_object_id wl_shm, en
     @[2] fd: c_wl_fd
     @[3] size: c_wl_int
    */
-C_WL_REQUEST wl_shm_create_pool(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_shm_create_pool(struct c_wl_connection *conn, c_wl_args args);
 
    /* Using this request a client can tell the server that it is not going to
 	use the shm object anymore.
 
 	Objects created via this interface remain unaffected. */
-C_WL_REQUEST wl_shm_release(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_shm_release(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_wl_shm_listeners {
+  c_wl_listener_handler create_pool;
+  c_wl_listener_handler release;
+};
+void wl_shm_add_listener(struct c_wl_display *display, struct c_wl_shm_listeners *listeners, void *userdata);
 
  /* Sent when this wl_buffer is no longer used by the compositor.
 
@@ -565,8 +591,12 @@ C_WL_EVENT wl_buffer_release(struct c_wl_connection *conn, c_wl_object_id wl_buf
 	storage is defined by the buffer factory interface.
 
 	For possible side-effects to a surface, see wl_surface.attach. */
-C_WL_REQUEST wl_buffer_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_buffer_destroy(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_wl_buffer_listeners {
+  c_wl_listener_handler destroy;
+};
+void wl_buffer_add_listener(struct c_wl_display *display, struct c_wl_buffer_listeners *listeners, void *userdata);
 
  /* Sent immediately after creating the wl_data_offer object.  One
 	event per offered mime type. */
@@ -633,7 +663,7 @@ C_WL_EVENT wl_data_offer_action(struct c_wl_connection *conn, c_wl_object_id wl_
     @[1] serial: c_wl_uint
     @[2] mime_type: c_wl_string
    */
-C_WL_REQUEST wl_data_offer_accept(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_data_offer_accept(struct c_wl_connection *conn, c_wl_args args);
 
    /* To transfer the offered data, the client issues this request
 	and indicates the mime type it wants to receive.  The transfer
@@ -654,10 +684,10 @@ C_WL_REQUEST wl_data_offer_accept(struct c_wl_connection *conn, union c_wl_arg *
     @[1] mime_type: c_wl_string
     @[2] fd: c_wl_fd
    */
-C_WL_REQUEST wl_data_offer_receive(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_data_offer_receive(struct c_wl_connection *conn, c_wl_args args);
 
    /* Destroy the data offer. */
-C_WL_REQUEST wl_data_offer_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_data_offer_destroy(struct c_wl_connection *conn, c_wl_args args);
 
    /* Notifies the compositor that the drag destination successfully
 	finished the drag-and-drop operation.
@@ -673,7 +703,7 @@ C_WL_REQUEST wl_data_offer_destroy(struct c_wl_connection *conn, union c_wl_arg 
 
 	If wl_data_offer.finish request is received for a non drag and drop
 	operation, the invalid_finish protocol error is raised. */
-C_WL_REQUEST wl_data_offer_finish(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_data_offer_finish(struct c_wl_connection *conn, c_wl_args args);
 
    /* Sets the actions that the destination side client supports for
 	this operation. This request may trigger the emission of
@@ -710,8 +740,16 @@ C_WL_REQUEST wl_data_offer_finish(struct c_wl_connection *conn, union c_wl_arg *
     @[1] dnd_actions: enum wl_data_device_manager_dnd_action_enum
     @[2] preferred_action: enum wl_data_device_manager_dnd_action_enum
    */
-C_WL_REQUEST wl_data_offer_set_actions(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_data_offer_set_actions(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_wl_data_offer_listeners {
+  c_wl_listener_handler accept;
+  c_wl_listener_handler receive;
+  c_wl_listener_handler destroy;
+  c_wl_listener_handler finish;
+  c_wl_listener_handler set_actions;
+};
+void wl_data_offer_add_listener(struct c_wl_display *display, struct c_wl_data_offer_listeners *listeners, void *userdata);
 
  /* Sent when a target accepts pointer_focus or motion events.  If
 	a target does not accept any of the offered types, type is NULL.
@@ -798,10 +836,10 @@ C_WL_EVENT wl_data_source_action(struct c_wl_connection *conn, c_wl_object_id wl
 
     @[1] mime_type: c_wl_string
    */
-C_WL_REQUEST wl_data_source_offer(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_data_source_offer(struct c_wl_connection *conn, c_wl_args args);
 
    /* Destroy the data source. */
-C_WL_REQUEST wl_data_source_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_data_source_destroy(struct c_wl_connection *conn, c_wl_args args);
 
    /* Sets the actions that the source side client supports for this
 	operation. This request may trigger wl_data_source.action and
@@ -819,8 +857,14 @@ C_WL_REQUEST wl_data_source_destroy(struct c_wl_connection *conn, union c_wl_arg
 
     @[1] dnd_actions: enum wl_data_device_manager_dnd_action_enum
    */
-C_WL_REQUEST wl_data_source_set_actions(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_data_source_set_actions(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_wl_data_source_listeners {
+  c_wl_listener_handler offer;
+  c_wl_listener_handler destroy;
+  c_wl_listener_handler set_actions;
+};
+void wl_data_source_add_listener(struct c_wl_display *display, struct c_wl_data_source_listeners *listeners, void *userdata);
 
  /* The data_offer event introduces a new wl_data_offer object,
 	which will subsequently be used in either the
@@ -912,7 +956,7 @@ C_WL_EVENT wl_data_device_selection(struct c_wl_connection *conn, c_wl_object_id
     @[3] icon: c_wl_object_id [[wl_surface]]
     @[4] serial: c_wl_uint
    */
-C_WL_REQUEST wl_data_device_start_drag(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_data_device_start_drag(struct c_wl_connection *conn, c_wl_args args);
 
    /* This request asks the compositor to set the selection
 	to the data from the source on behalf of the client.
@@ -926,25 +970,36 @@ C_WL_REQUEST wl_data_device_start_drag(struct c_wl_connection *conn, union c_wl_
     @[1] source: c_wl_object_id [[wl_data_source]]
     @[2] serial: c_wl_uint
    */
-C_WL_REQUEST wl_data_device_set_selection(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_data_device_set_selection(struct c_wl_connection *conn, c_wl_args args);
 
    /* This request destroys the data device. */
-C_WL_REQUEST wl_data_device_release(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_data_device_release(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_wl_data_device_listeners {
+  c_wl_listener_handler start_drag;
+  c_wl_listener_handler set_selection;
+  c_wl_listener_handler release;
+};
+void wl_data_device_add_listener(struct c_wl_display *display, struct c_wl_data_device_listeners *listeners, void *userdata);
 
    /* Create a new data source.
 
     @[1] id: c_wl_new_id [[wl_data_source]]
    */
-C_WL_REQUEST wl_data_device_manager_create_data_source(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_data_device_manager_create_data_source(struct c_wl_connection *conn, c_wl_args args);
 
    /* Create a new data device for a given seat.
 
     @[1] id: c_wl_new_id [[wl_data_device]]
     @[2] seat: c_wl_object_id [[wl_seat]]
    */
-C_WL_REQUEST wl_data_device_manager_get_data_device(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_data_device_manager_get_data_device(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_wl_data_device_manager_listeners {
+  c_wl_listener_handler create_data_source;
+  c_wl_listener_handler get_data_device;
+};
+void wl_data_device_manager_add_listener(struct c_wl_display *display, struct c_wl_data_device_manager_listeners *listeners, void *userdata);
 
    /* Create a shell surface for an existing surface. This gives
 	the wl_surface the role of a shell surface. If the wl_surface
@@ -955,8 +1010,12 @@ C_WL_REQUEST wl_data_device_manager_get_data_device(struct c_wl_connection *conn
     @[1] id: c_wl_new_id [[wl_shell_surface]]
     @[2] surface: c_wl_object_id [[wl_surface]]
    */
-C_WL_REQUEST wl_shell_get_shell_surface(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_shell_get_shell_surface(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_wl_shell_listeners {
+  c_wl_listener_handler get_shell_surface;
+};
+void wl_shell_add_listener(struct c_wl_display *display, struct c_wl_shell_listeners *listeners, void *userdata);
 
  /* Ping a client to check if it is receiving events and sending
 	requests. A client is expected to reply with a pong request. */
@@ -991,7 +1050,7 @@ C_WL_EVENT wl_shell_surface_popup_done(struct c_wl_connection *conn, c_wl_object
 
     @[1] serial: c_wl_uint
    */
-C_WL_REQUEST wl_shell_surface_pong(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_shell_surface_pong(struct c_wl_connection *conn, c_wl_args args);
 
    /* Start a pointer-driven move of the surface.
 
@@ -1002,7 +1061,7 @@ C_WL_REQUEST wl_shell_surface_pong(struct c_wl_connection *conn, union c_wl_arg 
     @[1] seat: c_wl_object_id [[wl_seat]]
     @[2] serial: c_wl_uint
    */
-C_WL_REQUEST wl_shell_surface_move(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_shell_surface_move(struct c_wl_connection *conn, c_wl_args args);
 
    /* Start a pointer-driven resizing of the surface.
 
@@ -1014,12 +1073,12 @@ C_WL_REQUEST wl_shell_surface_move(struct c_wl_connection *conn, union c_wl_arg 
     @[2] serial: c_wl_uint
     @[3] edges: enum wl_shell_surface_resize_enum
    */
-C_WL_REQUEST wl_shell_surface_resize(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_shell_surface_resize(struct c_wl_connection *conn, c_wl_args args);
 
    /* Map the surface as a toplevel surface.
 
 	A toplevel surface is not fullscreen, maximized or transient. */
-C_WL_REQUEST wl_shell_surface_set_toplevel(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_shell_surface_set_toplevel(struct c_wl_connection *conn, c_wl_args args);
 
    /* Map the surface relative to an existing surface.
 
@@ -1034,7 +1093,7 @@ C_WL_REQUEST wl_shell_surface_set_toplevel(struct c_wl_connection *conn, union c
     @[3] y: c_wl_int
     @[4] flags: enum wl_shell_surface_transient_enum
    */
-C_WL_REQUEST wl_shell_surface_set_transient(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_shell_surface_set_transient(struct c_wl_connection *conn, c_wl_args args);
 
    /* Map the surface as a fullscreen surface.
 
@@ -1074,7 +1133,7 @@ C_WL_REQUEST wl_shell_surface_set_transient(struct c_wl_connection *conn, union 
     @[2] framerate: c_wl_uint
     @[3] output: c_wl_object_id [[wl_output]]
    */
-C_WL_REQUEST wl_shell_surface_set_fullscreen(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_shell_surface_set_fullscreen(struct c_wl_connection *conn, c_wl_args args);
 
    /* Map the surface as a popup.
 
@@ -1103,7 +1162,7 @@ C_WL_REQUEST wl_shell_surface_set_fullscreen(struct c_wl_connection *conn, union
     @[5] y: c_wl_int
     @[6] flags: enum wl_shell_surface_transient_enum
    */
-C_WL_REQUEST wl_shell_surface_set_popup(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_shell_surface_set_popup(struct c_wl_connection *conn, c_wl_args args);
 
    /* Map the surface as a maximized surface.
 
@@ -1126,7 +1185,7 @@ C_WL_REQUEST wl_shell_surface_set_popup(struct c_wl_connection *conn, union c_wl
 
     @[1] output: c_wl_object_id [[wl_output]]
    */
-C_WL_REQUEST wl_shell_surface_set_maximized(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_shell_surface_set_maximized(struct c_wl_connection *conn, c_wl_args args);
 
    /* Set a short title for the surface.
 
@@ -1138,7 +1197,7 @@ C_WL_REQUEST wl_shell_surface_set_maximized(struct c_wl_connection *conn, union 
 
     @[1] title: c_wl_string
    */
-C_WL_REQUEST wl_shell_surface_set_title(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_shell_surface_set_title(struct c_wl_connection *conn, c_wl_args args);
 
    /* Set a class for the surface.
 
@@ -1149,8 +1208,21 @@ C_WL_REQUEST wl_shell_surface_set_title(struct c_wl_connection *conn, union c_wl
 
     @[1] class_: c_wl_string
    */
-C_WL_REQUEST wl_shell_surface_set_class(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_shell_surface_set_class(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_wl_shell_surface_listeners {
+  c_wl_listener_handler pong;
+  c_wl_listener_handler move;
+  c_wl_listener_handler resize;
+  c_wl_listener_handler set_toplevel;
+  c_wl_listener_handler set_transient;
+  c_wl_listener_handler set_fullscreen;
+  c_wl_listener_handler set_popup;
+  c_wl_listener_handler set_maximized;
+  c_wl_listener_handler set_title;
+  c_wl_listener_handler set_class;
+};
+void wl_shell_surface_add_listener(struct c_wl_display *display, struct c_wl_shell_surface_listeners *listeners, void *userdata);
 
  /* This is emitted whenever a surface's creation, movement, or resizing
 	results in some part of it being within the scanout region of an
@@ -1196,7 +1268,7 @@ C_WL_EVENT wl_surface_preferred_buffer_scale(struct c_wl_connection *conn, c_wl_
 C_WL_EVENT wl_surface_preferred_buffer_transform(struct c_wl_connection *conn, c_wl_object_id wl_surface, enum wl_output_transform_enum transform);
 
    /* Deletes the surface and invalidates its object ID. */
-C_WL_REQUEST wl_surface_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_surface_destroy(struct c_wl_connection *conn, c_wl_args args);
 
    /* Set a buffer as the content of this surface.
 
@@ -1268,7 +1340,7 @@ C_WL_REQUEST wl_surface_destroy(struct c_wl_connection *conn, union c_wl_arg *ar
     @[2] x: c_wl_int
     @[3] y: c_wl_int
    */
-C_WL_REQUEST wl_surface_attach(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_surface_attach(struct c_wl_connection *conn, c_wl_args args);
 
    /* This request is used to describe the regions where the pending
 	buffer is different from the current surface contents, and where
@@ -1297,7 +1369,7 @@ C_WL_REQUEST wl_surface_attach(struct c_wl_connection *conn, union c_wl_arg *arg
     @[3] width: c_wl_int
     @[4] height: c_wl_int
    */
-C_WL_REQUEST wl_surface_damage(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_surface_damage(struct c_wl_connection *conn, c_wl_args args);
 
    /* Request a notification when it is a good time to start drawing a new
 	frame, by creating a frame callback. This is useful for throttling
@@ -1334,7 +1406,7 @@ C_WL_REQUEST wl_surface_damage(struct c_wl_connection *conn, union c_wl_arg *arg
 
     @[1] callback: c_wl_new_id [[wl_callback]]
    */
-C_WL_REQUEST wl_surface_frame(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_surface_frame(struct c_wl_connection *conn, c_wl_args args);
 
    /* This request sets the region of the surface that contains
 	opaque content.
@@ -1363,7 +1435,7 @@ C_WL_REQUEST wl_surface_frame(struct c_wl_connection *conn, union c_wl_arg *args
 
     @[1] region: c_wl_object_id [[wl_region]]
    */
-C_WL_REQUEST wl_surface_set_opaque_region(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_surface_set_opaque_region(struct c_wl_connection *conn, c_wl_args args);
 
    /* This request sets the region of the surface that can receive
 	pointer and touch events.
@@ -1390,7 +1462,7 @@ C_WL_REQUEST wl_surface_set_opaque_region(struct c_wl_connection *conn, union c_
 
     @[1] region: c_wl_object_id [[wl_region]]
    */
-C_WL_REQUEST wl_surface_set_input_region(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_surface_set_input_region(struct c_wl_connection *conn, c_wl_args args);
 
    /* Surface state (input, opaque, and damage regions, attached buffers,
 	etc.) is double-buffered. Protocol requests modify the pending state,
@@ -1411,7 +1483,7 @@ C_WL_REQUEST wl_surface_set_input_region(struct c_wl_connection *conn, union c_w
 	to affect double-buffered state.
 
 	Other interfaces may add further double-buffered surface state. */
-C_WL_REQUEST wl_surface_commit(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_surface_commit(struct c_wl_connection *conn, c_wl_args args);
 
    /* This request sets the transformation that the client has already applied
 	to the content of the buffer. The accepted values for the transform
@@ -1447,7 +1519,7 @@ C_WL_REQUEST wl_surface_commit(struct c_wl_connection *conn, union c_wl_arg *arg
 
     @[1] transform: enum wl_output_transform_enum
    */
-C_WL_REQUEST wl_surface_set_buffer_transform(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_surface_set_buffer_transform(struct c_wl_connection *conn, c_wl_args args);
 
    /* This request sets an optional scaling factor on how the compositor
 	interprets the contents of the buffer attached to the window.
@@ -1475,7 +1547,7 @@ C_WL_REQUEST wl_surface_set_buffer_transform(struct c_wl_connection *conn, union
 
     @[1] scale: c_wl_int
    */
-C_WL_REQUEST wl_surface_set_buffer_scale(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_surface_set_buffer_scale(struct c_wl_connection *conn, c_wl_args args);
 
    /* This request is used to describe the regions where the pending
 	buffer is different from the current surface contents, and where
@@ -1515,7 +1587,7 @@ C_WL_REQUEST wl_surface_set_buffer_scale(struct c_wl_connection *conn, union c_w
     @[3] width: c_wl_int
     @[4] height: c_wl_int
    */
-C_WL_REQUEST wl_surface_damage_buffer(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_surface_damage_buffer(struct c_wl_connection *conn, c_wl_args args);
 
    /* The x and y arguments specify the location of the new pending
 	buffer's upper left corner, relative to the current buffer's upper
@@ -1536,8 +1608,22 @@ C_WL_REQUEST wl_surface_damage_buffer(struct c_wl_connection *conn, union c_wl_a
     @[1] x: c_wl_int
     @[2] y: c_wl_int
    */
-C_WL_REQUEST wl_surface_offset(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_surface_offset(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_wl_surface_listeners {
+  c_wl_listener_handler destroy;
+  c_wl_listener_handler attach;
+  c_wl_listener_handler damage;
+  c_wl_listener_handler frame;
+  c_wl_listener_handler set_opaque_region;
+  c_wl_listener_handler set_input_region;
+  c_wl_listener_handler commit;
+  c_wl_listener_handler set_buffer_transform;
+  c_wl_listener_handler set_buffer_scale;
+  c_wl_listener_handler damage_buffer;
+  c_wl_listener_handler offset;
+};
+void wl_surface_add_listener(struct c_wl_display *display, struct c_wl_surface_listeners *listeners, void *userdata);
 
  /* This is sent on binding to the seat global or whenever a seat gains
 	or loses the pointer, keyboard or touch capabilities.
@@ -1595,7 +1681,7 @@ C_WL_EVENT wl_seat_name(struct c_wl_connection *conn, c_wl_object_id wl_seat, c_
 
     @[1] id: c_wl_new_id [[wl_pointer]]
    */
-C_WL_REQUEST wl_seat_get_pointer(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_seat_get_pointer(struct c_wl_connection *conn, c_wl_args args);
 
    /* The ID provided will be initialized to the wl_keyboard interface
 	for this seat.
@@ -1608,7 +1694,7 @@ C_WL_REQUEST wl_seat_get_pointer(struct c_wl_connection *conn, union c_wl_arg *a
 
     @[1] id: c_wl_new_id [[wl_keyboard]]
    */
-C_WL_REQUEST wl_seat_get_keyboard(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_seat_get_keyboard(struct c_wl_connection *conn, c_wl_args args);
 
    /* The ID provided will be initialized to the wl_touch interface
 	for this seat.
@@ -1621,12 +1707,19 @@ C_WL_REQUEST wl_seat_get_keyboard(struct c_wl_connection *conn, union c_wl_arg *
 
     @[1] id: c_wl_new_id [[wl_touch]]
    */
-C_WL_REQUEST wl_seat_get_touch(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_seat_get_touch(struct c_wl_connection *conn, c_wl_args args);
 
    /* Using this request a client can tell the server that it is not going to
 	use the seat object anymore. */
-C_WL_REQUEST wl_seat_release(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_seat_release(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_wl_seat_listeners {
+  c_wl_listener_handler get_pointer;
+  c_wl_listener_handler get_keyboard;
+  c_wl_listener_handler get_touch;
+  c_wl_listener_handler release;
+};
+void wl_seat_add_listener(struct c_wl_display *display, struct c_wl_seat_listeners *listeners, void *userdata);
 
  /* Notification that this seat's pointer is focused on a certain
 	surface.
@@ -1892,15 +1985,20 @@ C_WL_EVENT wl_pointer_axis_relative_direction(struct c_wl_connection *conn, c_wl
     @[3] hotspot_x: c_wl_int
     @[4] hotspot_y: c_wl_int
    */
-C_WL_REQUEST wl_pointer_set_cursor(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_pointer_set_cursor(struct c_wl_connection *conn, c_wl_args args);
 
    /* Using this request a client can tell the server that it is not going to
 	use the pointer object anymore.
 
 	This request destroys the pointer proxy object, so clients must not call
 	wl_pointer_destroy() after using this request. */
-C_WL_REQUEST wl_pointer_release(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_pointer_release(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_wl_pointer_listeners {
+  c_wl_listener_handler set_cursor;
+  c_wl_listener_handler release;
+};
+void wl_pointer_add_listener(struct c_wl_display *display, struct c_wl_pointer_listeners *listeners, void *userdata);
 
  /* This event provides a file descriptor to the client which can be
 	memory-mapped in read-only mode to provide a keyboard mapping
@@ -1991,8 +2089,12 @@ C_WL_EVENT wl_keyboard_modifiers(struct c_wl_connection *conn, c_wl_object_id wl
 	of wl_keyboard. */
 C_WL_EVENT wl_keyboard_repeat_info(struct c_wl_connection *conn, c_wl_object_id wl_keyboard, c_wl_int rate, c_wl_int delay);
 
-C_WL_REQUEST wl_keyboard_release(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_keyboard_release(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_wl_keyboard_listeners {
+  c_wl_listener_handler release;
+};
+void wl_keyboard_add_listener(struct c_wl_display *display, struct c_wl_keyboard_listeners *listeners, void *userdata);
 
  /* A new touch point has appeared on the surface. This touch point is
 	assigned a unique ID. Future events from this touch point reference
@@ -2080,8 +2182,12 @@ C_WL_EVENT wl_touch_shape(struct c_wl_connection *conn, c_wl_object_id wl_touch,
 	orientation reports. */
 C_WL_EVENT wl_touch_orientation(struct c_wl_connection *conn, c_wl_object_id wl_touch, c_wl_int id, c_wl_fixed orientation);
 
-C_WL_REQUEST wl_touch_release(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_touch_release(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_wl_touch_listeners {
+  c_wl_listener_handler release;
+};
+void wl_touch_add_listener(struct c_wl_display *display, struct c_wl_touch_listeners *listeners, void *userdata);
 
  /* The geometry event describes geometric properties of the output.
 	The event is sent when binding to the output object and whenever
@@ -2215,11 +2321,15 @@ C_WL_EVENT wl_output_description(struct c_wl_connection *conn, c_wl_object_id wl
 
    /* Using this request a client can tell the server that it is not going to
 	use the output object anymore. */
-C_WL_REQUEST wl_output_release(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_output_release(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_wl_output_listeners {
+  c_wl_listener_handler release;
+};
+void wl_output_add_listener(struct c_wl_display *display, struct c_wl_output_listeners *listeners, void *userdata);
 
    /* Destroy the region.  This will invalidate the object ID. */
-C_WL_REQUEST wl_region_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_region_destroy(struct c_wl_connection *conn, c_wl_args args);
 
    /* Add the specified rectangle to the region.
 
@@ -2228,7 +2338,7 @@ C_WL_REQUEST wl_region_destroy(struct c_wl_connection *conn, union c_wl_arg *arg
     @[3] width: c_wl_int
     @[4] height: c_wl_int
    */
-C_WL_REQUEST wl_region_add(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_region_add(struct c_wl_connection *conn, c_wl_args args);
 
    /* Subtract the specified rectangle from the region.
 
@@ -2237,13 +2347,19 @@ C_WL_REQUEST wl_region_add(struct c_wl_connection *conn, union c_wl_arg *args);
     @[3] width: c_wl_int
     @[4] height: c_wl_int
    */
-C_WL_REQUEST wl_region_subtract(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_region_subtract(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_wl_region_listeners {
+  c_wl_listener_handler destroy;
+  c_wl_listener_handler add;
+  c_wl_listener_handler subtract;
+};
+void wl_region_add_listener(struct c_wl_display *display, struct c_wl_region_listeners *listeners, void *userdata);
 
    /* Informs the server that the client will not be using this
 	protocol object anymore. This does not affect any other
 	objects, wl_subsurface objects included. */
-C_WL_REQUEST wl_subcompositor_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_subcompositor_destroy(struct c_wl_connection *conn, c_wl_args args);
 
    /* Create a sub-surface interface for the given surface, and
 	associate it with the given parent surface. This turns a
@@ -2269,14 +2385,19 @@ C_WL_REQUEST wl_subcompositor_destroy(struct c_wl_connection *conn, union c_wl_a
     @[2] surface: c_wl_object_id [[wl_surface]]
     @[3] parent: c_wl_object_id [[wl_surface]]
    */
-C_WL_REQUEST wl_subcompositor_get_subsurface(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_subcompositor_get_subsurface(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_wl_subcompositor_listeners {
+  c_wl_listener_handler destroy;
+  c_wl_listener_handler get_subsurface;
+};
+void wl_subcompositor_add_listener(struct c_wl_display *display, struct c_wl_subcompositor_listeners *listeners, void *userdata);
 
    /* The sub-surface interface is removed from the wl_surface object
 	that was turned into a sub-surface with a
 	wl_subcompositor.get_subsurface request. The wl_surface's association
 	to the parent is deleted. The wl_surface is unmapped immediately. */
-C_WL_REQUEST wl_subsurface_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_subsurface_destroy(struct c_wl_connection *conn, c_wl_args args);
 
    /* This schedules a sub-surface position change.
 	The sub-surface will be moved so that its origin (top left
@@ -2296,7 +2417,7 @@ C_WL_REQUEST wl_subsurface_destroy(struct c_wl_connection *conn, union c_wl_arg 
     @[1] x: c_wl_int
     @[2] y: c_wl_int
    */
-C_WL_REQUEST wl_subsurface_set_position(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_subsurface_set_position(struct c_wl_connection *conn, c_wl_args args);
 
    /* This sub-surface is taken from the stack, and put back just
 	above the reference surface, changing the z-order of the sub-surfaces.
@@ -2314,14 +2435,14 @@ C_WL_REQUEST wl_subsurface_set_position(struct c_wl_connection *conn, union c_wl
 
     @[1] sibling: c_wl_object_id [[wl_surface]]
    */
-C_WL_REQUEST wl_subsurface_place_above(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_subsurface_place_above(struct c_wl_connection *conn, c_wl_args args);
 
    /* The sub-surface is placed just below the reference surface.
 	See wl_subsurface.place_above.
 
     @[1] sibling: c_wl_object_id [[wl_surface]]
    */
-C_WL_REQUEST wl_subsurface_place_below(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_subsurface_place_below(struct c_wl_connection *conn, c_wl_args args);
 
    /* Change the commit behaviour of the sub-surface to synchronized
 	mode, also described as the parent dependent mode.
@@ -2336,7 +2457,7 @@ C_WL_REQUEST wl_subsurface_place_below(struct c_wl_connection *conn, union c_wl_
 	parent surface commits do not (re-)apply old state.
 
 	See wl_subsurface for the recursive effect of this mode. */
-C_WL_REQUEST wl_subsurface_set_sync(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_subsurface_set_sync(struct c_wl_connection *conn, c_wl_args args);
 
    /* Change the commit behaviour of the sub-surface to desynchronized
 	mode, also described as independent or freely running mode.
@@ -2357,10 +2478,19 @@ C_WL_REQUEST wl_subsurface_set_sync(struct c_wl_connection *conn, union c_wl_arg
 
 	If a surface's parent surface behaves as desynchronized, then
 	the cached state is applied on set_desync. */
-C_WL_REQUEST wl_subsurface_set_desync(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_subsurface_set_desync(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_wl_subsurface_listeners {
+  c_wl_listener_handler destroy;
+  c_wl_listener_handler set_position;
+  c_wl_listener_handler place_above;
+  c_wl_listener_handler place_below;
+  c_wl_listener_handler set_sync;
+  c_wl_listener_handler set_desync;
+};
+void wl_subsurface_add_listener(struct c_wl_display *display, struct c_wl_subsurface_listeners *listeners, void *userdata);
 
-C_WL_REQUEST wl_fixes_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_fixes_destroy(struct c_wl_connection *conn, c_wl_args args);
 
    /* This request destroys a wl_registry object.
 
@@ -2374,7 +2504,12 @@ C_WL_REQUEST wl_fixes_destroy(struct c_wl_connection *conn, union c_wl_arg *args
 
     @[1] registry: c_wl_object_id [[wl_registry]]
    */
-C_WL_REQUEST wl_fixes_destroy_registry(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST wl_fixes_destroy_registry(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_wl_fixes_listeners {
+  c_wl_listener_handler destroy;
+  c_wl_listener_handler destroy_registry;
+};
+void wl_fixes_add_listener(struct c_wl_display *display, struct c_wl_fixes_listeners *listeners, void *userdata);
 
 #endif

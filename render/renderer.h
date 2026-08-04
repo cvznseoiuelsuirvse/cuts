@@ -14,8 +14,9 @@ struct c_renderer {
 	struct c_egl *egl;
 	struct c_gles *gl;
 
-	size_t n_formats;
 	struct c_format *formats;
+	size_t format_table_entries;
+  int format_table_fd;
 	uint32_t *wl_formats;
 };
 

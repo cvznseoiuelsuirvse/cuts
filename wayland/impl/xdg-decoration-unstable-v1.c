@@ -22,7 +22,6 @@ int zxdg_decoration_manager_v1_destroy(struct c_wl_connection *conn, union c_wl_
   return 0;
 }
 
-
 int zxdg_toplevel_decoration_v1_set_mode(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_xdg_surface *surface = c_wl_object_get(conn, args[0].o)->data;
 

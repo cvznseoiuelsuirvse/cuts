@@ -10,11 +10,12 @@
 #include "util/helpers.h"
 #include "util/log.h"
 
-struct __display_event_listener {
+struct display_listeners {
+  char iface_name[100];
+  int destructor;
+  void *handlers;
   void *userdata;
-  struct c_wl_display_listener *listener;
 };
-
 
 static int create_socket(struct c_wl_display *display) {
   int fd;
@@ -80,7 +81,6 @@ C_EVENT_CALLBACK client_epoll_callback(struct c_event_loop *loop, int fd, void *
 
   switch (ret) {
     case DISPATCH_FATAL_ERR:
-      c_wl_display_notify(dpy, connection, C_WL_DISPLAY_ON_CONNECTION_GONE);
       c_list_remove(&dpy->connections, connection);
       c_wl_connection_free(connection);
       return C_EVENT_ERROR_FATAL;
@@ -90,7 +90,6 @@ C_EVENT_CALLBACK client_epoll_callback(struct c_event_loop *loop, int fd, void *
       return C_EVENT_OK;
 
     case DISPATCH_CLIENT_ERR:
-      c_wl_display_notify(dpy, connection, C_WL_DISPLAY_ON_CONNECTION_GONE);
       c_list_remove(&dpy->connections, connection);
       c_wl_connection_free(connection);
       return C_EVENT_ERROR_FD_GONE;
@@ -125,37 +124,32 @@ C_EVENT_CALLBACK server_epoll_callback(struct c_event_loop *loop, int fd, void *
   return C_EVENT_OK;
 }
 
-void c_wl_display_add_listener(struct c_wl_display *display, struct c_wl_display_listener *listener, void *userdata) {
-  struct __display_event_listener l = {
-    .userdata = userdata,
-    .listener = calloc(1, sizeof(*listener)),
-  };
-  memcpy(l.listener, listener, sizeof(*listener));
-  c_list_push(display->listeners, &l, sizeof(l)); 
+void c_wl_display_add_listener(struct c_wl_display *display, const char *iface,
+                               void *listeners, size_t listeners_size,
+                               void *userdata) {
+
+  struct display_listeners l;
+  snprintf(l.iface_name, sizeof(l.iface_name), "%s", iface);
+  l.handlers = calloc(1, listeners_size);
+  memcpy(l.handlers, listeners, listeners_size);
+  l.userdata = userdata;
+      
+  c_list_push(display->listeners, &l, sizeof(l));
 }
 
-void c_wl_display_notify(struct c_wl_display *display, void *data, enum c_wl_display_notifier notifier) {
-  struct __display_event_listener *l;
+void c_wl_display_get_listener(struct c_wl_display *display, const char *iface,
+                               void ***handlers, void **userdata) {
+  *handlers = NULL;
+  *userdata = NULL;
 
-  #define notify(callback) \
-    c_list_for_each(display->listeners, l) { \
-      if (l->listener->callback) {\
-        c_log(C_LOG_DEBUG, #callback " %p", data); \
-        l->listener->callback(data, l->userdata); \
-      } \
+  struct display_listeners *l;
+  c_list_for_each(display->listeners, l) {
+    if (STREQ(l->iface_name, iface)) {
+      *handlers = l->handlers;
+      *userdata = l->userdata;
+      break;
     }
-
-  switch (notifier) {
-    case C_WL_DISPLAY_ON_SURFACE_NEW:         notify(on_surface_new); break;
-    case C_WL_DISPLAY_ON_SURFACE_COMMIT:      notify(on_surface_commit); break;
-    case C_WL_DISPLAY_ON_SURFACE_DESTROY:     notify(on_surface_destroy); break;
-    case C_WL_DISPLAY_ON_TOPLEVEL_NEW:        notify(on_toplevel_new); break;
-    case C_WL_DISPLAY_ON_TOPLEVEL_DESTROY:    notify(on_toplevel_destroy); break;
-    case C_WL_DISPLAY_ON_BUFFER_DESTROY:      notify(on_buffer_destroy); break;
-    case C_WL_DISPLAY_ON_CONNECTION_GONE:     notify(on_connection_gone); break;
-    default: break;
   }
-
 }
 
 struct c_wl_display *c_wl_display_init(struct c_event_loop *loop) {
@@ -188,10 +182,7 @@ struct c_wl_display *c_wl_display_init(struct c_event_loop *loop) {
 
 }
 
-void c_wl_display_add_supported_interface(struct c_wl_display *display,
-                                          const char *name,
-                                          c_wl_display_on_bind on_bind,
-                                          void *userdata) {
+void c_wl_display_add_supported_interface(struct c_wl_display *display, const char *name, c_wl_display_on_bind on_bind, void *userdata) {
   struct c_wl_interface *iface = c_wl_interface_get(name);
   assert(iface);
   struct c_wl_display_supported_iface i = {
@@ -213,9 +204,10 @@ void c_wl_display_free(struct c_wl_display *display) {
   }
 
   if (display->listeners) {
-    struct __display_event_listener *l;
-    c_list_for_each(display->listeners, l)
-      free(l->listener);
+    struct display_listeners *l;
+    c_list_for_each(display->listeners, l) {
+      free(l->handlers);
+    }
     c_list_destroy(display->listeners);
   }
 

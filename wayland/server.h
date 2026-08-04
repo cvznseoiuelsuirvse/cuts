@@ -9,15 +9,14 @@
 #define C_WL_CONN_HEADER_SIZE 8
 #define C_WL_STRING_SIZE (C_WL_CONN_BUF_SIZE - C_WL_CONN_HEADER_SIZE - 4) // 4 (string prefix)
 
-
 #include <time.h>
 
 #include "wayland/types.h"
 #include "util/map.h"
 
   
-#define C_WL_INTERFACE_REGISTER(name, interface, version, nrequests, ...)                       \
-  struct c_wl_interface name = {interface, version, nrequests, { __VA_ARGS__ }}; \
+#define C_WL_INTERFACE_REGISTER(name, interface, version, nrequests, destructor, ...)                       \
+  struct c_wl_interface name = {interface, version, nrequests, destructor, { __VA_ARGS__ }}; \
   __attribute__((constructor))                                  \
   static void name##_register(void) {c_wl_interface_add(&name); }
 
@@ -40,8 +39,8 @@
   } while (0); \
 
 #define c_wl_self(conn, args) c_wl_object_get(conn, args[0].o)
-	
 
+	
 struct c_wl_display;
 struct c_wl_connection;
 
@@ -50,9 +49,13 @@ struct c_wl_object {
   uint32_t version;
   void *data;
 	const struct c_wl_interface *iface;
+  struct {
+    void **handlers;
+    void *userdata;
+  } listeners;
 };
 
-union c_wl_arg {
+typedef union c_wl_arg {
 	c_wl_int 	  i;
 	c_wl_uint   u;
 	c_wl_fixed  f;
@@ -62,7 +65,7 @@ union c_wl_arg {
 	c_wl_enum   e;
 	c_wl_object_id o;
 	char      s[C_WL_STRING_SIZE];
-};
+} c_wl_arg, *c_wl_args;
 
 struct c_wl_message {
 	c_wl_object_id id;
@@ -71,10 +74,10 @@ struct c_wl_message {
 	const char 	   event_name[128];
 };
 
-typedef int (*c_wl_request_handler)(struct c_wl_connection *, union c_wl_arg *);
+typedef int (*c_wl_request_impl)(struct c_wl_connection *, c_wl_args);
 struct c_wl_request {
 	char    name[256];
-	c_wl_request_handler handler;
+	c_wl_request_impl impl;
 	size_t  nargs;
 	char    signature[16];
 };
@@ -83,6 +86,7 @@ struct c_wl_interface {
 	char 	name[256];
 	c_wl_uint version;
 	size_t 	nrequests;
+  int destructor;
 	struct c_wl_request requests[];
 };
 

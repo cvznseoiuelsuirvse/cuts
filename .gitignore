@@ -1,6 +1,5 @@
 .venv/
 .cache/
-protocols/
 build/
 ref/
 .clangd

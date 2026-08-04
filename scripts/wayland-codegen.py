@@ -87,13 +87,19 @@ def parse_events(interface_name: str, events: list[ET.Element], file_type: Liter
     s = """"""
     for i, ev in enumerate(events):
         s+=parse_event(interface_name, ev, i, file_type)
+
+    if interface_name == "wl_display" and file_type == "c":
+        s+='C_WL_INTERFACE_REGISTER(wl_callback_interface, "wl_callback", 1, 0, {})\n'
+
     return s
 
-def parse_request(interface_name: str, request: ET.Element, file_type: Literal["h", "c"]) -> tuple[str, str]:
+def parse_request(interface_name: str, request: ET.Element, file_type: Literal["h", "c"]) -> tuple[bool, str, str, str]:
     struct = """"""
     decl = """"""
 
     request_name = request.get("name")
+    is_destructor = request.get("type", "") == "destructor"
+    listener = f"c_wl_listener_handler {request_name};"
 
     desc = next(c for c in request if c.tag == "description")
     if interface_name == "wl_registry" and request_name == "bind":
@@ -144,9 +150,9 @@ def parse_request(interface_name: str, request: ET.Element, file_type: Literal["
         if args:
             decl += "   */\n"
 
-    decl+=f"C_WL_REQUEST {interface_name}_{request_name}(struct c_wl_connection *conn, union c_wl_arg *args);\n"
+    decl+=f"C_WL_REQUEST {interface_name}_{request_name}(struct c_wl_connection *conn, c_wl_args args);\n"
 
-    return decl, struct
+    return is_destructor, decl, struct, listener
 
 def parse_requests(interface: ET.Element, requests: list[ET.Element], file_type: Literal["h", "c"]) -> str:
     s = """"""
@@ -157,14 +163,31 @@ def parse_requests(interface: ET.Element, requests: list[ET.Element], file_type:
     interface_version = interface.get('version', 1)
     ss = [parse_request(interface_name, req, file_type) for req in requests]
 
-    for decl, _ in ss:
-        s += decl + "\n"
+    if file_type == "h":
+        for _, decl, _, _ in ss:
+            s += decl + "\n"
+
+        s+=f"struct c_{interface_name}_listeners {{\n"
+        for _, _, _, listener in ss:
+            s+="  " + listener + "\n"
+        s+="};\n"
+        s+=f"void {interface_name}_add_listener(struct c_wl_display *display, struct c_{interface_name}_listeners *listeners, void *userdata);\n"
 
     if file_type == "c":
-        s+=f"C_WL_INTERFACE_REGISTER({interface_name}_interface, \"{interface_name}\", {interface_version}, {len(ss)}, \n"
-        for _, struct in ss:
+        destr = -1
+        for i, (is_destr, _, _, _) in enumerate(ss):
+            if is_destr:
+                destr = i
+
+        s+=f"C_WL_INTERFACE_REGISTER({interface_name}_interface, \"{interface_name}\", {interface_version}, {len(ss)}, {destr}, \n"
+        for i, (_, _, struct, _) in enumerate(ss):
             s+=struct
+
         s+=")\n"
+
+        s+=f"void {interface_name}_add_listener(struct c_wl_display *display, struct c_{interface_name}_listeners *listeners, void *userdata) {{\n"
+        s+=f"  c_wl_display_add_listener(display, \"{interface_name}\", listeners, sizeof(*listeners), userdata);\n"
+        s+="}\n"
 
     return s
 
@@ -227,6 +250,7 @@ def parse(xml_path: str, basename: str) -> None:
 
         f.write('#include <stdint.h>\n\n')
         f.write('#include "wayland/server.h"\n')
+        f.write('#include "wayland/display.h"\n')
         f.write('#include "wayland/types.h"\n\n\n')
 
         enums_s = []
@@ -248,8 +272,9 @@ def parse(xml_path: str, basename: str) -> None:
 
     with open(f"{basename}.c", "w") as f:
         f.write('#include <stdint.h>\n\n')
-        f.write('#include "wayland/server.h"\n\n\n')
-        f.write(f'#include "wayland/types/{os.path.basename(basename)}.h"\n')
+        f.write('#include "wayland/server.h"\n')
+        f.write('#include "wayland/display.h"\n')
+        f.write(f'#include "wayland/proto/{os.path.basename(basename)}.h"\n\n\n')
 
         for child in root:
             if child.tag == "interface":

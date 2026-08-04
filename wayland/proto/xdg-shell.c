@@ -1,49 +1,25 @@
 #include <stdint.h>
 
 #include "wayland/server.h"
-
-
+#include "wayland/display.h"
 #include "wayland/proto/xdg-shell.h"
+
+
 C_WL_EVENT xdg_wm_base_ping(struct c_wl_connection *conn, c_wl_object_id xdg_wm_base, c_wl_uint serial) {
   struct c_wl_message msg = {xdg_wm_base, 0, "u", "ping"};
   return c_wl_connection_send(conn, &msg, 1, serial);
 }
-C_WL_REQUEST xdg_wm_base_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_wm_base_create_positioner(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_wm_base_get_xdg_surface(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_wm_base_pong(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_INTERFACE_REGISTER(xdg_wm_base_interface, "xdg_wm_base", 7, 4, 
+C_WL_INTERFACE_REGISTER(xdg_wm_base_interface, "xdg_wm_base", 7, 4, 0, 
     {"destroy",                xdg_wm_base_destroy,           0,  {0}},
     {"create_positioner",      xdg_wm_base_create_positioner, 1,  "n"},
     {"get_xdg_surface",        xdg_wm_base_get_xdg_surface,   2,  "no"},
     {"pong",                   xdg_wm_base_pong,              1,  "u"},
 )
+void xdg_wm_base_add_listener(struct c_wl_display *display, struct c_xdg_wm_base_listeners *listeners, void *userdata) {
+  c_wl_display_add_listener(display, "xdg_wm_base", listeners, sizeof(*listeners), userdata);
+}
 
-C_WL_REQUEST xdg_positioner_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_positioner_set_size(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_positioner_set_anchor_rect(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_positioner_set_anchor(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_positioner_set_gravity(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_positioner_set_constraint_adjustment(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_positioner_set_offset(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_positioner_set_reactive(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_positioner_set_parent_size(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_positioner_set_parent_configure(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_INTERFACE_REGISTER(xdg_positioner_interface, "xdg_positioner", 7, 10, 
+C_WL_INTERFACE_REGISTER(xdg_positioner_interface, "xdg_positioner", 7, 10, 0, 
     {"destroy",                xdg_positioner_destroy,        0,  {0}},
     {"set_size",               xdg_positioner_set_size,       2,  "ii"},
     {"set_anchor_rect",        xdg_positioner_set_anchor_rect, 4,  "iiii"},
@@ -55,28 +31,24 @@ C_WL_INTERFACE_REGISTER(xdg_positioner_interface, "xdg_positioner", 7, 10,
     {"set_parent_size",        xdg_positioner_set_parent_size, 2,  "ii"},
     {"set_parent_configure",   xdg_positioner_set_parent_configure, 1,  "u"},
 )
+void xdg_positioner_add_listener(struct c_wl_display *display, struct c_xdg_positioner_listeners *listeners, void *userdata) {
+  c_wl_display_add_listener(display, "xdg_positioner", listeners, sizeof(*listeners), userdata);
+}
 
 C_WL_EVENT xdg_surface_configure(struct c_wl_connection *conn, c_wl_object_id xdg_surface, c_wl_uint serial) {
   struct c_wl_message msg = {xdg_surface, 0, "u", "configure"};
   return c_wl_connection_send(conn, &msg, 1, serial);
 }
-C_WL_REQUEST xdg_surface_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_surface_get_toplevel(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_surface_get_popup(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_surface_set_window_geometry(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_surface_ack_configure(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_INTERFACE_REGISTER(xdg_surface_interface, "xdg_surface", 7, 5, 
+C_WL_INTERFACE_REGISTER(xdg_surface_interface, "xdg_surface", 7, 5, 0, 
     {"destroy",                xdg_surface_destroy,           0,  {0}},
     {"get_toplevel",           xdg_surface_get_toplevel,      1,  "n"},
     {"get_popup",              xdg_surface_get_popup,         3,  "noo"},
     {"set_window_geometry",    xdg_surface_set_window_geometry, 4,  "iiii"},
     {"ack_configure",          xdg_surface_ack_configure,     1,  "u"},
 )
+void xdg_surface_add_listener(struct c_wl_display *display, struct c_xdg_surface_listeners *listeners, void *userdata) {
+  c_wl_display_add_listener(display, "xdg_surface", listeners, sizeof(*listeners), userdata);
+}
 
 C_WL_EVENT xdg_toplevel_configure(struct c_wl_connection *conn, c_wl_object_id xdg_toplevel, c_wl_int width, c_wl_int height, c_wl_array *states) {
   struct c_wl_message msg = {xdg_toplevel, 0, "iia", "configure"};
@@ -94,35 +66,7 @@ C_WL_EVENT xdg_toplevel_wm_capabilities(struct c_wl_connection *conn, c_wl_objec
   struct c_wl_message msg = {xdg_toplevel, 3, "a", "wm_capabilities"};
   return c_wl_connection_send(conn, &msg, 1, capabilities);
 }
-C_WL_REQUEST xdg_toplevel_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_toplevel_set_parent(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_toplevel_set_title(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_toplevel_set_app_id(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_toplevel_show_window_menu(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_toplevel_move(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_toplevel_resize(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_toplevel_set_max_size(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_toplevel_set_min_size(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_toplevel_set_maximized(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_toplevel_unset_maximized(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_toplevel_set_fullscreen(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_toplevel_unset_fullscreen(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_toplevel_set_minimized(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_INTERFACE_REGISTER(xdg_toplevel_interface, "xdg_toplevel", 7, 14, 
+C_WL_INTERFACE_REGISTER(xdg_toplevel_interface, "xdg_toplevel", 7, 14, 0, 
     {"destroy",                xdg_toplevel_destroy,          0,  {0}},
     {"set_parent",             xdg_toplevel_set_parent,       1,  "o"},
     {"set_title",              xdg_toplevel_set_title,        1,  "s"},
@@ -138,6 +82,9 @@ C_WL_INTERFACE_REGISTER(xdg_toplevel_interface, "xdg_toplevel", 7, 14,
     {"unset_fullscreen",       xdg_toplevel_unset_fullscreen, 0,  {0}},
     {"set_minimized",          xdg_toplevel_set_minimized,    0,  {0}},
 )
+void xdg_toplevel_add_listener(struct c_wl_display *display, struct c_xdg_toplevel_listeners *listeners, void *userdata) {
+  c_wl_display_add_listener(display, "xdg_toplevel", listeners, sizeof(*listeners), userdata);
+}
 
 C_WL_EVENT xdg_popup_configure(struct c_wl_connection *conn, c_wl_object_id xdg_popup, c_wl_int x, c_wl_int y, c_wl_int width, c_wl_int height) {
   struct c_wl_message msg = {xdg_popup, 0, "iiii", "configure"};
@@ -151,15 +98,12 @@ C_WL_EVENT xdg_popup_repositioned(struct c_wl_connection *conn, c_wl_object_id x
   struct c_wl_message msg = {xdg_popup, 2, "u", "repositioned"};
   return c_wl_connection_send(conn, &msg, 1, token);
 }
-C_WL_REQUEST xdg_popup_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_popup_grab(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_REQUEST xdg_popup_reposition(struct c_wl_connection *conn, union c_wl_arg *args);
-
-C_WL_INTERFACE_REGISTER(xdg_popup_interface, "xdg_popup", 7, 3, 
+C_WL_INTERFACE_REGISTER(xdg_popup_interface, "xdg_popup", 7, 3, 0, 
     {"destroy",                xdg_popup_destroy,             0,  {0}},
     {"grab",                   xdg_popup_grab,                2,  "ou"},
     {"reposition",             xdg_popup_reposition,          2,  "ou"},
 )
+void xdg_popup_add_listener(struct c_wl_display *display, struct c_xdg_popup_listeners *listeners, void *userdata) {
+  c_wl_display_add_listener(display, "xdg_popup", listeners, sizeof(*listeners), userdata);
+}
 

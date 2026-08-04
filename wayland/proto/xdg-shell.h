@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "wayland/server.h"
+#include "wayland/display.h"
 #include "wayland/types.h"
 
 
@@ -148,7 +149,7 @@ C_WL_EVENT xdg_wm_base_ping(struct c_wl_connection *conn, c_wl_object_id xdg_wm_
 	Destroying a bound xdg_wm_base object while there are surfaces
 	still alive created by this xdg_wm_base object instance is illegal
 	and will result in a defunct_surfaces error. */
-C_WL_REQUEST xdg_wm_base_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_wm_base_destroy(struct c_wl_connection *conn, c_wl_args args);
 
    /* Create a positioner object. A positioner object is used to position
 	surfaces relative to some parent surface. See the interface description
@@ -156,7 +157,7 @@ C_WL_REQUEST xdg_wm_base_destroy(struct c_wl_connection *conn, union c_wl_arg *a
 
     @[1] id: c_wl_new_id [[xdg_positioner]]
    */
-C_WL_REQUEST xdg_wm_base_create_positioner(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_wm_base_create_positioner(struct c_wl_connection *conn, c_wl_args args);
 
    /* This creates an xdg_surface for the given surface. While xdg_surface
 	itself is not a role, the corresponding surface may only be assigned
@@ -175,7 +176,7 @@ C_WL_REQUEST xdg_wm_base_create_positioner(struct c_wl_connection *conn, union c
     @[1] id: c_wl_new_id [[xdg_surface]]
     @[2] surface: c_wl_object_id [[wl_surface]]
    */
-C_WL_REQUEST xdg_wm_base_get_xdg_surface(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_wm_base_get_xdg_surface(struct c_wl_connection *conn, c_wl_args args);
 
    /* A client must respond to a ping event with a pong request or
 	the client may be deemed unresponsive. See xdg_wm_base.ping
@@ -183,11 +184,18 @@ C_WL_REQUEST xdg_wm_base_get_xdg_surface(struct c_wl_connection *conn, union c_w
 
     @[1] serial: c_wl_uint
    */
-C_WL_REQUEST xdg_wm_base_pong(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_wm_base_pong(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_xdg_wm_base_listeners {
+  c_wl_listener_handler destroy;
+  c_wl_listener_handler create_positioner;
+  c_wl_listener_handler get_xdg_surface;
+  c_wl_listener_handler pong;
+};
+void xdg_wm_base_add_listener(struct c_wl_display *display, struct c_xdg_wm_base_listeners *listeners, void *userdata);
 
    /* Notify the compositor that the xdg_positioner will no longer be used. */
-C_WL_REQUEST xdg_positioner_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_positioner_destroy(struct c_wl_connection *conn, c_wl_args args);
 
    /* Set the size of the surface that is to be positioned with the positioner
 	object. The size is in surface-local coordinates and corresponds to the
@@ -198,7 +206,7 @@ C_WL_REQUEST xdg_positioner_destroy(struct c_wl_connection *conn, union c_wl_arg
     @[1] width: c_wl_int
     @[2] height: c_wl_int
    */
-C_WL_REQUEST xdg_positioner_set_size(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_positioner_set_size(struct c_wl_connection *conn, c_wl_args args);
 
    /* Specify the anchor rectangle within the parent surface that the child
 	surface will be placed relative to. The rectangle is relative to the
@@ -216,7 +224,7 @@ C_WL_REQUEST xdg_positioner_set_size(struct c_wl_connection *conn, union c_wl_ar
     @[3] width: c_wl_int
     @[4] height: c_wl_int
    */
-C_WL_REQUEST xdg_positioner_set_anchor_rect(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_positioner_set_anchor_rect(struct c_wl_connection *conn, c_wl_args args);
 
    /* Defines the anchor point for the anchor rectangle. The specified anchor
 	is used derive an anchor point that the child surface will be
@@ -227,7 +235,7 @@ C_WL_REQUEST xdg_positioner_set_anchor_rect(struct c_wl_connection *conn, union 
 
     @[1] anchor: enum xdg_positioner_anchor_enum
    */
-C_WL_REQUEST xdg_positioner_set_anchor(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_positioner_set_anchor(struct c_wl_connection *conn, c_wl_args args);
 
    /* Defines in what direction a surface should be positioned, relative to
 	the anchor point of the parent surface. If a corner gravity is
@@ -239,7 +247,7 @@ C_WL_REQUEST xdg_positioner_set_anchor(struct c_wl_connection *conn, union c_wl_
 
     @[1] gravity: enum xdg_positioner_gravity_enum
    */
-C_WL_REQUEST xdg_positioner_set_gravity(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_positioner_set_gravity(struct c_wl_connection *conn, c_wl_args args);
 
    /* Specify how the window should be positioned if the originally intended
 	position caused the surface to be constrained, meaning at least
@@ -257,7 +265,7 @@ C_WL_REQUEST xdg_positioner_set_gravity(struct c_wl_connection *conn, union c_wl
 
     @[1] constraint_adjustment: enum xdg_positioner_constraint_adjustment_enum
    */
-C_WL_REQUEST xdg_positioner_set_constraint_adjustment(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_positioner_set_constraint_adjustment(struct c_wl_connection *conn, c_wl_args args);
 
    /* Specify the surface position offset relative to the position of the
 	anchor on the anchor rectangle and the anchor on the surface. For
@@ -274,7 +282,7 @@ C_WL_REQUEST xdg_positioner_set_constraint_adjustment(struct c_wl_connection *co
     @[1] x: c_wl_int
     @[2] y: c_wl_int
    */
-C_WL_REQUEST xdg_positioner_set_offset(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_positioner_set_offset(struct c_wl_connection *conn, c_wl_args args);
 
    /* When set reactive, the surface is reconstrained if the conditions used
 	for constraining changed, e.g. the parent window moved.
@@ -282,7 +290,7 @@ C_WL_REQUEST xdg_positioner_set_offset(struct c_wl_connection *conn, union c_wl_
 	If the conditions changed and the popup was reconstrained, an
 	xdg_popup.configure event is sent with updated geometry, followed by an
 	xdg_surface.configure event. */
-C_WL_REQUEST xdg_positioner_set_reactive(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_positioner_set_reactive(struct c_wl_connection *conn, c_wl_args args);
 
    /* Set the parent window geometry the compositor should use when
 	positioning the popup. The compositor may use this information to
@@ -295,7 +303,7 @@ C_WL_REQUEST xdg_positioner_set_reactive(struct c_wl_connection *conn, union c_w
     @[1] parent_width: c_wl_int
     @[2] parent_height: c_wl_int
    */
-C_WL_REQUEST xdg_positioner_set_parent_size(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_positioner_set_parent_size(struct c_wl_connection *conn, c_wl_args args);
 
    /* Set the serial of an xdg_surface.configure event this positioner will be
 	used in response to. The compositor may use this information together
@@ -304,8 +312,21 @@ C_WL_REQUEST xdg_positioner_set_parent_size(struct c_wl_connection *conn, union 
 
     @[1] serial: c_wl_uint
    */
-C_WL_REQUEST xdg_positioner_set_parent_configure(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_positioner_set_parent_configure(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_xdg_positioner_listeners {
+  c_wl_listener_handler destroy;
+  c_wl_listener_handler set_size;
+  c_wl_listener_handler set_anchor_rect;
+  c_wl_listener_handler set_anchor;
+  c_wl_listener_handler set_gravity;
+  c_wl_listener_handler set_constraint_adjustment;
+  c_wl_listener_handler set_offset;
+  c_wl_listener_handler set_reactive;
+  c_wl_listener_handler set_parent_size;
+  c_wl_listener_handler set_parent_configure;
+};
+void xdg_positioner_add_listener(struct c_wl_display *display, struct c_xdg_positioner_listeners *listeners, void *userdata);
 
  /* The configure event marks the end of a configure sequence. A configure
 	sequence is a set of one or more events configuring the state of the
@@ -328,7 +349,7 @@ C_WL_EVENT xdg_surface_configure(struct c_wl_connection *conn, c_wl_object_id xd
    /* Destroy the xdg_surface object. An xdg_surface must only be destroyed
 	after its role object has been destroyed, otherwise
 	a defunct_role_object error is raised. */
-C_WL_REQUEST xdg_surface_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_surface_destroy(struct c_wl_connection *conn, c_wl_args args);
 
    /* This creates an xdg_toplevel object for the given xdg_surface and gives
 	the associated wl_surface the xdg_toplevel role.
@@ -338,7 +359,7 @@ C_WL_REQUEST xdg_surface_destroy(struct c_wl_connection *conn, union c_wl_arg *a
 
     @[1] id: c_wl_new_id [[xdg_toplevel]]
    */
-C_WL_REQUEST xdg_surface_get_toplevel(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_surface_get_toplevel(struct c_wl_connection *conn, c_wl_args args);
 
    /* This creates an xdg_popup object for the given xdg_surface and gives
 	the associated wl_surface the xdg_popup role.
@@ -353,7 +374,7 @@ C_WL_REQUEST xdg_surface_get_toplevel(struct c_wl_connection *conn, union c_wl_a
     @[2] parent: c_wl_object_id [[xdg_surface]]
     @[3] positioner: c_wl_object_id [[xdg_positioner]]
    */
-C_WL_REQUEST xdg_surface_get_popup(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_surface_get_popup(struct c_wl_connection *conn, c_wl_args args);
 
    /* The window geometry of a surface is its "visible bounds" from the
 	user's perspective. Client-side decorations often have invisible
@@ -401,7 +422,7 @@ C_WL_REQUEST xdg_surface_get_popup(struct c_wl_connection *conn, union c_wl_arg 
     @[3] width: c_wl_int
     @[4] height: c_wl_int
    */
-C_WL_REQUEST xdg_surface_set_window_geometry(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_surface_set_window_geometry(struct c_wl_connection *conn, c_wl_args args);
 
    /* When a configure event is received, if a client commits the
 	surface in response to the configure event, then the client
@@ -438,8 +459,16 @@ C_WL_REQUEST xdg_surface_set_window_geometry(struct c_wl_connection *conn, union
 
     @[1] serial: c_wl_uint
    */
-C_WL_REQUEST xdg_surface_ack_configure(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_surface_ack_configure(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_xdg_surface_listeners {
+  c_wl_listener_handler destroy;
+  c_wl_listener_handler get_toplevel;
+  c_wl_listener_handler get_popup;
+  c_wl_listener_handler set_window_geometry;
+  c_wl_listener_handler ack_configure;
+};
+void xdg_surface_add_listener(struct c_wl_display *display, struct c_xdg_surface_listeners *listeners, void *userdata);
 
  /* This configure event asks the client to resize its toplevel surface or
 	to change its state. The configured state should not be applied
@@ -513,7 +542,7 @@ C_WL_EVENT xdg_toplevel_wm_capabilities(struct c_wl_connection *conn, c_wl_objec
 
    /* This request destroys the role surface and unmaps the surface;
 	see "Unmapping" behavior in interface section for details. */
-C_WL_REQUEST xdg_toplevel_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_toplevel_destroy(struct c_wl_connection *conn, c_wl_args args);
 
    /* Set the "parent" of this surface. This surface should be stacked
 	above the parent surface and all other ancestor surfaces.
@@ -538,7 +567,7 @@ C_WL_REQUEST xdg_toplevel_destroy(struct c_wl_connection *conn, union c_wl_arg *
 
     @[1] parent: c_wl_object_id [[xdg_toplevel]]
    */
-C_WL_REQUEST xdg_toplevel_set_parent(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_toplevel_set_parent(struct c_wl_connection *conn, c_wl_args args);
 
    /* Set a short title for the surface.
 
@@ -550,7 +579,7 @@ C_WL_REQUEST xdg_toplevel_set_parent(struct c_wl_connection *conn, union c_wl_ar
 
     @[1] title: c_wl_string
    */
-C_WL_REQUEST xdg_toplevel_set_title(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_toplevel_set_title(struct c_wl_connection *conn, c_wl_args args);
 
    /* Set an application identifier for the surface.
 
@@ -578,7 +607,7 @@ C_WL_REQUEST xdg_toplevel_set_title(struct c_wl_connection *conn, union c_wl_arg
 
     @[1] app_id: c_wl_string
    */
-C_WL_REQUEST xdg_toplevel_set_app_id(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_toplevel_set_app_id(struct c_wl_connection *conn, c_wl_args args);
 
    /* Clients implementing client-side decorations might want to show
 	a context menu when right-clicking on the decorations, giving the
@@ -598,7 +627,7 @@ C_WL_REQUEST xdg_toplevel_set_app_id(struct c_wl_connection *conn, union c_wl_ar
     @[3] x: c_wl_int
     @[4] y: c_wl_int
    */
-C_WL_REQUEST xdg_toplevel_show_window_menu(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_toplevel_show_window_menu(struct c_wl_connection *conn, c_wl_args args);
 
    /* Start an interactive, user-driven move of the surface.
 
@@ -620,7 +649,7 @@ C_WL_REQUEST xdg_toplevel_show_window_menu(struct c_wl_connection *conn, union c
     @[1] seat: c_wl_object_id [[wl_seat]]
     @[2] serial: c_wl_uint
    */
-C_WL_REQUEST xdg_toplevel_move(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_toplevel_move(struct c_wl_connection *conn, c_wl_args args);
 
    /* Start a user-driven, interactive resize of the surface.
 
@@ -658,7 +687,7 @@ C_WL_REQUEST xdg_toplevel_move(struct c_wl_connection *conn, union c_wl_arg *arg
     @[2] serial: c_wl_uint
     @[3] edges: enum xdg_toplevel_resize_edge_enum
    */
-C_WL_REQUEST xdg_toplevel_resize(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_toplevel_resize(struct c_wl_connection *conn, c_wl_args args);
 
    /* Set a maximum size for the window.
 
@@ -697,7 +726,7 @@ C_WL_REQUEST xdg_toplevel_resize(struct c_wl_connection *conn, union c_wl_arg *a
     @[1] width: c_wl_int
     @[2] height: c_wl_int
    */
-C_WL_REQUEST xdg_toplevel_set_max_size(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_toplevel_set_max_size(struct c_wl_connection *conn, c_wl_args args);
 
    /* Set a minimum size for the window.
 
@@ -736,7 +765,7 @@ C_WL_REQUEST xdg_toplevel_set_max_size(struct c_wl_connection *conn, union c_wl_
     @[1] width: c_wl_int
     @[2] height: c_wl_int
    */
-C_WL_REQUEST xdg_toplevel_set_min_size(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_toplevel_set_min_size(struct c_wl_connection *conn, c_wl_args args);
 
    /* Maximize the surface.
 
@@ -757,7 +786,7 @@ C_WL_REQUEST xdg_toplevel_set_min_size(struct c_wl_connection *conn, union c_wl_
 	If the surface is in a fullscreen state, this request has no direct
 	effect. It may alter the state the surface is returned to when
 	unmaximized unless overridden by the compositor. */
-C_WL_REQUEST xdg_toplevel_set_maximized(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_toplevel_set_maximized(struct c_wl_connection *conn, c_wl_args args);
 
    /* Unmaximize the surface.
 
@@ -780,7 +809,7 @@ C_WL_REQUEST xdg_toplevel_set_maximized(struct c_wl_connection *conn, union c_wl
 	If the surface is in a fullscreen state, this request has no direct
 	effect. It may alter the state the surface is returned to when
 	unmaximized unless overridden by the compositor. */
-C_WL_REQUEST xdg_toplevel_unset_maximized(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_toplevel_unset_maximized(struct c_wl_connection *conn, c_wl_args args);
 
    /* Make the surface fullscreen.
 
@@ -808,7 +837,7 @@ C_WL_REQUEST xdg_toplevel_unset_maximized(struct c_wl_connection *conn, union c_
 
     @[1] output: c_wl_object_id [[wl_output]]
    */
-C_WL_REQUEST xdg_toplevel_set_fullscreen(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_toplevel_set_fullscreen(struct c_wl_connection *conn, c_wl_args args);
 
    /* Make the surface no longer fullscreen.
 
@@ -827,7 +856,7 @@ C_WL_REQUEST xdg_toplevel_set_fullscreen(struct c_wl_connection *conn, union c_w
 
 	The client must also acknowledge the configure when committing the new
 	content (see ack_configure). */
-C_WL_REQUEST xdg_toplevel_unset_fullscreen(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_toplevel_unset_fullscreen(struct c_wl_connection *conn, c_wl_args args);
 
    /* Request that the compositor minimize your surface. There is no
 	way to know if the surface is currently minimized, nor is there
@@ -837,8 +866,25 @@ C_WL_REQUEST xdg_toplevel_unset_fullscreen(struct c_wl_connection *conn, union c
 	instead use the wl_surface.frame event for this, as this will
 	also work with live previews on windows in Alt-Tab, Expose or
 	similar compositor features. */
-C_WL_REQUEST xdg_toplevel_set_minimized(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_toplevel_set_minimized(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_xdg_toplevel_listeners {
+  c_wl_listener_handler destroy;
+  c_wl_listener_handler set_parent;
+  c_wl_listener_handler set_title;
+  c_wl_listener_handler set_app_id;
+  c_wl_listener_handler show_window_menu;
+  c_wl_listener_handler move;
+  c_wl_listener_handler resize;
+  c_wl_listener_handler set_max_size;
+  c_wl_listener_handler set_min_size;
+  c_wl_listener_handler set_maximized;
+  c_wl_listener_handler unset_maximized;
+  c_wl_listener_handler set_fullscreen;
+  c_wl_listener_handler unset_fullscreen;
+  c_wl_listener_handler set_minimized;
+};
+void xdg_toplevel_add_listener(struct c_wl_display *display, struct c_xdg_toplevel_listeners *listeners, void *userdata);
 
  /* This event asks the popup surface to configure itself given the
 	configuration. The configured state should not be applied immediately.
@@ -881,7 +927,7 @@ C_WL_EVENT xdg_popup_repositioned(struct c_wl_connection *conn, c_wl_object_id x
 
 	If this xdg_popup is not the "topmost" popup, the
 	xdg_wm_base.not_the_topmost_popup protocol error will be sent. */
-C_WL_REQUEST xdg_popup_destroy(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_popup_destroy(struct c_wl_connection *conn, c_wl_args args);
 
    /* This request makes the created popup take an explicit grab. An explicit
 	grab will be dismissed when the user dismisses the popup, or when the
@@ -924,7 +970,7 @@ C_WL_REQUEST xdg_popup_destroy(struct c_wl_connection *conn, union c_wl_arg *arg
     @[1] seat: c_wl_object_id [[wl_seat]]
     @[2] serial: c_wl_uint
    */
-C_WL_REQUEST xdg_popup_grab(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_popup_grab(struct c_wl_connection *conn, c_wl_args args);
 
    /* Reposition an already-mapped popup. The popup will be placed given the
 	details in the passed xdg_positioner object, and a
@@ -953,7 +999,13 @@ C_WL_REQUEST xdg_popup_grab(struct c_wl_connection *conn, union c_wl_arg *args);
     @[1] positioner: c_wl_object_id [[xdg_positioner]]
     @[2] token: c_wl_uint
    */
-C_WL_REQUEST xdg_popup_reposition(struct c_wl_connection *conn, union c_wl_arg *args);
+C_WL_REQUEST xdg_popup_reposition(struct c_wl_connection *conn, c_wl_args args);
 
+struct c_xdg_popup_listeners {
+  c_wl_listener_handler destroy;
+  c_wl_listener_handler grab;
+  c_wl_listener_handler reposition;
+};
+void xdg_popup_add_listener(struct c_wl_display *display, struct c_xdg_popup_listeners *listeners, void *userdata);
 
 #endif

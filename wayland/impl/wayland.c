@@ -12,7 +12,7 @@
 #include "util/malloc.h"
 #include "render/types.h"
 
-static void damage_surface(struct c_wl_surface *surface, union c_wl_arg *args) {
+static void damage_surface(struct c_wl_surface *surface, c_wl_args args) {
   c_wl_int x =      args[1].i;
   c_wl_int y =      args[2].i;
   c_wl_int width =  args[3].i;
@@ -26,7 +26,7 @@ static void damage_surface(struct c_wl_surface *surface, union c_wl_arg *args) {
 
 }
 
-int wl_display_get_registry(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_display_get_registry(struct c_wl_connection *conn, c_wl_args args) {
   c_wl_new_id object_id = args[1].n;
   struct c_wl_object *c_wl_registry;
   C_WL_CHECK_IF_NOT_REGISTERED(object_id, c_wl_registry);
@@ -44,11 +44,11 @@ int wl_display_get_registry(struct c_wl_connection *conn, union c_wl_arg *args) 
 };
 
 // only for log purposes
-int wl_display_sync(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_display_sync(struct c_wl_connection *conn, c_wl_args args) {
   return 0;
 }
 
-int wl_registry_bind(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_registry_bind(struct c_wl_connection *conn, c_wl_args args) {
   c_wl_new_id name =   args[1].u;
   c_wl_uint version =  args[3].u;
   c_wl_new_id new_id = args[4].n;
@@ -71,7 +71,7 @@ int wl_registry_bind(struct c_wl_connection *conn, union c_wl_arg *args) {
   return 0;
 }
 
-int wl_shm_create_pool(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_shm_create_pool(struct c_wl_connection *conn, c_wl_args args) {
   c_wl_object_id wl_shm_id = args[0].o;
   struct c_wl_object *wl_shm = c_wl_object_get(conn, wl_shm_id);
 
@@ -120,7 +120,7 @@ int wl_shm_create_pool(struct c_wl_connection *conn, union c_wl_arg *args) {
   return 0;
 }
 
-int wl_shm_pool_create_buffer(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_shm_pool_create_buffer(struct c_wl_connection *conn, c_wl_args args) {
   c_wl_object_id wl_shm_pool_id = args[0].o;
   struct c_wl_shm_pool *pool = c_wl_object_get(conn, wl_shm_pool_id)->data;
 
@@ -177,7 +177,23 @@ format_supported:
   return 0;
 }
 
-int wl_shm_pool_resize(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_buffer_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
+  struct c_wl_object *self = c_wl_self(conn, args);
+  struct c_wl_buffer *wl_buffer = self->data;
+
+  if (wl_buffer->dma)
+    c_free(wl_buffer->dma);
+
+  if (wl_buffer->shm)
+    c_free(wl_buffer->shm);
+
+  wl_buffer->id = 0;
+  c_wl_object_del(conn, self->id);
+  return 0;
+}
+
+
+int wl_shm_pool_resize(struct c_wl_connection *conn, c_wl_args args) {
   c_wl_object_id wl_shm_pool_id = args[0].o;
   c_wl_int new_size = args[1].i;
   struct c_wl_shm_pool *pool = c_wl_object_get(conn, wl_shm_pool_id)->data;
@@ -194,7 +210,7 @@ int wl_shm_pool_resize(struct c_wl_connection *conn, union c_wl_arg *args) {
   return 0;
 }
 
-int wl_shm_pool_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_shm_pool_destroy(struct c_wl_connection *conn, c_wl_args args) {
   c_wl_object_id wl_shm_pool_id = args[0].o;
   struct c_wl_shm_pool *pool = c_wl_object_get(conn, wl_shm_pool_id)->data;
 
@@ -205,14 +221,15 @@ int wl_shm_pool_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   return 0;
 }
 
-int wl_surface_set_buffer_transform(struct c_wl_connection *conn, union c_wl_arg *args) { return 0; }
-int wl_surface_offset(struct c_wl_connection *conn, union c_wl_arg *args) { return 0; }
+int wl_surface_set_buffer_transform(struct c_wl_connection *conn, c_wl_args args) { return 0; }
 
-int wl_surface_set_buffer_scale(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_surface_offset(struct c_wl_connection *conn, c_wl_args args) { return 0; }
+
+int wl_surface_set_buffer_scale(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_surface *surface = c_wl_object_get(conn, args[0].o)->data;
   c_wl_int scale = args[1].i;
   if (scale < 0)
-    c_wl_error_set_and_return(args[0].o, WL_SURFACE_ERROR_INVALID_SCALE, "scale must be >0");
+    c_wl_error_set_and_return(args[0].o, WL_SURFACE_ERROR_INVALID_SCALE, "scale must be > 0");
 
   if (surface->pending)
     surface->pending->scale = scale;
@@ -220,25 +237,8 @@ int wl_surface_set_buffer_scale(struct c_wl_connection *conn, union c_wl_arg *ar
   return 0;
 }
 
-int wl_buffer_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_wl_object *self = c_wl_self(conn, args);
-  struct c_wl_buffer *wl_buffer = self->data;
 
-  struct c_wl_display *dpy = c_wl_connection_get_dpy(conn);
-  c_wl_display_notify(dpy, wl_buffer, C_WL_DISPLAY_ON_BUFFER_DESTROY);
-
-  if (wl_buffer->dma)
-    c_free(wl_buffer->dma);
-
-  if (wl_buffer->shm)
-    c_free(wl_buffer->shm);
-
-  wl_buffer->id = 0;
-  c_wl_object_del(conn, self->id);
-  return 0;
-}
-
-int wl_compositor_create_region(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_compositor_create_region(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
 
   c_wl_object_id wl_region_id = args[1].o;
@@ -255,7 +255,7 @@ int wl_compositor_create_region(struct c_wl_connection *conn, union c_wl_arg *ar
   return 0;
 }
 
-int wl_region_add(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_region_add(struct c_wl_connection *conn, c_wl_args args) {
   c_wl_object_id wl_region_id = args[0].u;
   struct c_wl_region *c_wl_region = c_wl_object_get(conn, wl_region_id)->data;;
 
@@ -272,13 +272,13 @@ int wl_region_add(struct c_wl_connection *conn, union c_wl_arg *args) {
   return 0;
 }
 
-int wl_region_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_region_destroy(struct c_wl_connection *conn, c_wl_args args) {
   c_wl_object_id wl_region_id = args[0].u;
   c_wl_object_del(conn, wl_region_id);
   return 0;
 }
 
-int wl_surface_damage(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_surface_damage(struct c_wl_connection *conn, c_wl_args args) {
   c_wl_object_id wl_surface_id = args[0].u;
   struct c_wl_surface *c_wl_surface = c_wl_object_get(conn, wl_surface_id)->data;;
 
@@ -287,7 +287,7 @@ int wl_surface_damage(struct c_wl_connection *conn, union c_wl_arg *args) {
   return 0;
 }
 
-int wl_surface_damage_buffer(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_surface_damage_buffer(struct c_wl_connection *conn, c_wl_args args) {
     c_wl_object_id wl_surface_id = args[0].u;
   struct c_wl_surface *c_wl_surface = c_wl_object_get(conn, wl_surface_id)->data;
 
@@ -297,7 +297,7 @@ int wl_surface_damage_buffer(struct c_wl_connection *conn, union c_wl_arg *args)
 }
 
 
-int wl_surface_frame(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_surface_frame(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
 
   c_wl_new_id wl_callback_id = args[1].o;
@@ -315,12 +315,9 @@ int wl_surface_frame(struct c_wl_connection *conn, union c_wl_arg *args) {
   return 0;
 }
 
-int wl_surface_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_surface_destroy(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
-  
   struct c_wl_surface *wl_surface = self->data;
-  struct c_wl_display *dpy = c_wl_connection_get_dpy(conn);
-  c_wl_display_notify(dpy, wl_surface, C_WL_DISPLAY_ON_SURFACE_DESTROY);
 
   if (wl_surface->active) {
     c_unref(wl_surface->active);
@@ -347,7 +344,7 @@ int wl_surface_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   return 0;
 }
 
-int wl_surface_set_opaque_region(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_surface_set_opaque_region(struct c_wl_connection *conn, c_wl_args args) {
   c_wl_object_id wl_surface_id = args[0].o;
   struct c_wl_surface *surface = c_wl_object_get(conn, wl_surface_id)->data;
 
@@ -365,7 +362,7 @@ int wl_surface_set_opaque_region(struct c_wl_connection *conn, union c_wl_arg *a
   return 0;
 }
 
-int wl_surface_set_input_region(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_surface_set_input_region(struct c_wl_connection *conn, c_wl_args args) {
   c_wl_object_id wl_surface_id = args[0].o;
   struct c_wl_surface *surface = c_wl_object_get(conn, wl_surface_id)->data;
 
@@ -384,7 +381,7 @@ int wl_surface_set_input_region(struct c_wl_connection *conn, union c_wl_arg *ar
   return 0;
 }
 
-int wl_surface_attach(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_surface_attach(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
   struct c_wl_surface *wl_surface = self->data;
 
@@ -410,7 +407,7 @@ int wl_surface_attach(struct c_wl_connection *conn, union c_wl_arg *args) {
   return 0;
 }
 
-int wl_surface_commit(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_surface_commit(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
   struct c_wl_surface *wl_surface = self->data;
 
@@ -425,9 +422,6 @@ int wl_surface_commit(struct c_wl_connection *conn, union c_wl_arg *args) {
 
     wl_surface->active = wl_surface->pending;
   }
-  
-  struct c_wl_display *dpy = c_wl_connection_get_dpy(conn);
-  c_wl_display_notify(dpy, wl_surface, C_WL_DISPLAY_ON_SURFACE_COMMIT);
 
   for (size_t i = 0; i < wl_surface->n_frames; i++) {
     c_wl_connection_callback_done(conn, wl_surface->frames[i]);
@@ -438,7 +432,7 @@ int wl_surface_commit(struct c_wl_connection *conn, union c_wl_arg *args) {
   return 0;
 }
 
-int wl_compositor_create_surface(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_compositor_create_surface(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
 
   c_wl_object_id wl_surface_id = args[1].o;
@@ -456,14 +450,11 @@ int wl_compositor_create_surface(struct c_wl_connection *conn, union c_wl_arg *a
 
   c_wl_object_add(conn, wl_surface_id, self->version, c_wl_interface_get("wl_surface"), c_wl_surface);
 
-  struct c_wl_display *dpy = c_wl_connection_get_dpy(conn);
-  c_wl_display_notify(dpy, c_wl_surface, C_WL_DISPLAY_ON_SURFACE_NEW);
-
   return 0;
 }
 
 
-int wl_subcompositor_get_subsurface(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_subcompositor_get_subsurface(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
 
   c_wl_new_id wl_subsurface_id = args[1].n;
@@ -517,26 +508,26 @@ int wl_subcompositor_get_subsurface(struct c_wl_connection *conn, union c_wl_arg
   return 0;
 }
 
-int wl_subsurface_set_position(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_subsurface_set_position(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_subsurface *surface = c_wl_object_get(conn, args[0].o)->data;
   surface->x = args[1].i;
   surface->y = args[2].i;
   return 0;
 }
 
-int wl_subsurface_set_sync(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_subsurface_set_sync(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_subsurface *surface = c_wl_object_get(conn, args[0].o)->data;
   surface->sync = 1;
   return 0;
 }
 
-int wl_subsurface_set_desync(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_subsurface_set_desync(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_subsurface *surface = c_wl_object_get(conn, args[0].o)->data;
   surface->sync = 0;
   return 0;
 }
 
-int wl_subsurface_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_subsurface_destroy(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_subsurface *subsurface     = c_wl_object_get(conn, args[0].o)->data;
   struct c_wl_surface    *surface        = subsurface->surface;
   struct c_wl_surface    *surface_parent = subsurface->parent;
@@ -551,7 +542,7 @@ int wl_subsurface_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   return 0;
 }
 
-int wl_subsurface_place_above(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_subsurface_place_above(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *wl_surface_sibling;
   C_WL_CHECK_IF_REGISTERED(args[1].o, wl_surface_sibling);
 
@@ -567,7 +558,7 @@ int wl_subsurface_place_above(struct c_wl_connection *conn, union c_wl_arg *args
   return 0;
 };
 
-int wl_subsurface_place_below(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_subsurface_place_below(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *wl_surface_sibling;
   C_WL_CHECK_IF_REGISTERED(args[1].o, wl_surface_sibling);
 
@@ -583,21 +574,21 @@ int wl_subsurface_place_below(struct c_wl_connection *conn, union c_wl_arg *args
   return 0;
 };
 
-int wl_pointer_set_cursor(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_pointer_set_cursor(struct c_wl_connection *conn, c_wl_args args) {
   return 0;
 }
 
-int wl_pointer_release(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_pointer_release(struct c_wl_connection *conn, c_wl_args args) {
   c_wl_object_del(conn, args[0].o);
   return 0;
 }
 
-int wl_keyboard_release(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_keyboard_release(struct c_wl_connection *conn, c_wl_args args) {
   c_wl_object_del(conn, args[0].o);
   return 0;
 }
 
-int wl_data_device_manager_get_data_device(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_data_device_manager_get_data_device(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
 
   c_wl_object_id wl_data_device_id = args[1].o;
@@ -617,7 +608,7 @@ int wl_data_device_manager_get_data_device(struct c_wl_connection *conn, union c
   return 0;
 }
 
-int wl_data_device_set_selection(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_data_device_set_selection(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
 
   c_wl_object_id wl_data_source_id = args[1].o;
@@ -633,7 +624,7 @@ int wl_data_device_set_selection(struct c_wl_connection *conn, union c_wl_arg *a
   return 0;
 }
 
-int wl_data_device_release(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_data_device_release(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
   struct c_wl_data_device *data_device = self->data;
 
@@ -643,7 +634,7 @@ int wl_data_device_release(struct c_wl_connection *conn, union c_wl_arg *args) {
   return 0;
 }
 
-int wl_data_device_manager_create_data_source(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_data_device_manager_create_data_source(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
   c_wl_object_id wl_data_source_id = args[1].o;
 
@@ -660,7 +651,7 @@ int wl_data_device_manager_create_data_source(struct c_wl_connection *conn, unio
   return 0;
 }
 
-int wl_data_source_offer(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_data_source_offer(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
   struct c_wl_data_source *data_source = self->data;
 
@@ -670,7 +661,7 @@ int wl_data_source_offer(struct c_wl_connection *conn, union c_wl_arg *args) {
   return 0;
 }
 
-int wl_data_source_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
+int wl_data_source_destroy(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
   struct c_wl_data_source *data_source = self->data;
 

@@ -5,6 +5,9 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+#include "wayland/proto/wayland.h"
+#include "wayland/proto/xdg-shell.h"
+
 #include "compositor/window.h"
 #include "compositor/scene.h"
 
@@ -116,8 +119,8 @@ void on_mouse_movement(struct c_input_mouse_event *event, void *userdata);
 void on_mouse_scroll(struct c_input_mouse_event *event, void *userdata);
 void on_mouse_button(struct c_input_mouse_event *event, void *userdata);
 void on_keyboard_key(struct c_input_keyboard_event *event, void *userdata);
-void on_window_new(struct c_xdg_surface *surface, void *userdata);
-void on_window_close(struct c_xdg_surface *surface, void *userdata);
+int on_window_new(struct c_wl_connection *conn, c_wl_args args, void *userdata);
+int on_window_close(struct c_wl_connection *conn, c_wl_args args, void *userdata);
 
 void tile();
 void monocle();
@@ -357,19 +360,19 @@ static void damage_from_surface(struct c_wl_surface *surface) {
   }
 }
 
-void on_surface_commit_cb(struct c_wl_surface *surface, void *userdata) {
+int on_surface_commit_destroy(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
+  struct c_wl_surface *surface = c_wl_self(conn, args)->data;
   damage_from_surface(surface);
+  return 0;
 }
 
-void on_surface_destroy_cb(struct c_wl_surface *surface, void *userdata) {
-  damage_from_surface(surface);
-}
+int on_window_new(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
+  struct c_xdg_surface *surface = c_wl_self(conn, args)->data;
 
-void on_window_new(struct c_xdg_surface *surface, void *userdata) {
   struct client *client = client_new();
   if (!client) {
     cleanup(1, NULL);
-    return;
+    return 1;
   }
 
   client->output = cuts.focused_output;
@@ -383,9 +386,12 @@ void on_window_new(struct c_xdg_surface *surface, void *userdata) {
   client_change_focus(client, pointer_x, pointer_y);
 
   LAYOUT(client->output);
+  return 0;
 }
 
-void on_window_close(struct c_xdg_surface *surface, void *userdata) {
+int on_window_close(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
+  struct c_xdg_surface *surface = c_wl_self(conn, args)->data;
+
   struct client *client;
   c_list_for_each(cuts.clients, client) {
     if (client->window->surface == surface) {
@@ -399,6 +405,8 @@ void on_window_close(struct c_xdg_surface *surface, void *userdata) {
       break;
     }
   }
+
+  return 0;
 }
 
 void on_connection_gone(struct c_wl_connection *conn, void *userdata) {
@@ -646,14 +654,6 @@ void cleanup(int err, void *userdata) {
     cuts.session = NULL;
   }
 
-  if (cuts.clients) {
-    struct client *client;
-    c_list_for_each(cuts.clients, client)
-      client_free(client);
-    c_list_destroy(cuts.clients);
-    cuts.clients = NULL;
-  }
-
   if (cuts.display) {
     c_wl_display_free(cuts.display);
     cuts.display = NULL;
@@ -672,6 +672,14 @@ void cleanup(int err, void *userdata) {
   if (cuts.mgr) {
     c_output_manager_free(cuts.mgr);
     cuts.mgr = NULL;
+  }
+
+  if (cuts.clients) {
+    struct client *client;
+    c_list_for_each(cuts.clients, client)
+      client_free(client);
+    c_list_destroy(cuts.clients);
+    cuts.clients = NULL;
   }
 
   exit(err);
@@ -784,15 +792,23 @@ mode_iter_end:
                                 (void (*)(void *))b->handler, &b->args);
   }
 
-  struct c_wl_display_listener dpy_listener = {
-    .on_connection_gone = on_connection_gone,
-    .on_surface_commit = on_surface_commit_cb,
-    .on_surface_destroy = on_surface_destroy_cb,
-    .on_toplevel_new = on_window_new,
-    .on_toplevel_destroy = on_window_close,
+  struct c_wl_surface_listeners surface_listeners = {
+    .commit = on_surface_commit_destroy,
+    .destroy = on_surface_commit_destroy,
   };
+  wl_surface_add_listener(display, &surface_listeners, NULL);
 
-  c_wl_display_add_listener(display, &dpy_listener, NULL);
+  struct c_xdg_surface_listeners xdg_surface_listeners = {
+    .get_toplevel = on_window_new,
+  };
+  xdg_surface_add_listener(display, &xdg_surface_listeners, NULL);
+
+  struct c_xdg_toplevel_listeners xdg_toplevel_listeners = {
+    .destroy = on_window_close,
+  };
+  xdg_toplevel_add_listener(display, &xdg_toplevel_listeners, NULL);
+
+  //   .on_connection_gone = on_connection_gone,
 
   ret = c_event_loop_run(loop);
 

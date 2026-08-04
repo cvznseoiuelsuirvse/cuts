@@ -1,5 +1,4 @@
 diaz_daemon_sources = files(
- '../../wayland/types.c',
  'impl/diazepam/daemon.c',
  'impl/diazepam/vt.c',
  'impl/diazepam/sock.c',
