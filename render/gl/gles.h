@@ -33,7 +33,7 @@ struct c_gles {
 struct c_gles *c_gles_init();
 void c_gles_free(struct c_gles *gl);
 int c_gles_texture_from_dma(struct c_gles *gl, struct c_dmabuf *buf);
-int c_gles_texture_from_raw(struct c_rawbuf *buf, uint32_t width, uint32_t height);
+int c_gles_texture_from_raw(struct c_rawbuf *buf);
 void c_gles_draw_quad(struct c_gles *gl, struct c_output *output,
                       struct c_scene_quad *quad,
                       struct c_gles_texture *texture);

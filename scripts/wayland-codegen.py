@@ -40,7 +40,6 @@ def parse_event(interface_name: str, event: ET.Element, event_n: int, file_type:
     args = [c for c in event if c.tag == "arg"]
     s+=f"C_WL_EVENT {interface_name}_{event_name}(struct c_wl_connection *conn, c_wl_object_id {interface_name}{", " if args else ""}"
 
-    fd = ""
     signature = []
     arg_names = []
 
@@ -57,9 +56,6 @@ def parse_event(interface_name: str, event: ET.Element, event_n: int, file_type:
 
         arg_name = attrs["name"] if not attrs.get("interface") else attrs["interface"]
         arg_names.append(arg_name)
-
-        if arg_c_type == "c_wl_fd":
-            fd = arg_name
 
         if arg_c_type == "c_wl_array":
             s+=f"{arg_c_type} *{arg_name}"
@@ -89,7 +85,7 @@ def parse_events(interface_name: str, events: list[ET.Element], file_type: Liter
         s+=parse_event(interface_name, ev, i, file_type)
 
     if interface_name == "wl_display" and file_type == "c":
-        s+='C_WL_INTERFACE_REGISTER(wl_callback, 1, 0, {})\n'
+        s+='C_WL_INTERFACE_REGISTER(wl_callback, 1, 0, -1, {})\n'
 
     return s
 

@@ -21,7 +21,7 @@
 static char            __error_msg[C_WL_STRING_SIZE] = {0};
 static c_wl_int        __error_code = 0;
 static c_wl_object_id  __error_object_id = 0;
-static uint32_t        __serial = 1;
+static int        __serial = 1;
 
 struct c_wl_connection {
 	struct c_wl_display *display;
@@ -189,7 +189,9 @@ int c_wl_connection_send(struct c_wl_connection *conn, struct c_wl_message *msg,
   return 0;
 }
 
-static int handle_request(struct c_wl_connection *conn, struct c_wl_object *object, c_wl_args args, uint16_t op) {
+static int handle_request(struct c_wl_connection *conn,
+                          struct c_wl_object *object, c_wl_args args,
+                          uint16_t op) {
   struct c_wl_request request = object->iface->requests[op];
   int destructor = object->iface->destructor_request;
   void *userdata = object->listeners.userdata;
@@ -464,6 +466,9 @@ int c_wl_connection_free(struct c_wl_connection *conn) {
       if (object->iface->destructor_request >= 0) {
         c_wl_arg arg = {.o = object->id};
         handle_request(conn, object, &arg, object->iface->destructor_request);
+
+      } else if (object->data) {
+        c_unref(object->data);
       }
 
       mp = next;
@@ -499,8 +504,6 @@ void c_wl_error_send(struct c_wl_connection *conn) {
 
 
 inline int c_wl_serial() {
-  if (__serial > (1 << 31))
-    __serial = 0;
-
+  __serial %= (1 << 31);
   return __serial++;
 }

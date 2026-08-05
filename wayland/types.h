@@ -38,12 +38,10 @@ struct c_wl_formats {
 };
 
 struct c_wl_shm_pool {
+  c_wl_object_id id;
 	int 	     fd;
 	uint8_t	  *ptr;
 	uint32_t   size;
-
-	size_t    n_supported_formats;
-	uint32_t *supported_formats;
 };
 
 enum c_wl_buffer_type {

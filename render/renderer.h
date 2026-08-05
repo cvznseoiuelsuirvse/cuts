@@ -17,7 +17,6 @@ struct c_renderer {
 	struct c_format *formats;
 	size_t format_table_entries;
   int format_table_fd;
-	uint32_t *wl_formats;
 };
 
 struct c_renderer *c_renderer_init(struct c_output_manager *mgr, struct c_wl_display *display);

@@ -7,6 +7,7 @@
 
 #include "wayland/proto/wayland.h"
 #include "wayland/display.h"
+#include "output/drm/util.h"
 
 #include "util/log.h"
 #include "util/malloc.h"
@@ -106,18 +107,14 @@ int wl_shm_create_pool(struct c_wl_connection *conn, c_wl_args args) {
         break;
     }
 
-    c_free(pool);
+    c_unref(pool);
     c_log_errno(C_LOG_ERROR, "mmap() failed");
     c_wl_error_set_and_return(wl_shm_id, error_code, "failed to mmap");
   }
 
+  pool->id = wl_shm_pool_id;
   pool->ptr = buffer;
   pool->size = buffer_size;
-
-  struct c_wl_formats *supported_formats = c_wl_object_get(conn, wl_shm_id)->data;
-
-  pool->supported_formats = supported_formats->formats;
-  pool->n_supported_formats = supported_formats->n_formats;
 
   c_wl_object_add(conn, wl_shm_pool_id, wl_shm->version, c_wl_interface_get("wl_shm_pool"), pool);
   return 0;
@@ -137,13 +134,6 @@ int wl_shm_pool_create_buffer(struct c_wl_connection *conn, c_wl_args args) {
   c_wl_int stride = args[5].i;
   enum wl_shm_format_enum format = args[6].e;
 
-  for (size_t i = 0; i < pool->n_supported_formats; i++) {
-    uint32_t format2 = pool->supported_formats[i];
-    if (format == format2) goto format_supported;
-  }
-  c_wl_error_set_and_return(wl_shm_pool_id, WL_SHM_ERROR_INVALID_FORMAT, "format not supported");
-
-format_supported:
   if (stride % 4 != 0)
     c_wl_error_set_and_return(wl_shm_pool_id, WL_SHM_ERROR_INVALID_STRIDE, "invalid offset");
   
@@ -168,7 +158,7 @@ format_supported:
   buf->width = width;
   buf->height = height;
   buf->stride = stride;
-  buf->format = format;
+  buf->format = wl_shm_fmt_to_drm_fmt(format);
   buf->offset = offset;
   buf->base_ptr = &pool->ptr;
 
@@ -185,10 +175,10 @@ int wl_buffer_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_wl_buffer *wl_buffer = self->data;
 
   if (wl_buffer->dma)
-    c_free(wl_buffer->dma);
+    c_unref(wl_buffer->dma);
 
   if (wl_buffer->shm)
-    c_free(wl_buffer->shm);
+    c_unref(wl_buffer->shm);
 
   wl_buffer->id = 0;
   c_wl_object_del(conn, self->id);
@@ -470,13 +460,13 @@ int wl_subcompositor_get_subsurface(struct c_wl_connection *conn, c_wl_args args
   struct c_wl_surface *surface_parent = wl_surface_parent->data;
 
   if (surface == surface_parent) {
-    c_free(subsurface);
+    c_unref(subsurface);
     c_wl_error_set_and_return(args[0].o, WL_SUBCOMPOSITOR_ERROR_BAD_PARENT,
                               "parent and child cannot be the same objects");
   }
 
   if (surface->role) {
-    c_free(subsurface);
+    c_unref(subsurface);
     c_wl_error_set_and_return(args[0].o, WL_SUBCOMPOSITOR_ERROR_BAD_SURFACE,
                               "child surface already holds a role");
   }

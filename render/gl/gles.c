@@ -4,11 +4,13 @@
 #include <GLES2/gl2ext.h>
 #include <GLES3/gl3.h>
 #include <fcntl.h>
+#include <inttypes.h>
 
 #include "render/gl/gles.h"
 
 #include "util/log.h"
 #include "util/helpers.h"
+#include "output/drm/util.h"
 
 #define VERTEX_SHADER_PATH  "render/shaders/shader.vert"
 #define TEX_SHADER_PATH     "render/shaders/texture.frag"
@@ -181,7 +183,7 @@ static void create_verts(uint32_t width, uint32_t height, double x, double y,
 }
 
 
-int c_gles_texture_from_raw(struct c_rawbuf *buf, uint32_t width, uint32_t height) {
+int c_gles_texture_from_raw(struct c_rawbuf *buf) {
   struct c_gles_texture *texture = calloc(1, sizeof(*texture));
   if (!texture) {
     c_log_errno(C_LOG_ERROR, "failed to allocate c_gles_texture");
@@ -198,7 +200,20 @@ int c_gles_texture_from_raw(struct c_rawbuf *buf, uint32_t width, uint32_t heigh
   glTexParameteri(texture->target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
   glPixelStorei(GL_UNPACK_ROW_LENGTH, buf->stride / 4);
-  glTexImage2D(texture->target, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, (*buf->base_ptr) + buf->offset);
+
+
+  GLenum internal_format, format, type;
+  if (drm_fmt_to_gl_fmt(buf->format, &internal_format, &format, &type) == -1) {
+    c_log(C_LOG_WARNING, "unable to find the corresponding GL formats for the DRM format 0x%"PRIX32);
+    c_log(C_LOG_WARNING, "using default values");
+    internal_format = GL_RGBA;
+    internal_format = GL_RGBA;
+    internal_format = GL_UNSIGNED_BYTE;
+  }
+
+  glTexImage2D(texture->target, 0, internal_format, buf->width, buf->height, 0,
+               format, type, (*buf->base_ptr) + buf->offset);
+
   glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
   glBindTexture(texture->target, 0);
 

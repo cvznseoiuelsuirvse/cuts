@@ -1,9 +1,12 @@
 #include <drm_fourcc.h>
 #include <stdint.h>
 #include <xf86drmMode.h>
+#include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
+
+#include "output/drm/util.h"
 
 #include "wayland/proto/wayland.h"
-#include "util/log.h"
 
 const char *drm_connector_str(uint32_t conn_type) {
 	switch (conn_type) {
@@ -92,7 +95,7 @@ double drm_refresh_rate(drmModeModeInfo *mode) {
 	return (double)res / 1000.0f;
 }
 
-enum wl_shm_format_enum drm_to_wl_shm_format(uint32_t format) {
+enum wl_shm_format_enum drm_fmt_to_wl_shm_fmt(uint32_t format) {
 	switch (format) {
 		case DRM_FORMAT_ARGB8888: return WL_SHM_FORMAT_ARGB8888;
 		case DRM_FORMAT_XRGB8888: return WL_SHM_FORMAT_XRGB8888;
@@ -100,3 +103,36 @@ enum wl_shm_format_enum drm_to_wl_shm_format(uint32_t format) {
 	}
 }
 
+uint32_t wl_shm_fmt_to_drm_fmt(enum wl_shm_format_enum format) {
+	switch (format) {
+		case WL_SHM_FORMAT_ARGB8888: return DRM_FORMAT_ARGB8888;
+		case WL_SHM_FORMAT_XRGB8888: return DRM_FORMAT_XRGB8888;
+		default:				  return format;
+	}
+}
+
+int drm_fmt_to_gl_fmt(uint32_t drm_format, GLenum *internal_format,
+                        GLenum *format, GLenum *type) {
+	GLenum ifmt, fmt, t;
+
+	switch (drm_format) {
+	case DRM_FORMAT_ABGR8888: ifmt = GL_RGBA; fmt = GL_RGBA;     t = GL_UNSIGNED_BYTE;           break;
+	case DRM_FORMAT_XBGR8888: ifmt = GL_RGBA; fmt = GL_RGBA;     t = GL_UNSIGNED_BYTE;           break;
+	case DRM_FORMAT_ARGB8888: ifmt = GL_RGBA; fmt = GL_BGRA_EXT; t = GL_UNSIGNED_BYTE;           break;
+	case DRM_FORMAT_XRGB8888: ifmt = GL_RGBA; fmt = GL_BGRA_EXT; t = GL_UNSIGNED_BYTE;           break;
+	case DRM_FORMAT_BGR888:   ifmt = GL_RGB;  fmt = GL_RGB;      t = GL_UNSIGNED_BYTE;           break;
+	case DRM_FORMAT_RGB888:   ifmt = GL_RGB;  fmt = GL_RGB;      t = GL_UNSIGNED_BYTE;           break;
+	case DRM_FORMAT_RGB565:   ifmt = GL_RGB;  fmt = GL_RGB;      t = GL_UNSIGNED_SHORT_5_6_5;    break;
+	case DRM_FORMAT_BGR565:   ifmt = GL_RGB;  fmt = GL_RGB;      t = GL_UNSIGNED_SHORT_5_6_5;    break;
+	case DRM_FORMAT_ABGR4444: ifmt = GL_RGBA; fmt = GL_RGBA;     t = GL_UNSIGNED_SHORT_4_4_4_4;  break;
+	case DRM_FORMAT_ARGB4444: ifmt = GL_RGBA; fmt = GL_BGRA_EXT; t = GL_UNSIGNED_SHORT_4_4_4_4;  break;
+	case DRM_FORMAT_ABGR1555: ifmt = GL_RGBA; fmt = GL_RGBA;     t = GL_UNSIGNED_SHORT_5_5_5_1;  break;
+	case DRM_FORMAT_ARGB1555: ifmt = GL_RGBA; fmt = GL_BGRA_EXT; t = GL_UNSIGNED_SHORT_5_5_5_1;  break;
+	default: return -1;
+	}
+
+	*internal_format = ifmt;
+	*format = fmt;
+	*type = t;
+	return 0;
+}
