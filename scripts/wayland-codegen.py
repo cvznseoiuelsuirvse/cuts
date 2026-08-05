@@ -89,7 +89,7 @@ def parse_events(interface_name: str, events: list[ET.Element], file_type: Liter
         s+=parse_event(interface_name, ev, i, file_type)
 
     if interface_name == "wl_display" and file_type == "c":
-        s+='C_WL_INTERFACE_REGISTER(wl_callback_interface, "wl_callback", 1, 0, {})\n'
+        s+='C_WL_INTERFACE_REGISTER(wl_callback, 1, 0, {})\n'
 
     return s
 
@@ -99,7 +99,7 @@ def parse_request(interface_name: str, request: ET.Element, file_type: Literal["
 
     request_name = request.get("name")
     is_destructor = request.get("type", "") == "destructor"
-    listener = f"c_wl_listener_handler {request_name};"
+    listener = f"c_wl_interface_listener_handler {request_name};"
 
     desc = next(c for c in request if c.tag == "description")
     if interface_name == "wl_registry" and request_name == "bind":
@@ -179,14 +179,14 @@ def parse_requests(interface: ET.Element, requests: list[ET.Element], file_type:
             if is_destr:
                 destr = i
 
-        s+=f"C_WL_INTERFACE_REGISTER({interface_name}_interface, \"{interface_name}\", {interface_version}, {len(ss)}, {destr}, \n"
+        s+=f"C_WL_INTERFACE_REGISTER({interface_name}, {interface_version}, {len(ss)}, {destr}, \n"
         for i, (_, _, struct, _) in enumerate(ss):
             s+=struct
 
         s+=")\n"
 
         s+=f"void {interface_name}_add_listener(struct c_wl_display *display, struct c_{interface_name}_listeners *listeners, void *userdata) {{\n"
-        s+=f"  c_wl_display_add_listener(display, \"{interface_name}\", listeners, sizeof(*listeners), userdata);\n"
+        s+=f"  c_wl_display_add_interface_listener(display, \"{interface_name}\", listeners, sizeof(*listeners), userdata);\n"
         s+="}\n"
 
     return s

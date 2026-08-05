@@ -10,11 +10,31 @@
 #include "util/helpers.h"
 #include "util/log.h"
 
-struct display_listeners {
+#define MAX_INTERFACES 2048
+static const struct c_wl_interface *__interfaces[MAX_INTERFACES];
+static size_t                 __ninterfaces = 0;
+
+enum connection_event_notifiers {
+  C_WL_DISPLAY_ON_CONNECTION_NEW,
+  C_WL_DISPLAY_ON_CONNECTION_GONE,
+};
+
+struct __interface_listeners {
   char iface_name[100];
   int destructor;
   void *handlers;
   void *userdata;
+};
+
+struct c_wl_display {
+	char 	 socket_path[108];
+
+	struct c_wl_interface *interfaces;
+	c_list *interface_listeners;
+
+  c_list *connections;
+	struct c_wl_display_connection_listener *connection_listener;
+	void *connection_listener_data;
 };
 
 static int create_socket(struct c_wl_display *display) {
@@ -73,15 +93,95 @@ error:
   return -1;
 }
 
+inline void c_wl_interface_add(const struct c_wl_interface *interface) {
+  assert(__ninterfaces < MAX_INTERFACES);
+  __interfaces[__ninterfaces++] = interface; 
+}
+
+inline const struct c_wl_interface *c_wl_interface_get(const char *interface_name) {
+  for (size_t i = 0; i < __ninterfaces; i++) {
+    const struct c_wl_interface *interface = __interfaces[i];
+    if (STREQ(interface_name, interface->name)) return interface;
+  }
+  return NULL;
+}
+
+void c_wl_interface_support(const char *name, c_wl_interface_on_bind on_bind,
+                            void *userdata) {
+  struct c_wl_interface *iface = (struct c_wl_interface *)c_wl_interface_get(name);
+  assert(iface);
+  iface->on_bind = on_bind;
+  iface->on_bind_userdata = userdata;
+  iface->is_supported = 1;
+}
+
+size_t c_wl_interface_get_all(const struct c_wl_interface ***interfaces) {
+  *interfaces = __interfaces;
+  return __ninterfaces;
+};
+
+
+void c_wl_display_add_interface_listener(struct c_wl_display *display, const char *iface,
+                               void *listeners, size_t listeners_size,
+                               void *userdata) {
+
+  struct __interface_listeners l;
+  snprintf(l.iface_name, sizeof(l.iface_name), "%s", iface);
+  l.handlers = calloc(1, listeners_size);
+  memcpy(l.handlers, listeners, listeners_size);
+  l.userdata = userdata;
+      
+  c_list_push(display->interface_listeners, &l, sizeof(l));
+}
+
+void c_wl_display_get_interface_listener(struct c_wl_display *display, const char *iface,
+                               void ***handlers, void **userdata) {
+  *handlers = NULL;
+  *userdata = NULL;
+
+  struct __interface_listeners *l;
+  c_list_for_each(display->interface_listeners, l) {
+    if (STREQ(l->iface_name, iface)) {
+      *handlers = l->handlers;
+      *userdata = l->userdata;
+      break;
+    }
+  }
+}
+
+void c_wl_display_add_connection_listener(
+    struct c_wl_display *display,
+    struct c_wl_display_connection_listener *listener, void *userdata) {
+
+  display->connection_listener = listener;
+  display->connection_listener_data = userdata;
+}
+
+void connection_event_notify(struct c_wl_display *display, struct c_wl_connection *conn,
+                             enum connection_event_notifiers notifier) {
+#define notify(callback)                                                       \
+  if (display->connection_listener->callback) {                                \
+    display->connection_listener->callback(conn,                               \
+                                           display->connection_listener_data); \
+  }
+
+  switch (notifier) {
+    case C_WL_DISPLAY_ON_CONNECTION_NEW:  notify(new); break;
+    case C_WL_DISPLAY_ON_CONNECTION_GONE: notify(gone); break;
+    default: break;
+  }
+}
+
 C_EVENT_CALLBACK client_epoll_callback(struct c_event_loop *loop, int fd, void *data) {
   struct c_wl_connection *connection = data;
-  struct c_wl_display *dpy = c_wl_connection_get_dpy(connection);
+  struct c_wl_display *display = c_wl_connection_get_display(connection);
 
   int ret = c_wl_connection_dispatch(connection);
 
   switch (ret) {
     case DISPATCH_FATAL_ERR:
-      c_list_remove(&dpy->connections, connection);
+      connection_event_notify(display, connection, C_WL_DISPLAY_ON_CONNECTION_GONE);
+      c_list_remove(&display->connections, connection);
       c_wl_connection_free(connection);
       return C_EVENT_ERROR_FATAL;
 
@@ -90,7 +190,8 @@ C_EVENT_CALLBACK client_epoll_callback(struct c_event_loop *loop, int fd, void *
       return C_EVENT_OK;
 
     case DISPATCH_CLIENT_ERR:
-      c_list_remove(&dpy->connections, connection);
+      connection_event_notify(display, connection, C_WL_DISPLAY_ON_CONNECTION_GONE);
+      c_list_remove(&display->connections, connection);
       c_wl_connection_free(connection);
       return C_EVENT_ERROR_FD_GONE;
   }
@@ -120,36 +221,9 @@ C_EVENT_CALLBACK server_epoll_callback(struct c_event_loop *loop, int fd, void *
   }
 
   c_list_push(display->connections, connection, 0);
+  connection_event_notify(display, connection, C_WL_DISPLAY_ON_CONNECTION_NEW);
 
   return C_EVENT_OK;
-}
-
-void c_wl_display_add_listener(struct c_wl_display *display, const char *iface,
-                               void *listeners, size_t listeners_size,
-                               void *userdata) {
-
-  struct display_listeners l;
-  snprintf(l.iface_name, sizeof(l.iface_name), "%s", iface);
-  l.handlers = calloc(1, listeners_size);
-  memcpy(l.handlers, listeners, listeners_size);
-  l.userdata = userdata;
-      
-  c_list_push(display->listeners, &l, sizeof(l));
-}
-
-void c_wl_display_get_listener(struct c_wl_display *display, const char *iface,
-                               void ***handlers, void **userdata) {
-  *handlers = NULL;
-  *userdata = NULL;
-
-  struct display_listeners *l;
-  c_list_for_each(display->listeners, l) {
-    if (STREQ(l->iface_name, iface)) {
-      *handlers = l->handlers;
-      *userdata = l->userdata;
-      break;
-    }
-  }
 }
 
 struct c_wl_display *c_wl_display_init(struct c_event_loop *loop) {
@@ -168,29 +242,17 @@ struct c_wl_display *c_wl_display_init(struct c_event_loop *loop) {
 
   c_event_loop_add(loop, fd, server_epoll_callback, display);
 
-  display->listeners = c_list_new();
-  display->supported_ifaces = c_list_new();
+  display->interface_listeners = c_list_new();
   display->connections = c_list_new();
 
-  c_wl_display_add_supported_interface(display, "wl_compositor", NULL, NULL);
-  c_wl_display_add_supported_interface(display, "wl_subcompositor", NULL, NULL);
-  c_wl_display_add_supported_interface(display, "xdg_wm_base", NULL, NULL);
-  c_wl_display_add_supported_interface(display, "zxdg_decoration_manager_v1", NULL, NULL);
-  c_wl_display_add_supported_interface(display, "wl_data_device_manager", NULL, NULL);
+  c_wl_interface_support("wl_compositor", NULL, NULL);
+  c_wl_interface_support("wl_subcompositor", NULL, NULL);
+  c_wl_interface_support("xdg_wm_base", NULL, NULL);
+  c_wl_interface_support("zxdg_decoration_manager_v1", NULL, NULL);
+  c_wl_interface_support("wl_data_device_manager", NULL, NULL);
 
   return display;
 
-}
-
-void c_wl_display_add_supported_interface(struct c_wl_display *display, const char *name, c_wl_display_on_bind on_bind, void *userdata) {
-  struct c_wl_interface *iface = c_wl_interface_get(name);
-  assert(iface);
-  struct c_wl_display_supported_iface i = {
-    .iface = iface,
-    .on_bind = on_bind,
-    .on_bind_userdata = userdata,
-  };
-  c_list_push(display->supported_ifaces, &i, sizeof(i));
 }
 
 void c_wl_display_free(struct c_wl_display *display) {
@@ -203,17 +265,13 @@ void c_wl_display_free(struct c_wl_display *display) {
     c_list_destroy(display->connections);
   }
 
-  if (display->listeners) {
-    struct display_listeners *l;
-    c_list_for_each(display->listeners, l) {
+  if (display->interface_listeners) {
+    struct __interface_listeners *l;
+    c_list_for_each(display->interface_listeners, l) {
       free(l->handlers);
     }
-    c_list_destroy(display->listeners);
+    c_list_destroy(display->interface_listeners);
   }
-
-  if (display->supported_ifaces)
-    c_list_destroy(display->supported_ifaces);
-
 
   unsetenv("WAYLAND_DISPLAY");
   free(display);

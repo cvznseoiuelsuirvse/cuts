@@ -9,17 +9,17 @@ C_WL_EVENT xdg_wm_base_ping(struct c_wl_connection *conn, c_wl_object_id xdg_wm_
   struct c_wl_message msg = {xdg_wm_base, 0, "u", "ping"};
   return c_wl_connection_send(conn, &msg, 1, serial);
 }
-C_WL_INTERFACE_REGISTER(xdg_wm_base_interface, "xdg_wm_base", 7, 4, 0, 
+C_WL_INTERFACE_REGISTER(xdg_wm_base, 7, 4, 0, 
     {"destroy",                xdg_wm_base_destroy,           0,  {0}},
     {"create_positioner",      xdg_wm_base_create_positioner, 1,  "n"},
     {"get_xdg_surface",        xdg_wm_base_get_xdg_surface,   2,  "no"},
     {"pong",                   xdg_wm_base_pong,              1,  "u"},
 )
 void xdg_wm_base_add_listener(struct c_wl_display *display, struct c_xdg_wm_base_listeners *listeners, void *userdata) {
-  c_wl_display_add_listener(display, "xdg_wm_base", listeners, sizeof(*listeners), userdata);
+  c_wl_display_add_interface_listener(display, "xdg_wm_base", listeners, sizeof(*listeners), userdata);
 }
 
-C_WL_INTERFACE_REGISTER(xdg_positioner_interface, "xdg_positioner", 7, 10, 0, 
+C_WL_INTERFACE_REGISTER(xdg_positioner, 7, 10, 0, 
     {"destroy",                xdg_positioner_destroy,        0,  {0}},
     {"set_size",               xdg_positioner_set_size,       2,  "ii"},
     {"set_anchor_rect",        xdg_positioner_set_anchor_rect, 4,  "iiii"},
@@ -32,14 +32,14 @@ C_WL_INTERFACE_REGISTER(xdg_positioner_interface, "xdg_positioner", 7, 10, 0,
     {"set_parent_configure",   xdg_positioner_set_parent_configure, 1,  "u"},
 )
 void xdg_positioner_add_listener(struct c_wl_display *display, struct c_xdg_positioner_listeners *listeners, void *userdata) {
-  c_wl_display_add_listener(display, "xdg_positioner", listeners, sizeof(*listeners), userdata);
+  c_wl_display_add_interface_listener(display, "xdg_positioner", listeners, sizeof(*listeners), userdata);
 }
 
 C_WL_EVENT xdg_surface_configure(struct c_wl_connection *conn, c_wl_object_id xdg_surface, c_wl_uint serial) {
   struct c_wl_message msg = {xdg_surface, 0, "u", "configure"};
   return c_wl_connection_send(conn, &msg, 1, serial);
 }
-C_WL_INTERFACE_REGISTER(xdg_surface_interface, "xdg_surface", 7, 5, 0, 
+C_WL_INTERFACE_REGISTER(xdg_surface, 7, 5, 0, 
     {"destroy",                xdg_surface_destroy,           0,  {0}},
     {"get_toplevel",           xdg_surface_get_toplevel,      1,  "n"},
     {"get_popup",              xdg_surface_get_popup,         3,  "noo"},
@@ -47,7 +47,7 @@ C_WL_INTERFACE_REGISTER(xdg_surface_interface, "xdg_surface", 7, 5, 0,
     {"ack_configure",          xdg_surface_ack_configure,     1,  "u"},
 )
 void xdg_surface_add_listener(struct c_wl_display *display, struct c_xdg_surface_listeners *listeners, void *userdata) {
-  c_wl_display_add_listener(display, "xdg_surface", listeners, sizeof(*listeners), userdata);
+  c_wl_display_add_interface_listener(display, "xdg_surface", listeners, sizeof(*listeners), userdata);
 }
 
 C_WL_EVENT xdg_toplevel_configure(struct c_wl_connection *conn, c_wl_object_id xdg_toplevel, c_wl_int width, c_wl_int height, c_wl_array *states) {
@@ -66,7 +66,7 @@ C_WL_EVENT xdg_toplevel_wm_capabilities(struct c_wl_connection *conn, c_wl_objec
   struct c_wl_message msg = {xdg_toplevel, 3, "a", "wm_capabilities"};
   return c_wl_connection_send(conn, &msg, 1, capabilities);
 }
-C_WL_INTERFACE_REGISTER(xdg_toplevel_interface, "xdg_toplevel", 7, 14, 0, 
+C_WL_INTERFACE_REGISTER(xdg_toplevel, 7, 14, 0, 
     {"destroy",                xdg_toplevel_destroy,          0,  {0}},
     {"set_parent",             xdg_toplevel_set_parent,       1,  "o"},
     {"set_title",              xdg_toplevel_set_title,        1,  "s"},
@@ -83,7 +83,7 @@ C_WL_INTERFACE_REGISTER(xdg_toplevel_interface, "xdg_toplevel", 7, 14, 0,
     {"set_minimized",          xdg_toplevel_set_minimized,    0,  {0}},
 )
 void xdg_toplevel_add_listener(struct c_wl_display *display, struct c_xdg_toplevel_listeners *listeners, void *userdata) {
-  c_wl_display_add_listener(display, "xdg_toplevel", listeners, sizeof(*listeners), userdata);
+  c_wl_display_add_interface_listener(display, "xdg_toplevel", listeners, sizeof(*listeners), userdata);
 }
 
 C_WL_EVENT xdg_popup_configure(struct c_wl_connection *conn, c_wl_object_id xdg_popup, c_wl_int x, c_wl_int y, c_wl_int width, c_wl_int height) {
@@ -98,12 +98,12 @@ C_WL_EVENT xdg_popup_repositioned(struct c_wl_connection *conn, c_wl_object_id x
   struct c_wl_message msg = {xdg_popup, 2, "u", "repositioned"};
   return c_wl_connection_send(conn, &msg, 1, token);
 }
-C_WL_INTERFACE_REGISTER(xdg_popup_interface, "xdg_popup", 7, 3, 0, 
+C_WL_INTERFACE_REGISTER(xdg_popup, 7, 3, 0, 
     {"destroy",                xdg_popup_destroy,             0,  {0}},
     {"grab",                   xdg_popup_grab,                2,  "ou"},
     {"reposition",             xdg_popup_reposition,          2,  "ou"},
 )
 void xdg_popup_add_listener(struct c_wl_display *display, struct c_xdg_popup_listeners *listeners, void *userdata) {
-  c_wl_display_add_listener(display, "xdg_popup", listeners, sizeof(*listeners), userdata);
+  c_wl_display_add_interface_listener(display, "xdg_popup", listeners, sizeof(*listeners), userdata);
 }
 

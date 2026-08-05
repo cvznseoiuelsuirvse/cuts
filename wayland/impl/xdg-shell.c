@@ -35,6 +35,11 @@ int xdg_wm_base_get_xdg_surface(struct c_wl_connection *conn, union c_wl_arg *ar
   return 0;
 }
 
+int xdg_wm_base_destroy(struct c_wl_connection *conn, c_wl_args args) {
+  c_wl_object_del(conn, args[0].o);
+  return 0;
+}
+
 int xdg_surface_ack_configure(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_id xdg_surface_id = args[0].o;
   if (!args[1].u) {
@@ -55,7 +60,8 @@ int xdg_surface_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
     c_list_destroy(xdg_surface->children);
   }
 
-  xdg_surface->surface->xdg_surface = NULL;
+  if (xdg_surface->surface)
+    xdg_surface->surface->xdg_surface = NULL;
 
   c_wl_object_del(conn, xdg_surface_id);
   return 0;
@@ -174,10 +180,11 @@ int xdg_toplevel_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_xdg_surface *xdg_surface = c_wl_object_get(conn, args[0].o)->data;
   struct c_xdg_surface *parent = xdg_surface->parent;
 
-  xdg_surface->surface->role = 0;
+
   if (parent)
     c_list_remove(&parent->children, xdg_surface);
 
+  if (xdg_surface->surface) xdg_surface->surface->role = 0;
   if (xdg_surface->toplevel.title)  free(xdg_surface->toplevel.title);
   if (xdg_surface->toplevel.app_id) free(xdg_surface->toplevel.app_id);
 

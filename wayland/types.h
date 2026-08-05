@@ -76,9 +76,7 @@ struct c_wl_surface {
 	c_wl_object_id          id;
 	struct c_wl_connection *conn;
 
-  c_wl_object_id frame_id;
-  c_wl_object_id frames[4];
-  size_t         n_frames;
+  c_wl_object_id frame;
 
 	enum c_wl_surface_roles role;
 	struct {

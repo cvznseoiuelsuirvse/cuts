@@ -187,10 +187,10 @@ C_WL_REQUEST xdg_wm_base_get_xdg_surface(struct c_wl_connection *conn, c_wl_args
 C_WL_REQUEST xdg_wm_base_pong(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_xdg_wm_base_listeners {
-  c_wl_listener_handler destroy;
-  c_wl_listener_handler create_positioner;
-  c_wl_listener_handler get_xdg_surface;
-  c_wl_listener_handler pong;
+  c_wl_interface_listener_handler destroy;
+  c_wl_interface_listener_handler create_positioner;
+  c_wl_interface_listener_handler get_xdg_surface;
+  c_wl_interface_listener_handler pong;
 };
 void xdg_wm_base_add_listener(struct c_wl_display *display, struct c_xdg_wm_base_listeners *listeners, void *userdata);
 
@@ -315,16 +315,16 @@ C_WL_REQUEST xdg_positioner_set_parent_size(struct c_wl_connection *conn, c_wl_a
 C_WL_REQUEST xdg_positioner_set_parent_configure(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_xdg_positioner_listeners {
-  c_wl_listener_handler destroy;
-  c_wl_listener_handler set_size;
-  c_wl_listener_handler set_anchor_rect;
-  c_wl_listener_handler set_anchor;
-  c_wl_listener_handler set_gravity;
-  c_wl_listener_handler set_constraint_adjustment;
-  c_wl_listener_handler set_offset;
-  c_wl_listener_handler set_reactive;
-  c_wl_listener_handler set_parent_size;
-  c_wl_listener_handler set_parent_configure;
+  c_wl_interface_listener_handler destroy;
+  c_wl_interface_listener_handler set_size;
+  c_wl_interface_listener_handler set_anchor_rect;
+  c_wl_interface_listener_handler set_anchor;
+  c_wl_interface_listener_handler set_gravity;
+  c_wl_interface_listener_handler set_constraint_adjustment;
+  c_wl_interface_listener_handler set_offset;
+  c_wl_interface_listener_handler set_reactive;
+  c_wl_interface_listener_handler set_parent_size;
+  c_wl_interface_listener_handler set_parent_configure;
 };
 void xdg_positioner_add_listener(struct c_wl_display *display, struct c_xdg_positioner_listeners *listeners, void *userdata);
 
@@ -462,11 +462,11 @@ C_WL_REQUEST xdg_surface_set_window_geometry(struct c_wl_connection *conn, c_wl_
 C_WL_REQUEST xdg_surface_ack_configure(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_xdg_surface_listeners {
-  c_wl_listener_handler destroy;
-  c_wl_listener_handler get_toplevel;
-  c_wl_listener_handler get_popup;
-  c_wl_listener_handler set_window_geometry;
-  c_wl_listener_handler ack_configure;
+  c_wl_interface_listener_handler destroy;
+  c_wl_interface_listener_handler get_toplevel;
+  c_wl_interface_listener_handler get_popup;
+  c_wl_interface_listener_handler set_window_geometry;
+  c_wl_interface_listener_handler ack_configure;
 };
 void xdg_surface_add_listener(struct c_wl_display *display, struct c_xdg_surface_listeners *listeners, void *userdata);
 
@@ -869,20 +869,20 @@ C_WL_REQUEST xdg_toplevel_unset_fullscreen(struct c_wl_connection *conn, c_wl_ar
 C_WL_REQUEST xdg_toplevel_set_minimized(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_xdg_toplevel_listeners {
-  c_wl_listener_handler destroy;
-  c_wl_listener_handler set_parent;
-  c_wl_listener_handler set_title;
-  c_wl_listener_handler set_app_id;
-  c_wl_listener_handler show_window_menu;
-  c_wl_listener_handler move;
-  c_wl_listener_handler resize;
-  c_wl_listener_handler set_max_size;
-  c_wl_listener_handler set_min_size;
-  c_wl_listener_handler set_maximized;
-  c_wl_listener_handler unset_maximized;
-  c_wl_listener_handler set_fullscreen;
-  c_wl_listener_handler unset_fullscreen;
-  c_wl_listener_handler set_minimized;
+  c_wl_interface_listener_handler destroy;
+  c_wl_interface_listener_handler set_parent;
+  c_wl_interface_listener_handler set_title;
+  c_wl_interface_listener_handler set_app_id;
+  c_wl_interface_listener_handler show_window_menu;
+  c_wl_interface_listener_handler move;
+  c_wl_interface_listener_handler resize;
+  c_wl_interface_listener_handler set_max_size;
+  c_wl_interface_listener_handler set_min_size;
+  c_wl_interface_listener_handler set_maximized;
+  c_wl_interface_listener_handler unset_maximized;
+  c_wl_interface_listener_handler set_fullscreen;
+  c_wl_interface_listener_handler unset_fullscreen;
+  c_wl_interface_listener_handler set_minimized;
 };
 void xdg_toplevel_add_listener(struct c_wl_display *display, struct c_xdg_toplevel_listeners *listeners, void *userdata);
 
@@ -1002,9 +1002,9 @@ C_WL_REQUEST xdg_popup_grab(struct c_wl_connection *conn, c_wl_args args);
 C_WL_REQUEST xdg_popup_reposition(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_xdg_popup_listeners {
-  c_wl_listener_handler destroy;
-  c_wl_listener_handler grab;
-  c_wl_listener_handler reposition;
+  c_wl_interface_listener_handler destroy;
+  c_wl_interface_listener_handler grab;
+  c_wl_interface_listener_handler reposition;
 };
 void xdg_popup_add_listener(struct c_wl_display *display, struct c_xdg_popup_listeners *listeners, void *userdata);
 

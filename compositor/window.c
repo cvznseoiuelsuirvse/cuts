@@ -59,9 +59,6 @@ void c_window_focus(struct c_window *window, double mx, double my) {
         wl_pointer_enter(window_conn(window), o->id, wl_pointer_serial, surface->id, hotspot_x, hotspot_y);
         wl_pointer_frame(window_conn(window), o->id);
 
-      CASE_STR("wl_data_device")
-        wl_data_device_selection(window_conn(window), o->id, 0);
-
       SWITCH_STR_END;
   }
 

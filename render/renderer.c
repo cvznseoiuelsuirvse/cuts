@@ -300,8 +300,8 @@ struct c_renderer *c_renderer_init(struct c_output_manager *mgr, struct c_wl_dis
 
   zwp_linux_dmabuf_v1_add_listener(display, &linux_dmabuf_listeners, mgr);
 
-  c_wl_display_add_supported_interface(display, "wl_shm", on_wl_shm_bind, render);
-  c_wl_display_add_supported_interface(display, "zwp_linux_dmabuf_v1", NULL, mgr);
+  c_wl_interface_support("wl_shm", on_wl_shm_bind, render);
+  c_wl_interface_support("zwp_linux_dmabuf_v1", NULL, NULL);
 
   return render;
 

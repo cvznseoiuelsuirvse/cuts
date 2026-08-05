@@ -431,8 +431,8 @@ C_WL_REQUEST wl_display_sync(struct c_wl_connection *conn, c_wl_args args);
 C_WL_REQUEST wl_display_get_registry(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_wl_display_listeners {
-  c_wl_listener_handler sync;
-  c_wl_listener_handler get_registry;
+  c_wl_interface_listener_handler sync;
+  c_wl_interface_listener_handler get_registry;
 };
 void wl_display_add_listener(struct c_wl_display *display, struct c_wl_display_listeners *listeners, void *userdata);
 
@@ -466,7 +466,7 @@ C_WL_EVENT wl_registry_global_remove(struct c_wl_connection *conn, c_wl_object_i
 C_WL_REQUEST wl_registry_bind(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_wl_registry_listeners {
-  c_wl_listener_handler bind;
+  c_wl_interface_listener_handler bind;
 };
 void wl_registry_add_listener(struct c_wl_display *display, struct c_wl_registry_listeners *listeners, void *userdata);
 
@@ -487,8 +487,8 @@ C_WL_REQUEST wl_compositor_create_surface(struct c_wl_connection *conn, c_wl_arg
 C_WL_REQUEST wl_compositor_create_region(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_wl_compositor_listeners {
-  c_wl_listener_handler create_surface;
-  c_wl_listener_handler create_region;
+  c_wl_interface_listener_handler create_surface;
+  c_wl_interface_listener_handler create_region;
 };
 void wl_compositor_add_listener(struct c_wl_display *display, struct c_wl_compositor_listeners *listeners, void *userdata);
 
@@ -536,9 +536,9 @@ C_WL_REQUEST wl_shm_pool_destroy(struct c_wl_connection *conn, c_wl_args args);
 C_WL_REQUEST wl_shm_pool_resize(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_wl_shm_pool_listeners {
-  c_wl_listener_handler create_buffer;
-  c_wl_listener_handler destroy;
-  c_wl_listener_handler resize;
+  c_wl_interface_listener_handler create_buffer;
+  c_wl_interface_listener_handler destroy;
+  c_wl_interface_listener_handler resize;
 };
 void wl_shm_pool_add_listener(struct c_wl_display *display, struct c_wl_shm_pool_listeners *listeners, void *userdata);
 
@@ -566,8 +566,8 @@ C_WL_REQUEST wl_shm_create_pool(struct c_wl_connection *conn, c_wl_args args);
 C_WL_REQUEST wl_shm_release(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_wl_shm_listeners {
-  c_wl_listener_handler create_pool;
-  c_wl_listener_handler release;
+  c_wl_interface_listener_handler create_pool;
+  c_wl_interface_listener_handler release;
 };
 void wl_shm_add_listener(struct c_wl_display *display, struct c_wl_shm_listeners *listeners, void *userdata);
 
@@ -594,7 +594,7 @@ C_WL_EVENT wl_buffer_release(struct c_wl_connection *conn, c_wl_object_id wl_buf
 C_WL_REQUEST wl_buffer_destroy(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_wl_buffer_listeners {
-  c_wl_listener_handler destroy;
+  c_wl_interface_listener_handler destroy;
 };
 void wl_buffer_add_listener(struct c_wl_display *display, struct c_wl_buffer_listeners *listeners, void *userdata);
 
@@ -743,11 +743,11 @@ C_WL_REQUEST wl_data_offer_finish(struct c_wl_connection *conn, c_wl_args args);
 C_WL_REQUEST wl_data_offer_set_actions(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_wl_data_offer_listeners {
-  c_wl_listener_handler accept;
-  c_wl_listener_handler receive;
-  c_wl_listener_handler destroy;
-  c_wl_listener_handler finish;
-  c_wl_listener_handler set_actions;
+  c_wl_interface_listener_handler accept;
+  c_wl_interface_listener_handler receive;
+  c_wl_interface_listener_handler destroy;
+  c_wl_interface_listener_handler finish;
+  c_wl_interface_listener_handler set_actions;
 };
 void wl_data_offer_add_listener(struct c_wl_display *display, struct c_wl_data_offer_listeners *listeners, void *userdata);
 
@@ -860,9 +860,9 @@ C_WL_REQUEST wl_data_source_destroy(struct c_wl_connection *conn, c_wl_args args
 C_WL_REQUEST wl_data_source_set_actions(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_wl_data_source_listeners {
-  c_wl_listener_handler offer;
-  c_wl_listener_handler destroy;
-  c_wl_listener_handler set_actions;
+  c_wl_interface_listener_handler offer;
+  c_wl_interface_listener_handler destroy;
+  c_wl_interface_listener_handler set_actions;
 };
 void wl_data_source_add_listener(struct c_wl_display *display, struct c_wl_data_source_listeners *listeners, void *userdata);
 
@@ -976,9 +976,9 @@ C_WL_REQUEST wl_data_device_set_selection(struct c_wl_connection *conn, c_wl_arg
 C_WL_REQUEST wl_data_device_release(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_wl_data_device_listeners {
-  c_wl_listener_handler start_drag;
-  c_wl_listener_handler set_selection;
-  c_wl_listener_handler release;
+  c_wl_interface_listener_handler start_drag;
+  c_wl_interface_listener_handler set_selection;
+  c_wl_interface_listener_handler release;
 };
 void wl_data_device_add_listener(struct c_wl_display *display, struct c_wl_data_device_listeners *listeners, void *userdata);
 
@@ -996,8 +996,8 @@ C_WL_REQUEST wl_data_device_manager_create_data_source(struct c_wl_connection *c
 C_WL_REQUEST wl_data_device_manager_get_data_device(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_wl_data_device_manager_listeners {
-  c_wl_listener_handler create_data_source;
-  c_wl_listener_handler get_data_device;
+  c_wl_interface_listener_handler create_data_source;
+  c_wl_interface_listener_handler get_data_device;
 };
 void wl_data_device_manager_add_listener(struct c_wl_display *display, struct c_wl_data_device_manager_listeners *listeners, void *userdata);
 
@@ -1013,7 +1013,7 @@ void wl_data_device_manager_add_listener(struct c_wl_display *display, struct c_
 C_WL_REQUEST wl_shell_get_shell_surface(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_wl_shell_listeners {
-  c_wl_listener_handler get_shell_surface;
+  c_wl_interface_listener_handler get_shell_surface;
 };
 void wl_shell_add_listener(struct c_wl_display *display, struct c_wl_shell_listeners *listeners, void *userdata);
 
@@ -1211,16 +1211,16 @@ C_WL_REQUEST wl_shell_surface_set_title(struct c_wl_connection *conn, c_wl_args 
 C_WL_REQUEST wl_shell_surface_set_class(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_wl_shell_surface_listeners {
-  c_wl_listener_handler pong;
-  c_wl_listener_handler move;
-  c_wl_listener_handler resize;
-  c_wl_listener_handler set_toplevel;
-  c_wl_listener_handler set_transient;
-  c_wl_listener_handler set_fullscreen;
-  c_wl_listener_handler set_popup;
-  c_wl_listener_handler set_maximized;
-  c_wl_listener_handler set_title;
-  c_wl_listener_handler set_class;
+  c_wl_interface_listener_handler pong;
+  c_wl_interface_listener_handler move;
+  c_wl_interface_listener_handler resize;
+  c_wl_interface_listener_handler set_toplevel;
+  c_wl_interface_listener_handler set_transient;
+  c_wl_interface_listener_handler set_fullscreen;
+  c_wl_interface_listener_handler set_popup;
+  c_wl_interface_listener_handler set_maximized;
+  c_wl_interface_listener_handler set_title;
+  c_wl_interface_listener_handler set_class;
 };
 void wl_shell_surface_add_listener(struct c_wl_display *display, struct c_wl_shell_surface_listeners *listeners, void *userdata);
 
@@ -1611,17 +1611,17 @@ C_WL_REQUEST wl_surface_damage_buffer(struct c_wl_connection *conn, c_wl_args ar
 C_WL_REQUEST wl_surface_offset(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_wl_surface_listeners {
-  c_wl_listener_handler destroy;
-  c_wl_listener_handler attach;
-  c_wl_listener_handler damage;
-  c_wl_listener_handler frame;
-  c_wl_listener_handler set_opaque_region;
-  c_wl_listener_handler set_input_region;
-  c_wl_listener_handler commit;
-  c_wl_listener_handler set_buffer_transform;
-  c_wl_listener_handler set_buffer_scale;
-  c_wl_listener_handler damage_buffer;
-  c_wl_listener_handler offset;
+  c_wl_interface_listener_handler destroy;
+  c_wl_interface_listener_handler attach;
+  c_wl_interface_listener_handler damage;
+  c_wl_interface_listener_handler frame;
+  c_wl_interface_listener_handler set_opaque_region;
+  c_wl_interface_listener_handler set_input_region;
+  c_wl_interface_listener_handler commit;
+  c_wl_interface_listener_handler set_buffer_transform;
+  c_wl_interface_listener_handler set_buffer_scale;
+  c_wl_interface_listener_handler damage_buffer;
+  c_wl_interface_listener_handler offset;
 };
 void wl_surface_add_listener(struct c_wl_display *display, struct c_wl_surface_listeners *listeners, void *userdata);
 
@@ -1714,10 +1714,10 @@ C_WL_REQUEST wl_seat_get_touch(struct c_wl_connection *conn, c_wl_args args);
 C_WL_REQUEST wl_seat_release(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_wl_seat_listeners {
-  c_wl_listener_handler get_pointer;
-  c_wl_listener_handler get_keyboard;
-  c_wl_listener_handler get_touch;
-  c_wl_listener_handler release;
+  c_wl_interface_listener_handler get_pointer;
+  c_wl_interface_listener_handler get_keyboard;
+  c_wl_interface_listener_handler get_touch;
+  c_wl_interface_listener_handler release;
 };
 void wl_seat_add_listener(struct c_wl_display *display, struct c_wl_seat_listeners *listeners, void *userdata);
 
@@ -1995,8 +1995,8 @@ C_WL_REQUEST wl_pointer_set_cursor(struct c_wl_connection *conn, c_wl_args args)
 C_WL_REQUEST wl_pointer_release(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_wl_pointer_listeners {
-  c_wl_listener_handler set_cursor;
-  c_wl_listener_handler release;
+  c_wl_interface_listener_handler set_cursor;
+  c_wl_interface_listener_handler release;
 };
 void wl_pointer_add_listener(struct c_wl_display *display, struct c_wl_pointer_listeners *listeners, void *userdata);
 
@@ -2092,7 +2092,7 @@ C_WL_EVENT wl_keyboard_repeat_info(struct c_wl_connection *conn, c_wl_object_id 
 C_WL_REQUEST wl_keyboard_release(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_wl_keyboard_listeners {
-  c_wl_listener_handler release;
+  c_wl_interface_listener_handler release;
 };
 void wl_keyboard_add_listener(struct c_wl_display *display, struct c_wl_keyboard_listeners *listeners, void *userdata);
 
@@ -2185,7 +2185,7 @@ C_WL_EVENT wl_touch_orientation(struct c_wl_connection *conn, c_wl_object_id wl_
 C_WL_REQUEST wl_touch_release(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_wl_touch_listeners {
-  c_wl_listener_handler release;
+  c_wl_interface_listener_handler release;
 };
 void wl_touch_add_listener(struct c_wl_display *display, struct c_wl_touch_listeners *listeners, void *userdata);
 
@@ -2324,7 +2324,7 @@ C_WL_EVENT wl_output_description(struct c_wl_connection *conn, c_wl_object_id wl
 C_WL_REQUEST wl_output_release(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_wl_output_listeners {
-  c_wl_listener_handler release;
+  c_wl_interface_listener_handler release;
 };
 void wl_output_add_listener(struct c_wl_display *display, struct c_wl_output_listeners *listeners, void *userdata);
 
@@ -2350,9 +2350,9 @@ C_WL_REQUEST wl_region_add(struct c_wl_connection *conn, c_wl_args args);
 C_WL_REQUEST wl_region_subtract(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_wl_region_listeners {
-  c_wl_listener_handler destroy;
-  c_wl_listener_handler add;
-  c_wl_listener_handler subtract;
+  c_wl_interface_listener_handler destroy;
+  c_wl_interface_listener_handler add;
+  c_wl_interface_listener_handler subtract;
 };
 void wl_region_add_listener(struct c_wl_display *display, struct c_wl_region_listeners *listeners, void *userdata);
 
@@ -2388,8 +2388,8 @@ C_WL_REQUEST wl_subcompositor_destroy(struct c_wl_connection *conn, c_wl_args ar
 C_WL_REQUEST wl_subcompositor_get_subsurface(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_wl_subcompositor_listeners {
-  c_wl_listener_handler destroy;
-  c_wl_listener_handler get_subsurface;
+  c_wl_interface_listener_handler destroy;
+  c_wl_interface_listener_handler get_subsurface;
 };
 void wl_subcompositor_add_listener(struct c_wl_display *display, struct c_wl_subcompositor_listeners *listeners, void *userdata);
 
@@ -2481,12 +2481,12 @@ C_WL_REQUEST wl_subsurface_set_sync(struct c_wl_connection *conn, c_wl_args args
 C_WL_REQUEST wl_subsurface_set_desync(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_wl_subsurface_listeners {
-  c_wl_listener_handler destroy;
-  c_wl_listener_handler set_position;
-  c_wl_listener_handler place_above;
-  c_wl_listener_handler place_below;
-  c_wl_listener_handler set_sync;
-  c_wl_listener_handler set_desync;
+  c_wl_interface_listener_handler destroy;
+  c_wl_interface_listener_handler set_position;
+  c_wl_interface_listener_handler place_above;
+  c_wl_interface_listener_handler place_below;
+  c_wl_interface_listener_handler set_sync;
+  c_wl_interface_listener_handler set_desync;
 };
 void wl_subsurface_add_listener(struct c_wl_display *display, struct c_wl_subsurface_listeners *listeners, void *userdata);
 
@@ -2507,8 +2507,8 @@ C_WL_REQUEST wl_fixes_destroy(struct c_wl_connection *conn, c_wl_args args);
 C_WL_REQUEST wl_fixes_destroy_registry(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_wl_fixes_listeners {
-  c_wl_listener_handler destroy;
-  c_wl_listener_handler destroy_registry;
+  c_wl_interface_listener_handler destroy;
+  c_wl_interface_listener_handler destroy_registry;
 };
 void wl_fixes_add_listener(struct c_wl_display *display, struct c_wl_fixes_listeners *listeners, void *userdata);
 

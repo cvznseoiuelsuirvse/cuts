@@ -41,6 +41,8 @@ struct c_output {
 	int waiting_for_flip;
 	int need_redraw;
 
+  c_list *frame_surfaces;
+
 	struct {
 		int front;
 		struct c_framebuffer *buffers[2];

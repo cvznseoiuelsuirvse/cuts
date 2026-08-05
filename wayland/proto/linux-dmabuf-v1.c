@@ -13,14 +13,14 @@ C_WL_EVENT zwp_linux_dmabuf_v1_modifier(struct c_wl_connection *conn, c_wl_objec
   struct c_wl_message msg = {zwp_linux_dmabuf_v1, 1, "uuu", "modifier"};
   return c_wl_connection_send(conn, &msg, 3, format, modifier_hi, modifier_lo);
 }
-C_WL_INTERFACE_REGISTER(zwp_linux_dmabuf_v1_interface, "zwp_linux_dmabuf_v1", 5, 4, 0, 
+C_WL_INTERFACE_REGISTER(zwp_linux_dmabuf_v1, 5, 4, 0, 
     {"destroy",                zwp_linux_dmabuf_v1_destroy,   0,  {0}},
     {"create_params",          zwp_linux_dmabuf_v1_create_params, 1,  "n"},
     {"get_default_feedback",   zwp_linux_dmabuf_v1_get_default_feedback, 1,  "n"},
     {"get_surface_feedback",   zwp_linux_dmabuf_v1_get_surface_feedback, 2,  "no"},
 )
 void zwp_linux_dmabuf_v1_add_listener(struct c_wl_display *display, struct c_zwp_linux_dmabuf_v1_listeners *listeners, void *userdata) {
-  c_wl_display_add_listener(display, "zwp_linux_dmabuf_v1", listeners, sizeof(*listeners), userdata);
+  c_wl_display_add_interface_listener(display, "zwp_linux_dmabuf_v1", listeners, sizeof(*listeners), userdata);
 }
 
 C_WL_EVENT zwp_linux_buffer_params_v1_created(struct c_wl_connection *conn, c_wl_object_id zwp_linux_buffer_params_v1, c_wl_new_id wl_buffer) {
@@ -31,14 +31,14 @@ C_WL_EVENT zwp_linux_buffer_params_v1_failed(struct c_wl_connection *conn, c_wl_
   struct c_wl_message msg = {zwp_linux_buffer_params_v1, 1, {0}, "failed"};
   return c_wl_connection_send(conn, &msg, 0);
 }
-C_WL_INTERFACE_REGISTER(zwp_linux_buffer_params_v1_interface, "zwp_linux_buffer_params_v1", 5, 4, 0, 
+C_WL_INTERFACE_REGISTER(zwp_linux_buffer_params_v1, 5, 4, 0, 
     {"destroy",                zwp_linux_buffer_params_v1_destroy, 0,  {0}},
     {"add",                    zwp_linux_buffer_params_v1_add, 6,  "Fuuuuu"},
     {"create",                 zwp_linux_buffer_params_v1_create, 4,  "iiuu"},
     {"create_immed",           zwp_linux_buffer_params_v1_create_immed, 5,  "niiuu"},
 )
 void zwp_linux_buffer_params_v1_add_listener(struct c_wl_display *display, struct c_zwp_linux_buffer_params_v1_listeners *listeners, void *userdata) {
-  c_wl_display_add_listener(display, "zwp_linux_buffer_params_v1", listeners, sizeof(*listeners), userdata);
+  c_wl_display_add_interface_listener(display, "zwp_linux_buffer_params_v1", listeners, sizeof(*listeners), userdata);
 }
 
 C_WL_EVENT zwp_linux_dmabuf_feedback_v1_done(struct c_wl_connection *conn, c_wl_object_id zwp_linux_dmabuf_feedback_v1) {
@@ -69,10 +69,10 @@ C_WL_EVENT zwp_linux_dmabuf_feedback_v1_tranche_flags(struct c_wl_connection *co
   struct c_wl_message msg = {zwp_linux_dmabuf_feedback_v1, 6, "u", "tranche_flags"};
   return c_wl_connection_send(conn, &msg, 1, flags);
 }
-C_WL_INTERFACE_REGISTER(zwp_linux_dmabuf_feedback_v1_interface, "zwp_linux_dmabuf_feedback_v1", 5, 1, 0, 
+C_WL_INTERFACE_REGISTER(zwp_linux_dmabuf_feedback_v1, 5, 1, 0, 
     {"destroy",                zwp_linux_dmabuf_feedback_v1_destroy, 0,  {0}},
 )
 void zwp_linux_dmabuf_feedback_v1_add_listener(struct c_wl_display *display, struct c_zwp_linux_dmabuf_feedback_v1_listeners *listeners, void *userdata) {
-  c_wl_display_add_listener(display, "zwp_linux_dmabuf_feedback_v1", listeners, sizeof(*listeners), userdata);
+  c_wl_display_add_interface_listener(display, "zwp_linux_dmabuf_feedback_v1", listeners, sizeof(*listeners), userdata);
 }
 

@@ -102,10 +102,10 @@ C_WL_REQUEST zwp_linux_dmabuf_v1_get_default_feedback(struct c_wl_connection *co
 C_WL_REQUEST zwp_linux_dmabuf_v1_get_surface_feedback(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_zwp_linux_dmabuf_v1_listeners {
-  c_wl_listener_handler destroy;
-  c_wl_listener_handler create_params;
-  c_wl_listener_handler get_default_feedback;
-  c_wl_listener_handler get_surface_feedback;
+  c_wl_interface_listener_handler destroy;
+  c_wl_interface_listener_handler create_params;
+  c_wl_interface_listener_handler get_default_feedback;
+  c_wl_interface_listener_handler get_surface_feedback;
 };
 void zwp_linux_dmabuf_v1_add_listener(struct c_wl_display *display, struct c_zwp_linux_dmabuf_v1_listeners *listeners, void *userdata);
 
@@ -257,10 +257,10 @@ C_WL_REQUEST zwp_linux_buffer_params_v1_create(struct c_wl_connection *conn, c_w
 C_WL_REQUEST zwp_linux_buffer_params_v1_create_immed(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_zwp_linux_buffer_params_v1_listeners {
-  c_wl_listener_handler destroy;
-  c_wl_listener_handler add;
-  c_wl_listener_handler create;
-  c_wl_listener_handler create_immed;
+  c_wl_interface_listener_handler destroy;
+  c_wl_interface_listener_handler add;
+  c_wl_interface_listener_handler create;
+  c_wl_interface_listener_handler create_immed;
 };
 void zwp_linux_buffer_params_v1_add_listener(struct c_wl_display *display, struct c_zwp_linux_buffer_params_v1_listeners *listeners, void *userdata);
 
@@ -387,7 +387,7 @@ C_WL_EVENT zwp_linux_dmabuf_feedback_v1_tranche_flags(struct c_wl_connection *co
 C_WL_REQUEST zwp_linux_dmabuf_feedback_v1_destroy(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_zwp_linux_dmabuf_feedback_v1_listeners {
-  c_wl_listener_handler destroy;
+  c_wl_interface_listener_handler destroy;
 };
 void zwp_linux_dmabuf_feedback_v1_add_listener(struct c_wl_display *display, struct c_zwp_linux_dmabuf_feedback_v1_listeners *listeners, void *userdata);
 

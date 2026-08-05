@@ -31,36 +31,37 @@ int wl_display_get_registry(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *c_wl_registry;
   C_WL_CHECK_IF_NOT_REGISTERED(object_id, c_wl_registry);
 
-  struct c_wl_interface *iface = c_wl_interface_get("wl_registry");
+  const struct c_wl_interface *iface = c_wl_interface_get("wl_registry");
   c_wl_object_add(conn, object_id, iface->version, iface, 0);
 
-  int i = 1;
-  struct c_wl_display_supported_iface *supported_iface;
-  c_list_for_each(c_wl_connection_get_dpy(conn)->supported_ifaces, supported_iface) {
-    wl_registry_global(conn, object_id, i++, supported_iface->iface->name, supported_iface->iface->version);
+  const struct c_wl_interface **interfaces;
+  size_t n_interfaces = c_wl_interface_get_all(&interfaces);
+  int iface_idx = 1;
+  for (size_t i = 0; i < n_interfaces; i++) {
+    iface = interfaces[i];
+    if (iface->is_supported)
+      wl_registry_global(conn, object_id, iface_idx++, iface->name, iface->version);
   }
 
   return 0;
 };
 
-// only for log purposes
 int wl_display_sync(struct c_wl_connection *conn, c_wl_args args) {
   return 0;
 }
 
 int wl_registry_bind(struct c_wl_connection *conn, c_wl_args args) {
-  c_wl_new_id name =   args[1].u;
-  c_wl_uint version =  args[3].u;
-  c_wl_new_id new_id = args[4].n;
+  c_wl_string interface_name = args[2].s;
+  c_wl_uint version          = args[3].u;
+  c_wl_new_id new_id         = args[4].n;
+
   struct c_wl_object *c_wl_object;
   C_WL_CHECK_IF_NOT_REGISTERED(new_id, c_wl_object);
 
-  const struct c_wl_display_supported_iface *interface =
-      c_list_get(c_wl_connection_get_dpy(conn)->supported_ifaces, name - 1);
-
+  const struct c_wl_interface *interface = c_wl_interface_get(interface_name);
   if (!interface) c_wl_error_set_and_return(new_id, WL_DISPLAY_ERROR_IMPLEMENTATION, "interface is not supported");
 
-  struct c_wl_object *object = c_wl_object_add(conn, new_id, version, interface->iface, NULL);
+  struct c_wl_object *object = c_wl_object_add(conn, new_id, version, interface, NULL);
 
   if (interface->on_bind) {
     void *bind_data = interface->on_bind(conn, object, interface->on_bind_userdata);
@@ -112,7 +113,9 @@ int wl_shm_create_pool(struct c_wl_connection *conn, c_wl_args args) {
 
   pool->ptr = buffer;
   pool->size = buffer_size;
+
   struct c_wl_formats *supported_formats = c_wl_object_get(conn, wl_shm_id)->data;
+
   pool->supported_formats = supported_formats->formats;
   pool->n_supported_formats = supported_formats->n_formats;
 
@@ -171,7 +174,7 @@ format_supported:
 
   c_wl_buffer->shm = buf;
 
-  struct c_wl_interface *iface = c_wl_interface_get("wl_buffer");
+  const struct c_wl_interface *iface = c_wl_interface_get("wl_buffer");
   c_wl_object_add(conn, wl_buffer_id, iface->version, iface, c_wl_buffer);
 
   return 0;
@@ -305,12 +308,9 @@ int wl_surface_frame(struct c_wl_connection *conn, c_wl_args args) {
   C_WL_CHECK_IF_NOT_REGISTERED(wl_callback_id, wl_callback);
 
   struct c_wl_surface *surface = self->data;
-  assert(surface->n_frames < sizeof(surface->frames));
-
-  surface->frames[surface->n_frames++] = wl_callback_id;
-  // wl_surface->frame_id = wl_callback_id;
+  surface->frame = wl_callback_id;
   
-  struct c_wl_interface *iface = c_wl_interface_get("wl_callback");
+  const struct c_wl_interface *iface = c_wl_interface_get("wl_callback");
   c_wl_object_add(conn, wl_callback_id, iface->version, iface, NULL);
   return 0;
 }
@@ -327,7 +327,7 @@ int wl_surface_destroy(struct c_wl_connection *conn, c_wl_args args) {
     c_unref(wl_surface->pending);
   }
 
-  if (wl_surface->xdg_surface && wl_surface->xdg_surface->surface == wl_surface)
+  if (wl_surface->xdg_surface)
       wl_surface->xdg_surface->surface = NULL;
 
   if (wl_surface->sub.surface)
@@ -338,6 +338,7 @@ int wl_surface_destroy(struct c_wl_connection *conn, c_wl_args args) {
     c_list_for_each(wl_surface->sub.children, ss)
       ss->parent = NULL;
     c_list_destroy(wl_surface->sub.children);
+    wl_surface->sub.children = NULL;
   }
 
   c_wl_object_del(conn, self->id);
@@ -422,12 +423,6 @@ int wl_surface_commit(struct c_wl_connection *conn, c_wl_args args) {
 
     wl_surface->active = wl_surface->pending;
   }
-
-  for (size_t i = 0; i < wl_surface->n_frames; i++) {
-    c_wl_connection_callback_done(conn, wl_surface->frames[i]);
-    wl_surface->frames[i] = 0;
-  }
-  wl_surface->n_frames = 0;
 
   return 0;
 }
@@ -535,8 +530,10 @@ int wl_subsurface_destroy(struct c_wl_connection *conn, c_wl_args args) {
   if (surface_parent)
     c_list_remove(&surface_parent->sub.children, subsurface);
 
-  surface->role = 0;
-  surface->sub.surface = NULL;
+  if (surface) {
+    surface->role = 0;
+    surface->sub.surface = NULL;
+  }
 
   c_wl_object_del(conn, args[0].o);
   return 0;
@@ -658,6 +655,14 @@ int wl_data_source_offer(struct c_wl_connection *conn, c_wl_args args) {
   c_wl_string mime_type = args[1].s;
 
   data_source->mimetypes[data_source->mimes++] = strdup(mime_type);
+  return 0;
+}
+
+int wl_data_offer_receive(struct c_wl_connection *conn, c_wl_args args) { return 0; }
+int wl_data_offer_accept(struct c_wl_connection *conn, c_wl_args args) { return 0; }
+
+int wl_data_offer_destroy(struct c_wl_connection *conn, c_wl_args args) { 
+  c_wl_object_del(conn, args[0].o);
   return 0;
 }
 

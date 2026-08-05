@@ -35,11 +35,6 @@ int zwp_linux_dmabuf_v1_get_default_feedback(struct c_wl_connection *conn, union
   return 0;
 }
 
-int zwp_linux_dmabuf_feedback_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
-  c_wl_object_del(conn, args[0].o);
-  return 0;
-}
-
 int zwp_linux_dmabuf_v1_create_params(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_wl_object *self = c_wl_self(conn, args);
 
@@ -56,6 +51,16 @@ int zwp_linux_dmabuf_v1_create_params(struct c_wl_connection *conn, union c_wl_a
   c_wl_object_add(conn, zwp_linux_buffer_params_v1_id, self->version,
                   c_wl_interface_get("zwp_linux_buffer_params_v1"), dma);
 
+  return 0;
+}
+
+int zwp_linux_dmabuf_v1_destroy(struct c_wl_connection *conn, c_wl_args args) {
+  c_wl_object_del(conn, args[0].o);
+  return 0;
+}
+
+int zwp_linux_dmabuf_feedback_v1_destroy(struct c_wl_connection *conn, c_wl_args args) {
+  c_wl_object_del(conn, args[0].o);
   return 0;
 }
 

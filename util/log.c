@@ -2,7 +2,7 @@
 #include <stdarg.h>
 
 #include "util/log.h"
-#include "wayland/server.h"
+#include "wayland/display.h"
 #include "util/helpers.h"
 
 static int      __log_mask = 0;

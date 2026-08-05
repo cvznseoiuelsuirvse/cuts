@@ -75,6 +75,14 @@ static void page_flip_handler(int fd, unsigned int sequence, unsigned int tv_sec
 
   output->swapchain.front ^= 1;
   output->waiting_for_flip = 0;
+
+  struct c_wl_surface *surface;
+  c_list_for_each(output->frame_surfaces, surface) {
+    if (surface->frame) {
+      c_wl_connection_callback_done(surface->conn, surface->frame);
+      surface->frame = 0;
+    }
+  }
 }
 
 static int handle_drm_event(struct c_output_manager *mgr) {
@@ -144,6 +152,7 @@ void c_output_manager_free(struct c_output_manager *mgr) {
     struct c_output *output;
     c_list_for_each(mgr->outputs, output) {
       c_cursor_free(output->cursor);
+      c_list_destroy(output->frame_surfaces);
       destroy_swapchain(output);
 
       c_list_destroy(output->modes);
@@ -166,7 +175,9 @@ void c_output_manager_free(struct c_output_manager *mgr) {
   free(mgr);
 }
 
-struct c_output_manager *c_output_manager_init(struct c_session *session, struct c_event_loop *loop, struct c_wl_display *display) {
+struct c_output_manager *c_output_manager_init(struct c_session *session,
+                                               struct c_event_loop *loop,
+                                               struct c_wl_display *display) {
   struct c_output_manager *mgr = calloc(1, sizeof(*mgr));
   if (!mgr) {
     c_log_errno(C_LOG_ERROR, "failed to allocate c_output_manager");
@@ -206,6 +217,7 @@ struct c_output_manager *c_output_manager_init(struct c_session *session, struct
   struct c_output *output;
   c_list_for_each(mgr->outputs, output) {
     output->cursor = c_cursor_init(mgr, session->input, w, h);
+    output->frame_surfaces = c_list_new();
   }
 
   mgr->cursor_output = c_list_get(mgr->outputs, 0);

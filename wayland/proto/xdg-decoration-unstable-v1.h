@@ -54,8 +54,8 @@ C_WL_REQUEST zxdg_decoration_manager_v1_destroy(struct c_wl_connection *conn, c_
 C_WL_REQUEST zxdg_decoration_manager_v1_get_toplevel_decoration(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_zxdg_decoration_manager_v1_listeners {
-  c_wl_listener_handler destroy;
-  c_wl_listener_handler get_toplevel_decoration;
+  c_wl_interface_listener_handler destroy;
+  c_wl_interface_listener_handler get_toplevel_decoration;
 };
 void zxdg_decoration_manager_v1_add_listener(struct c_wl_display *display, struct c_zxdg_decoration_manager_v1_listeners *listeners, void *userdata);
 
@@ -106,9 +106,9 @@ C_WL_REQUEST zxdg_toplevel_decoration_v1_set_mode(struct c_wl_connection *conn, 
 C_WL_REQUEST zxdg_toplevel_decoration_v1_unset_mode(struct c_wl_connection *conn, c_wl_args args);
 
 struct c_zxdg_toplevel_decoration_v1_listeners {
-  c_wl_listener_handler destroy;
-  c_wl_listener_handler set_mode;
-  c_wl_listener_handler unset_mode;
+  c_wl_interface_listener_handler destroy;
+  c_wl_interface_listener_handler set_mode;
+  c_wl_interface_listener_handler unset_mode;
 };
 void zxdg_toplevel_decoration_v1_add_listener(struct c_wl_display *display, struct c_zxdg_toplevel_decoration_v1_listeners *listeners, void *userdata);
 

@@ -17,10 +17,6 @@
 #include "util/bitmap.h"
 
 #define MAX_CMSG_FDS 1024
-#define MAX_INTERFACES 2048
-
-static struct c_wl_interface *__interface[MAX_INTERFACES];
-static size_t                 __ninterfaces = 0;
 
 static char            __error_msg[C_WL_STRING_SIZE] = {0};
 static c_wl_int        __error_code = 0;
@@ -28,14 +24,16 @@ static c_wl_object_id  __error_object_id = 0;
 static uint32_t        __serial = 1;
 
 struct c_wl_connection {
+	struct c_wl_display *display;
 	int 	     client_fd;
 	c_map     *objects;
 	c_bitmap 	*client_id_pool;
 	c_bitmap 	*server_id_pool;
-	struct c_wl_display *dpy;
+  struct c_wl_connection_event_listener *listener;
+  void *listener_data;
 };
 
-struct c_wl_recv_message {
+struct client_message {
   uint32_t object_id;
   uint16_t op;
   uint16_t message_size;
@@ -47,18 +45,6 @@ struct c_wl_callback {
 	c_wl_object_id target_id;
 };
 
-inline void c_wl_interface_add(struct c_wl_interface *interface) {
-  assert(__ninterfaces < MAX_INTERFACES);
-  __interface[__ninterfaces++] = interface; 
-}
-
-inline struct c_wl_interface *c_wl_interface_get(const char *interface_name) {
-  for (size_t i = 0; i < __ninterfaces; i++) {
-    struct c_wl_interface *interface = __interface[i];
-    if (STREQ(interface_name, interface->name)) return interface;
-  }
-  return NULL;
-}
 
 static int connection_read(struct c_wl_connection *conn, char *buffer, size_t buffer_size, 
                                 int req_fds[MAX_CMSG_FDS], size_t *n_req_fds) {
@@ -205,11 +191,11 @@ int c_wl_connection_send(struct c_wl_connection *conn, struct c_wl_message *msg,
 
 static int handle_request(struct c_wl_connection *conn, struct c_wl_object *object, c_wl_args args, uint16_t op) {
   struct c_wl_request request = object->iface->requests[op];
-  int destructor = object->iface->destructor;
+  int destructor = object->iface->destructor_request;
   void *userdata = object->listeners.userdata;
   void **handlers = object->listeners.handlers;
 
-  c_wl_listener_handler handler = NULL;
+  c_wl_interface_listener_handler handler = NULL;
   if (handlers)
      handler = handlers[op];
 
@@ -239,11 +225,11 @@ static int dispatch(struct c_wl_connection *conn,
   if (!object) c_wl_error_set_and_return(object_id, WL_DISPLAY_ERROR_INVALID_OBJECT, "object not registered");
 
   const struct c_wl_interface *iface = object->iface;
-  if (op > iface->nrequests) 
-    c_wl_error_set_and_return(object_id, WL_DISPLAY_ERROR_INVALID_METHOD, "method does not exist", 
-                       iface->name, op, op, iface->nrequests);
+  if (op > iface->n_requests)
+    c_wl_error_set_and_return(object_id, WL_DISPLAY_ERROR_INVALID_METHOD,
+                              "%s: method with op %d does not exist",
+                              iface->name, op);
 
-  
   struct c_wl_request request = iface->requests[op];
 
   union c_wl_arg args[request.nargs + 1];
@@ -302,7 +288,7 @@ static int dispatch(struct c_wl_connection *conn,
   c_log_wl_request(conn, object, &request, args);
 
   if (!request.impl) {
-    c_log(C_LOG_ERROR, "%s.%s request not implemented", iface->name, request.name);
+    c_log(C_LOG_ERROR, "%s.%s method not implemented", iface->name, request.name);
     return DISPATCH_FATAL_ERR;
   }
 
@@ -323,7 +309,7 @@ int c_wl_connection_dispatch(struct c_wl_connection *conn) {
   if (received <= 0) return DISPATCH_CLIENT_ERR;
 
   size_t msg_count = 0;
-  struct c_wl_recv_message msgs[1024];
+  struct client_message msgs[1024];
 
   int buffer_offset = 0;
 
@@ -350,13 +336,13 @@ int c_wl_connection_dispatch(struct c_wl_connection *conn) {
                                   "object %d already registered",
                                   wl_callback_id);
 
-      struct c_wl_interface *iface = c_wl_interface_get("wl_callback"); 
+      const struct c_wl_interface *iface = c_wl_interface_get("wl_callback"); 
       c_wl_object_add(conn, wl_callback_id, iface->version, iface, NULL);
       sync_requests[n_sync_requests++] = wl_callback_id;
       dispatch(conn, object_id, op, message_size, buffer+buffer_offset, 0);
 
     } else {
-      struct c_wl_recv_message *msg = &msgs[msg_count++];
+      struct client_message *msg = &msgs[msg_count++];
       msg->object_id = object_id;
       msg->op = op;
       msg->message_size = message_size;
@@ -368,7 +354,7 @@ int c_wl_connection_dispatch(struct c_wl_connection *conn) {
 
   int *req_fds_ptr = req_fds;
   for (size_t i = 0; i < msg_count; i++) {
-    struct c_wl_recv_message msg = msgs[i];
+    struct client_message msg = msgs[i];
     ret = dispatch(conn, msg.object_id, msg.op, msg.message_size, msg.buffer, &req_fds_ptr);
     if (ret == DISPATCH_PROTO_ERR) 
       break;
@@ -392,15 +378,15 @@ struct c_wl_object *c_wl_object_add(struct c_wl_connection *conn, c_wl_new_id id
   assert(interface);
 
   struct c_wl_object new_object = {
-    .id = id,
     .version = version,
     .iface = interface,
     .data = data,
     .listeners = {NULL, NULL},
   };
 
-  c_wl_display_get_listener(
-      conn->dpy, interface->name, &new_object.listeners.handlers, &new_object.listeners.userdata);
+  c_wl_display_get_interface_listener(conn->display, interface->name,
+                                      &new_object.listeners.handlers,
+                                      &new_object.listeners.userdata);
 
   if (0 < id && id < 0xFF000000) {
     c_bitmap_set(conn->client_id_pool, id - 1);
@@ -414,6 +400,7 @@ struct c_wl_object *c_wl_object_add(struct c_wl_connection *conn, c_wl_new_id id
     c_bitmap_set(conn->server_id_pool, id - 1);
   }
 
+  new_object.id = id;
   return c_map_set(conn->objects, id, &new_object, sizeof(struct c_wl_object));
 }
 
@@ -429,13 +416,13 @@ int c_wl_object_del(struct c_wl_connection *conn, c_wl_object_id id) {
     c_unref(o->data);
 
   c_map_remove(conn->objects, id);
-  if (id < 0xFF000000) 
+  if (id < 0xFF000000) {
+    wl_display_delete_id(conn, 1, id);
     c_bitmap_unset(conn->client_id_pool, id - 1);
+  } else {
+    c_bitmap_unset(conn->server_id_pool, id - 0xFF000000);
+  }
 
-  else
-    c_bitmap_unset(conn->server_id_pool, id - 1);
-
-  wl_display_delete_id(conn, 1, id);
   return 0;
 }
 
@@ -450,26 +437,20 @@ struct c_wl_connection *c_wl_connection_init(int client_fd, struct c_wl_display 
   conn->client_id_pool = c_bitmap_new(1024 * 4);
   conn->server_id_pool = c_bitmap_new(1024 * 4);
   conn->client_fd = client_fd;
-  conn->dpy = display;
+  conn->display = display;
 
-  struct c_wl_interface *iface = c_wl_interface_get("wl_display");
+  const struct c_wl_interface *iface = c_wl_interface_get("wl_display");
   c_wl_object_add(conn, 1, iface->version, iface, NULL);
 
   return conn;
 }
 
-struct c_wl_display *c_wl_connection_get_dpy(struct c_wl_connection *conn) {
-  return conn->dpy;
+struct c_wl_display *c_wl_connection_get_display(struct c_wl_connection *conn) {
+  return conn->display;
 }
 
 struct c_map *c_wl_connection_get_objects(struct c_wl_connection *conn) {
   return conn->objects;
-}
-
-
-void call_destroy(struct c_wl_connection *conn, struct c_wl_object *object) {
-  c_wl_arg arg = {.o = object->id};
-  handle_request(conn, object, &arg, object->iface->destructor);
 }
 
 int c_wl_connection_free(struct c_wl_connection *conn) {
@@ -480,14 +461,9 @@ int c_wl_connection_free(struct c_wl_connection *conn) {
       struct c_map_pair *next = mp->next;
       struct c_wl_object *object = mp->value;
 
-      if (object->data) {
-        int refcount = c_get_refcount(object->data);
-        c_log(C_LOG_DEBUG, "rc:%d %p %s#%d", refcount, object->data, object->iface->name, object->id);
-
-        if (refcount == 1)
-          call_destroy(conn, object);
-        else
-          c_unref(object->data);
+      if (object->iface->destructor_request >= 0) {
+        c_wl_arg arg = {.o = object->id};
+        handle_request(conn, object, &arg, object->iface->destructor_request);
       }
 
       mp = next;
