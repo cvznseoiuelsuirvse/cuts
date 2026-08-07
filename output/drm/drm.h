@@ -7,8 +7,11 @@
 #include <gbm.h>
 
 #include "util/list.h"
+#include "output/output.h"
 
-c_list *c_drm_get_connectors(int drm_fd);
-void c_drm_page_flip(int drm_fd);
+void c_drm_free_output(int drm_fd, struct c_output *output);
+c_list *c_drm_get_outputs(int drm_fd);
+int c_drm_atomic_commit(int drm_fd, struct c_output *output,
+                        struct c_output_mode *mode, int flags, void *userdata);
 
 #endif

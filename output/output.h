@@ -19,7 +19,17 @@ struct c_output_mode {
 	uint32_t width, height;
 	double refresh_rate;
 	int preferred;
-	drmModeModeInfo drm_info;
+
+  struct {
+    drmModeModeInfo info;
+    uint32_t blob_id;
+  } drm;
+};
+
+struct c_output_drm_object {
+	drmModeObjectProperties *props;
+	drmModePropertyRes **props_info;
+	uint32_t id;
 };
 
 struct c_output {
@@ -32,8 +42,10 @@ struct c_output {
 	c_list *modes;
   struct c_output_mode *current_mode;
 
-	uint32_t connector_id;
-	uint32_t crtc_id;
+  struct c_output_drm_object connector;
+  struct c_output_drm_object crtc;
+  struct c_output_drm_object plane;
+
 	drmModeCrtcPtr orig_crtc;
 
 	struct c_cursor *cursor;

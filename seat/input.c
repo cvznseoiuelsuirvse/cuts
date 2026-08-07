@@ -459,8 +459,8 @@ void c_input_free(struct c_input *input) {
   if (input->xkb.ctx)
     xkb_context_unref(input->xkb.ctx);
   
-  // if (input->libinput)
-  //   libinput_unref(input->libinput);
+  if (input->libinput)
+    libinput_unref(input->libinput);
 
   free(input);
 }

@@ -47,11 +47,6 @@ int c_event_loop_del(struct c_event_loop *loop, struct c_event_resource *resourc
 
 
 void c_event_loop_free(struct c_event_loop *loop) {
-  struct c_event_resource *resource;
-  c_list_for_each(loop->resources, resource) {
-    close(resource->fd);
-  }
-  
   c_list_destroy(loop->resources);
   free(loop);
 }

@@ -53,7 +53,7 @@ static void on_mouse_movement_cb(struct c_input_mouse_event *event, void *userda
     }
   }
 
-  drmModeMoveCursor(mgr->drm_fd, output->crtc_id, new_x, new_y);
+  drmModeMoveCursor(mgr->drm_fd, output->crtc.id, new_x, new_y);
 }
 
 int c_cursor_update(struct c_output_manager *mgr, struct c_output *output, void *buffer,
@@ -65,7 +65,7 @@ int c_cursor_update(struct c_output_manager *mgr, struct c_output *output, void 
   }
 
   uint32_t bo_handle = gbm_bo_get_handle(cursor->gbm_bo).u32;
-  if (drmModeSetCursor(mgr->drm_fd, output->crtc_id, bo_handle, cursor->width, cursor->height) != 0) {
+  if (drmModeSetCursor(mgr->drm_fd, output->crtc.id, bo_handle, cursor->width, cursor->height) != 0) {
     c_log_errno(C_LOG_ERROR, "drmModeSetCursor failed");
     return -1;
   }

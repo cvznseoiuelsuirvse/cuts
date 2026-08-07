@@ -767,10 +767,6 @@ void set_cursor(struct c_output *output, int size) {
 }
 
 void cleanup(int err, void *userdata) {
-  if (cuts.session) {
-    c_session_free(cuts.session);
-    cuts.session = NULL;
-  }
 
   if (cuts.display) {
     c_wl_display_free(cuts.display);
@@ -782,10 +778,6 @@ void cleanup(int err, void *userdata) {
     cuts.scene = NULL;
   }
 
-  if (cuts.loop) {
-    c_event_loop_free(cuts.loop);
-    cuts.loop = NULL;
-  }
 
   if (cuts.mgr) {
     c_output_manager_free(cuts.mgr);
@@ -798,6 +790,16 @@ void cleanup(int err, void *userdata) {
       client_free(client);
     c_list_destroy(cuts.clients);
     cuts.clients = NULL;
+  }
+
+  if (cuts.session) {
+    c_session_free(cuts.session);
+    cuts.session = NULL;
+  }
+
+  if (cuts.loop) {
+    c_event_loop_free(cuts.loop);
+    cuts.loop = NULL;
   }
 
   exit(err);

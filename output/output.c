@@ -19,7 +19,7 @@ static int open_gpu(struct c_session *session) {
   for (int i = 0; i < 10; i++) {
     memset(gpu_path, 0, sizeof(gpu_path));
     snprintf(gpu_path, sizeof(gpu_path), "/dev/dri/card%d", i);
-    int fd = open(gpu_path, O_RDWR | O_NONBLOCK);
+    int fd = open(gpu_path, O_RDWR | O_CLOEXEC);
     if (fd > 0) {
       gpu_found = 1;
       close(fd);
@@ -29,13 +29,33 @@ static int open_gpu(struct c_session *session) {
 
   if (!gpu_found) {
     c_log(C_LOG_ERROR, "no GPUs found");
-    return -1;
+    goto error;
   }
 
   struct c_session_device *dev = c_session_device_open(session, gpu_path);
-  if (!dev) return -1;
+  if (!dev) {
+    c_log(C_LOG_ERROR, "failed to open GPU device");
+    goto error;
+  }
+
+
+  if (drmSetClientCap(dev->fd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1)) {
+    c_log_errno(C_LOG_ERROR, "failed to set DRM_CLIENT_CAP_UNIVERSAL_PLANES cap");
+    goto error_set_cap;
+  }
+
+  if (drmSetClientCap(dev->fd, DRM_CLIENT_CAP_ATOMIC, 1)) {
+    c_log_errno(C_LOG_ERROR, "failed to set DRM_CLIENT_CAP_ATOMIC cap");
+    goto error_set_cap;
+  }
 
   return dev->fd;
+
+error_set_cap:
+  c_session_device_close(session, dev);
+
+error:
+  return -1;
 }
 
 
@@ -70,7 +90,10 @@ static void destroy_swapchain(struct c_output *output) {
     c_framebuffer_destroy(output->swapchain.buffers[1]);
 }
 
-static void page_flip_handler(int fd, unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec, void *userdata) {
+static void page_flip_handler(int fd, unsigned int sequence,
+                              unsigned int tv_sec, unsigned int tv_usec,
+                              unsigned int crtc_id, void *userdata) {
+
   struct c_output *output = userdata;
 
   output->swapchain.front ^= 1;
@@ -88,7 +111,7 @@ static void page_flip_handler(int fd, unsigned int sequence, unsigned int tv_sec
 static int handle_drm_event(struct c_output_manager *mgr) {
   drmEventContext ctx = {
     .version = DRM_EVENT_CONTEXT_VERSION,
-    .page_flip_handler = page_flip_handler,
+    .page_flip_handler2 = page_flip_handler,
   };
 
   if (drmHandleEvent(mgr->drm_fd, &ctx) < 0) {
@@ -101,9 +124,9 @@ static int handle_drm_event(struct c_output_manager *mgr) {
 static void schedule_pageflip(struct c_output_manager *mgr, struct c_output *output) {
   if (output->need_redraw && !output->waiting_for_flip) {
     mgr->on_redraw(mgr, output, mgr->on_redraw_userdata);
-    drmModePageFlip(mgr->drm_fd, output->crtc_id,
-                    c_output_backbuffer(output)->drm_fb_id,
-                    DRM_MODE_PAGE_FLIP_EVENT, output);
+    c_drm_atomic_commit(mgr->drm_fd, output, output->current_mode,
+                        DRM_MODE_ATOMIC_NONBLOCK | DRM_MODE_PAGE_FLIP_EVENT,
+                        output);
     output->waiting_for_flip = 1;
   }
 }
@@ -134,9 +157,7 @@ void c_output_set_mode(struct c_output_manager *mgr, struct c_output *output, st
   output->current_mode = mode;
   create_swapchain(output, mgr);
 
-  drmModeSetCrtc(mgr->drm_fd, output->crtc_id,
-                 output->swapchain.buffers[output->swapchain.front]->drm_fb_id,
-                 0, 0, &output->connector_id, 1, &mode->drm_info);
+  c_drm_atomic_commit(mgr->drm_fd, output, mode, DRM_MODE_ATOMIC_ALLOW_MODESET, NULL);
 
   glViewport(0, 0, mode->width, mode->height);
   c_output_damage(mgr, output);
@@ -154,15 +175,9 @@ void c_output_manager_free(struct c_output_manager *mgr) {
       c_cursor_free(output->cursor);
       c_list_destroy(output->frame_surfaces);
       destroy_swapchain(output);
-
-      c_list_destroy(output->modes);
-
-      drmModeSetCrtc(mgr->drm_fd, output->orig_crtc->crtc_id,
-                     output->orig_crtc->buffer_id, 0, 0, &output->connector_id,
-                     1, &output->orig_crtc->mode);
-      drmModeFreeCrtc(output->orig_crtc);
-
+      c_drm_free_output(mgr->drm_fd, output);
     }
+
     c_list_destroy(mgr->outputs);
   }
 
@@ -190,6 +205,12 @@ struct c_output_manager *c_output_manager_init(struct c_session *session,
     goto error;
   }
 
+  mgr->outputs = c_drm_get_outputs(drm_fd);
+  if (!mgr->outputs) {
+    c_log(C_LOG_ERROR, "failed to get outputs");
+    goto error;
+  }
+
   mgr->drm_fd = drm_fd;
   mgr->gbm_device = gbm_create_device(drm_fd);
   if (!mgr->gbm_device) {
@@ -202,13 +223,6 @@ struct c_output_manager *c_output_manager_init(struct c_session *session,
     c_log(C_LOG_ERROR, "failed to initialize renderer");
     goto error;
   }
-
-  mgr->outputs = c_drm_get_connectors(drm_fd);
-  if (!mgr->outputs) {
-    c_log(C_LOG_ERROR, "failed to get connectors");
-    goto error;
-  }
-
 
   uint64_t w, h;
   if (drmGetCap(mgr->drm_fd, DRM_CAP_CURSOR_WIDTH, &w) != 0) w = 64;

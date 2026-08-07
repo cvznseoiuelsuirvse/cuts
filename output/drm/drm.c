@@ -7,10 +7,12 @@
 #include "output/drm/drm.h"
 #include "output/drm/util.h"
 #include "output/output.h"
+#include "render/framebuffer.h"
 
 #include "util/log.h"
+#include "util/helpers.h"
 
-static c_list *get_modes(drmModeConnectorPtr connector) {
+static c_list *get_modes(int fd, drmModeConnectorPtr connector) {
   c_list *modes = c_list_new();
 
   for (int i = 0; i < connector->count_modes; i++) {
@@ -21,16 +23,61 @@ static c_list *get_modes(drmModeConnectorPtr connector) {
     c_mode.width = mode.hdisplay; 
     c_mode.height = mode.vdisplay; 
     c_mode.preferred = mode.type & DRM_MODE_TYPE_PREFERRED;
-    c_mode.drm_info = mode;
     c_mode.refresh_rate = refresh_rate;
+    c_mode.drm.info = mode;
+
+    if (drmModeCreatePropertyBlob(fd, &mode, sizeof(mode), &c_mode.drm.blob_id)) {
+      c_log_errno(C_LOG_ERROR, "failed to create mode propery blob");
+      goto error;
+    }
 
     c_list_push(modes, &c_mode, sizeof(c_mode));
   }
 
   return modes;
+
+  struct c_output_mode *mode;
+
+error:
+  c_list_for_each(modes, mode)
+    drmModeDestroyPropertyBlob(fd, mode->drm.blob_id);
+  c_list_destroy(modes);
+  return NULL;
 }
 
-static uint32_t get_crtc_id(int fd, drmModeResPtr res, drmModeConnectorPtr conn, uint32_t *taken_crtcs) {
+static int64_t get_property_value(int fd, drmModeObjectPropertiesPtr props, const char *name) {
+  uint64_t value = -1;
+	int found = 0;
+	for (size_t i = 0; i < props->count_props && !found; i++) {
+		drmModePropertyPtr prop = drmModeGetProperty(fd, props->props[i]);
+		if (STREQ(prop->name, name))
+			value = props->prop_values[i];
+		drmModeFreeProperty(prop);
+	}
+
+	return value;
+}
+
+static void free_properties(struct c_output_drm_object *obj) {
+	for (size_t i = 0; i < obj->props->count_props; i++)
+		drmModeFreeProperty(obj->props_info[i]);
+	free(obj->props_info);
+	drmModeFreeObjectProperties(obj->props);
+}
+
+
+static void get_object_properties(int fd, struct c_output_drm_object *obj, uint32_t type) {
+	obj->props = drmModeObjectGetProperties(fd, obj->id, type);
+	obj->props_info = calloc(obj->props->count_props, sizeof(obj->props_info));
+
+	for (size_t i = 0; i < obj->props->count_props; i++)
+		obj->props_info[i] = drmModeGetProperty(fd, obj->props->props[i]);
+}
+
+static int get_crtc(int fd, drmModeResPtr res, drmModeConnectorPtr conn,
+                         uint32_t *taken_crtcs,
+                         struct c_output_drm_object *obj) {
+  int ret = -1;
   for (int enc_n = 0; enc_n < conn->count_encoders; enc_n++) {
     drmModeEncoderPtr encoder = drmModeGetEncoder(fd, res->encoders[enc_n]);
     if (!encoder) continue;
@@ -44,17 +91,112 @@ static uint32_t get_crtc_id(int fd, drmModeResPtr res, drmModeConnectorPtr conn,
       drmModeFreeEncoder(encoder);
       *taken_crtcs |= bit;
 
-      return res->crtcs[i];
+      obj->id = res->crtcs[i];
+      ret = i;
+      goto get_props;
     }
     drmModeFreeEncoder(encoder);
   }
 
-  return 0;
+get_props:
+  if (ret >= 0) {
+    get_object_properties(fd, obj, DRM_MODE_OBJECT_CRTC);
+    if (!obj->props)
+      return -1;
+  }
+  return ret;
 }
 
-c_list *c_drm_get_connectors(int drm_fd) {
-  drmModeResPtr resource = drmModeGetResources(drm_fd);
-  if (!resource) {
+static int get_plane(int fd, uint32_t crtc, struct c_output_drm_object *obj) {
+  int ret = -1;
+  drmModePlaneResPtr plane_res = drmModeGetPlaneResources(fd);
+
+  for (size_t i = 0; i < plane_res->count_planes; i++) {
+    drmModePlanePtr plane = drmModeGetPlane(fd, plane_res->planes[i]);
+    if (plane->possible_crtcs & (1 << crtc)) {
+      drmModeObjectPropertiesPtr props = drmModeObjectGetProperties(fd, plane->plane_id, DRM_MODE_OBJECT_PLANE);
+      if (get_property_value(fd, props, "type") == DRM_PLANE_TYPE_PRIMARY) {
+        obj->id = plane->plane_id;
+        drmModeFreeObjectProperties(props);
+        drmModeFreePlane(plane);
+        ret = 0;
+        goto get_props;
+
+      }
+      drmModeFreeObjectProperties(props);
+    }
+    drmModeFreePlane(plane);
+  }
+
+get_props:
+  drmModeFreePlaneResources(plane_res);
+
+  if (!ret) {
+    get_object_properties(fd, obj, DRM_MODE_OBJECT_PLANE);
+    if (!obj->props)
+      return -1;
+  }
+
+  return ret;
+
+}
+
+static int get_output_objects(int drm_fd, struct c_output *output,
+                              drmModeConnectorPtr connector,
+                              drmModeResPtr resource, uint32_t *taken_crtcs) {
+
+  output->connector.id = connector->connector_id;
+  get_object_properties(drm_fd, &output->connector, DRM_MODE_OBJECT_CONNECTOR);
+  if (!output->connector.props) {
+    c_log(C_LOG_ERROR, "failed to get connector props");
+    goto error_connector;
+  }
+
+  int crtc_idx;
+  if ((crtc_idx = get_crtc(drm_fd, resource, connector, taken_crtcs, &output->crtc)) == -1) {
+    c_log(C_LOG_ERROR, "failed to get CRTC");
+    goto error_crtc;
+  }
+
+  if (get_plane(drm_fd, crtc_idx, &output->plane) == -1) {
+    c_log(C_LOG_ERROR, "failed to get primary plane");
+    goto error_plane;
+  }
+
+  return 0;
+
+error_plane:
+  free_properties(&output->crtc);
+error_crtc:
+  free_properties(&output->connector);
+error_connector:
+  return -1;
+}
+
+void c_drm_free_output(int drm_fd, struct c_output* output) {
+  drmModeSetCrtc(drm_fd, output->orig_crtc->crtc_id, output->orig_crtc->buffer_id,
+                 0, 0, &output->connector.id, 1, &output->orig_crtc->mode);
+  drmModeFreeCrtc(output->orig_crtc);
+
+
+  if (output->plane.props_info) {
+    free_properties(&output->plane);
+  }
+
+  if (output->crtc.props_info) {
+    free_properties(&output->crtc);
+  }
+
+  if (output->connector.props_info) {
+    free_properties(&output->connector);
+  }
+
+  c_list_destroy(output->modes);
+}
+
+c_list *c_drm_get_outputs(int drm_fd) {
+  drmModeResPtr resources = drmModeGetResources(drm_fd);
+  if (!resources) {
     c_log_errno(C_LOG_ERROR, "failed to get DRM resources");
     return NULL;
   }
@@ -63,22 +205,23 @@ c_list *c_drm_get_connectors(int drm_fd) {
 
   drmModeConnectorPtr connector;
   uint32_t taken_crtcs = 0;
-  for (int i = 0; i < resource->count_connectors; i++) {
-    connector = drmModeGetConnector(drm_fd, resource->connectors[i]);
+
+  for (int i = 0; i < resources->count_connectors; i++) {
+    connector = drmModeGetConnector(drm_fd, resources->connectors[i]);
     if (!connector) continue;
     if (connector->connection != DRM_MODE_CONNECTED) goto iter_end;
 
     struct c_output output = {0};
 
-    output.connector_id = connector->connector_id;
-    output.crtc_id = get_crtc_id(drm_fd, resource, connector, &taken_crtcs);
-    output.orig_crtc = drmModeGetCrtc(drm_fd, output.crtc_id);
+    if (get_output_objects(drm_fd, &output, connector, resources, &taken_crtcs)) goto iter_end_error;
+
+    output.orig_crtc = drmModeGetCrtc(drm_fd, output.crtc.id);
 
     output.mm_width = connector->mmWidth;
     output.mm_height = connector->mmHeight;
     output.subpixel = connector->subpixel;
 
-    output.modes = get_modes(connector);
+    output.modes = get_modes(drm_fd, connector);
     snprintf(output.name, sizeof(output.name), "%s-%d",
              drm_connector_str(connector->connector_type),
              connector->connector_type_id);
@@ -87,8 +230,80 @@ c_list *c_drm_get_connectors(int drm_fd) {
 
 iter_end:
     drmModeFreeConnector(connector);
+    continue;
+
+iter_end_error:
+    drmModeFreeConnector(connector);
+    c_list_destroy(outputs);
+    outputs = NULL;
+    goto out;
   }
 
-  drmModeFreeResources(resource);
+out:
+  drmModeFreeResources(resources);
+  if (!taken_crtcs && outputs)
+    c_list_destroy(outputs);
   return outputs;
+}
+
+static int set_object_property_value(drmModeAtomicReq *req,
+                              struct c_output_drm_object *obj, const char *name,
+                              uint64_t value) {
+  uint32_t prop_id = 0;
+
+  for (size_t i = 0; i < obj->props->count_props; i++) {
+    if (!strcmp(obj->props_info[i]->name, name)) {
+      prop_id = obj->props_info[i]->prop_id;
+      break;
+    }
+  }
+
+  if (prop_id == 0) {
+    c_log(C_LOG_ERROR, "failed to set propery %s", name);
+    return -1;
+  }
+
+  return drmModeAtomicAddProperty(req, obj->id, prop_id, value);
+}
+
+drmModeAtomicReqPtr atomic_create_req(struct c_output *output, struct c_output_mode *mode) {
+  drmModeAtomicReqPtr req = drmModeAtomicAlloc();
+  struct c_output_drm_object *plane = &output->plane;
+
+  if (set_object_property_value(req, &output->connector, "CRTC_ID", output->crtc.id) < 0)         goto error_set_prop;
+	if (set_object_property_value(req, &output->crtc, "MODE_ID", mode->drm.blob_id) < 0)            goto error_set_prop;
+	if (set_object_property_value(req, &output->crtc, "ACTIVE", 1) < 0)                             goto error_set_prop;
+	if (set_object_property_value(req, plane, "FB_ID", c_output_backbuffer(output)->drm_fb_id) < 0) goto error_set_prop;
+	if (set_object_property_value(req, plane, "CRTC_ID", output->crtc.id) < 0)                      goto error_set_prop;
+	if (set_object_property_value(req, plane, "SRC_X", 0) < 0)                                      goto error_set_prop;
+	if (set_object_property_value(req, plane, "SRC_Y", 0) < 0)                                      goto error_set_prop;
+	if (set_object_property_value(req, plane, "SRC_W", mode->width << 16) < 0)                      goto error_set_prop;
+	if (set_object_property_value(req, plane, "SRC_H", mode->height << 16) < 0)                     goto error_set_prop;
+	if (set_object_property_value(req, plane, "CRTC_X", 0) < 0)                                     goto error_set_prop;
+	if (set_object_property_value(req, plane, "CRTC_Y", 0) < 0)                                     goto error_set_prop;
+	if (set_object_property_value(req, plane, "CRTC_W", mode->width) < 0)                           goto error_set_prop;
+	if (set_object_property_value(req, plane, "CRTC_H", mode->height) < 0)                          goto error_set_prop;
+
+  return req;
+
+error_set_prop:
+  drmModeAtomicFree(req);
+  return NULL;
+}
+
+int c_drm_atomic_commit(int drm_fd, struct c_output *output,
+                        struct c_output_mode *mode, int flags, void *userdata) {
+  drmModeAtomicReqPtr req = atomic_create_req(output, mode);
+  if (!req) {
+    c_log_errno(C_LOG_ERROR, "failed to prepare atomic request");
+    return -1;
+  }
+
+  int ret = 0;
+  ret = drmModeAtomicCommit(drm_fd, req, flags, userdata);
+  if (ret)
+    c_log_errno(C_LOG_ERROR, "failed to atomic commit");
+
+  drmModeAtomicFree(req);
+  return ret;
 }

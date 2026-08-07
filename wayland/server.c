@@ -456,17 +456,18 @@ struct c_map *c_wl_connection_get_objects(struct c_wl_connection *conn) {
 }
 
 int c_wl_connection_free(struct c_wl_connection *conn) {
-  for (size_t i = 0; i < conn->objects->size; i++) {
+  c_log_value(conn->objects->size, "%d");
+  for (int i = conn->objects->size - 1; i >= 0; i--) {
     struct c_map_pair *mp = conn->objects->pairs[i];
 
     while (mp) {
       struct c_map_pair *next = mp->next;
       struct c_wl_object *object = mp->value;
 
+      c_log(C_LOG_DEBUG, "destroying %s#%d object", object->iface->name, object->id);
       if (object->iface->destructor_request >= 0) {
         c_wl_arg arg = {.o = object->id};
         handle_request(conn, object, &arg, object->iface->destructor_request);
-
       } else if (object->data) {
         c_unref(object->data);
       }
