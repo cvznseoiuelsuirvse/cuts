@@ -22,6 +22,7 @@ typedef union {
 	char *const s;
 	int32_t     i;
 	uint32_t    u;
+  double      d;
 } bind_args;
 
 typedef void(*bind_handler)(bind_args *);
@@ -62,6 +63,8 @@ void move_focus(bind_args *);
 void switch_tag(bind_args *);
 void toggle_floating(bind_args *);
 void window_move_to_workspace(bind_args *);
+void change_mfact(bind_args *);
+void change_nmaster(bind_args *);
 
 // bind drag functions
 void window_move(int, bind_args *);

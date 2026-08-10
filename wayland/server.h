@@ -44,6 +44,7 @@ struct c_wl_object {
     void **handlers;
     void *userdata;
   } listeners;
+  struct c_wl_connection *conn;
 };
 
 typedef union c_wl_arg {

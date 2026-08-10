@@ -112,25 +112,38 @@ uint32_t wl_shm_fmt_to_drm_fmt(enum wl_shm_format_enum format) {
 }
 
 int drm_fmt_to_gl_fmt(uint32_t drm_format, GLenum *internal_format,
-                        GLenum *format, GLenum *type) {
+                        GLenum *format, GLenum *type, int bgra_support) {
 	GLenum ifmt, fmt, t;
 
 	switch (drm_format) {
-	case DRM_FORMAT_ABGR8888: ifmt = GL_RGBA; fmt = GL_RGBA;     t = GL_UNSIGNED_BYTE;           break;
-	case DRM_FORMAT_XBGR8888: ifmt = GL_RGBA; fmt = GL_RGBA;     t = GL_UNSIGNED_BYTE;           break;
-	case DRM_FORMAT_ARGB8888: ifmt = GL_RGBA; fmt = GL_BGRA_EXT; t = GL_UNSIGNED_BYTE;           break;
-	case DRM_FORMAT_XRGB8888: ifmt = GL_RGBA; fmt = GL_BGRA_EXT; t = GL_UNSIGNED_BYTE;           break;
-	case DRM_FORMAT_BGR888:   ifmt = GL_RGB;  fmt = GL_RGB;      t = GL_UNSIGNED_BYTE;           break;
-	case DRM_FORMAT_RGB888:   ifmt = GL_RGB;  fmt = GL_RGB;      t = GL_UNSIGNED_BYTE;           break;
-	case DRM_FORMAT_RGB565:   ifmt = GL_RGB;  fmt = GL_RGB;      t = GL_UNSIGNED_SHORT_5_6_5;    break;
-	case DRM_FORMAT_BGR565:   ifmt = GL_RGB;  fmt = GL_RGB;      t = GL_UNSIGNED_SHORT_5_6_5;    break;
-	case DRM_FORMAT_ABGR4444: ifmt = GL_RGBA; fmt = GL_RGBA;     t = GL_UNSIGNED_SHORT_4_4_4_4;  break;
-	case DRM_FORMAT_ARGB4444: ifmt = GL_RGBA; fmt = GL_BGRA_EXT; t = GL_UNSIGNED_SHORT_4_4_4_4;  break;
-	case DRM_FORMAT_ABGR1555: ifmt = GL_RGBA; fmt = GL_RGBA;     t = GL_UNSIGNED_SHORT_5_5_5_1;  break;
-	case DRM_FORMAT_ARGB1555: ifmt = GL_RGBA; fmt = GL_BGRA_EXT; t = GL_UNSIGNED_SHORT_5_5_5_1;  break;
-	default: return -1;
+    case DRM_FORMAT_BGR888:   ifmt = GL_RGB;  fmt = GL_RGB;      t = GL_UNSIGNED_BYTE;           goto out;
+    case DRM_FORMAT_RGB888:   ifmt = GL_RGB;  fmt = GL_RGB;      t = GL_UNSIGNED_BYTE;           goto out;
+    case DRM_FORMAT_RGB565:   ifmt = GL_RGB;  fmt = GL_RGB;      t = GL_UNSIGNED_SHORT_5_6_5;    goto out;
+    case DRM_FORMAT_BGR565:   ifmt = GL_RGB;  fmt = GL_RGB;      t = GL_UNSIGNED_SHORT_5_6_5;    goto out;
+
+    case DRM_FORMAT_ABGR8888: ifmt = GL_RGBA; fmt = GL_RGBA;     t = GL_UNSIGNED_BYTE;           goto out;
+    case DRM_FORMAT_XBGR8888: ifmt = GL_RGBA; fmt = GL_RGBA;     t = GL_UNSIGNED_BYTE;           goto out;
+    case DRM_FORMAT_ABGR4444: ifmt = GL_RGBA; fmt = GL_RGBA;     t = GL_UNSIGNED_SHORT_4_4_4_4;  goto out;
+    case DRM_FORMAT_ABGR1555: ifmt = GL_RGBA; fmt = GL_RGBA;     t = GL_UNSIGNED_SHORT_5_5_5_1;  goto out;
+
+    case DRM_FORMAT_ARGB8888:
+    case DRM_FORMAT_XRGB8888:
+    case DRM_FORMAT_ARGB4444:
+    case DRM_FORMAT_ARGB1555:
+      if (!bgra_support) return -1;
+      break;
+
+    default: return -1;
 	}
 
+  switch (drm_format) {
+    case DRM_FORMAT_ARGB8888: ifmt = GL_BGRA_EXT; fmt = GL_BGRA_EXT; t = GL_UNSIGNED_BYTE;           break;
+    case DRM_FORMAT_XRGB8888: ifmt = GL_BGRA_EXT; fmt = GL_BGRA_EXT; t = GL_UNSIGNED_BYTE;           break;
+    case DRM_FORMAT_ARGB4444: ifmt = GL_BGRA_EXT; fmt = GL_BGRA_EXT; t = GL_UNSIGNED_SHORT_4_4_4_4;  break;
+    case DRM_FORMAT_ARGB1555: ifmt = GL_BGRA_EXT; fmt = GL_BGRA_EXT; t = GL_UNSIGNED_SHORT_5_5_5_1;  break;
+  }
+
+out:
 	*internal_format = ifmt;
 	*format = fmt;
 	*type = t;

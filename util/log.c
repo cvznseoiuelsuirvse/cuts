@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdarg.h>
+#include <unistd.h>
 
 #include "util/log.h"
 #include "wayland/display.h"
@@ -41,7 +42,7 @@ void _c_log(enum c_log_level level, const char *file, int line, int insert_nl, c
   va_list args;
   va_start(args, format);
 
-  if (__color) {
+  if (__color && isatty(fileno(stdout))) {
     switch (level) {
       case C_LOG_ERROR:
         printf("\033[31m[%s] [%s %s:%d] ", time_format, log_level_string(level), file, line);

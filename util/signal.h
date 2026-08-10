@@ -3,5 +3,6 @@
 
 typedef void (*c_signal_handler)(int signal, void *userdata);
 void c_signal_handler_add(int signal, c_signal_handler handler, void *userdata);
+void c_signal_dispatch(void);
 
 #endif

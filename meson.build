@@ -14,6 +14,10 @@ c_args = [
   '-D_GNU_SOURCE',
 ]
 
+if get_option('logo_key')
+  c_args += '-DUSE_LOGO_KEY'
+endif
+
 subdir('util')
 subdir('compositor')
 subdir('seat')

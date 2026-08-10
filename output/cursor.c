@@ -30,8 +30,8 @@ static void on_mouse_movement_cb(struct c_input_mouse_event *event, void *userda
     new_y = libinput_event_pointer_get_absolute_y_transformed(event->libinput_event, height);
   }
 
-  new_x = MAX(0, MIN(new_x, width));
-  new_y = MAX(0, MIN(new_y, height));
+  new_x = CLAMP(new_x, 0, width);
+  new_y = CLAMP(new_y, 0, height);
 
   output->cursor->x = new_x;
   output->cursor->y = new_y;

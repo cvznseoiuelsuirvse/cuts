@@ -2,7 +2,7 @@
 #ifndef CUTS_SERVER_COMPOSITOR_H
 #define CUTS_SERVER_COMPOSITOR_H
 
-#define CUTS_MAX_EPOLL_EVENTS 512
+#define MAX_EPOLL_EVENTS 512
 
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -21,7 +21,7 @@ typedef enum c_event_callback_status {
 struct c_event_loop {
 	int 		 epfd;
 	c_list	*resources;
-	struct epoll_event events[CUTS_MAX_EPOLL_EVENTS];
+	struct epoll_event events[MAX_EPOLL_EVENTS];
 };
 
 typedef c_event_callback_status(*c_event_callback)(struct c_event_loop *loop, int fd, void *userdata);
@@ -37,6 +37,7 @@ struct c_event_loop * c_event_loop_init();
 int c_event_loop_run(struct c_event_loop *loop);
 int c_event_loop_add(struct c_event_loop *loop, int fd, c_event_callback callback, void *userdata);
 int c_event_loop_del(struct c_event_loop *loop, struct c_event_resource *resource);
+void c_event_loop_stop(struct c_event_loop *loop);
 void c_event_loop_free(struct c_event_loop *loop);
 
 #endif

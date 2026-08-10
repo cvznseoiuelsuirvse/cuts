@@ -61,7 +61,6 @@ struct bar {
 
 struct client {
   uint32_t tag;
-  struct c_wl_connection *connection;
   struct c_output *output;
   struct c_window *window;
 };
@@ -109,7 +108,7 @@ struct tile_layout {
 
 };
 
-struct client *client_new();
+struct client *client_new(struct c_wl_connection *conn);
 void client_free(struct client *client);
 void client_change_focus(struct client *client, double hotspot_x, double hotspot_y);
 void client_close(struct client *client);
@@ -154,9 +153,6 @@ struct client *client_move_focus(int direction) {
   cuts.focused_client_idx =
       (cuts.focused_client_idx + direction + clients) % clients;
 
-  c_log_value(direction, "%d");
-  c_log_value(cuts.focused_client_idx, "%d");
-
   int c = 0;
   clients_for_each_in_tag(client) {
     if (cuts.focused_client_idx == c++) {
@@ -168,7 +164,7 @@ struct client *client_move_focus(int direction) {
 }
 
 
-struct client *client_new() {
+struct client *client_new(struct c_wl_connection *connection) {
   struct c_window *window = calloc(1, sizeof(*window));
   if (!window) {
     c_log_errno(C_LOG_ERROR, "failed to allocate window for a new client");
@@ -182,8 +178,10 @@ struct client *client_new() {
     return NULL;
   }
 
+  window->conn = connection;
   client->window = window;
   client->tag = cuts.focused_tag;
+
   return client;
 }
 
@@ -204,22 +202,26 @@ void client_change_focus(struct client *client, double hotspot_x, double hotspot
 
   c_window_activate(client->window);
 
+  c_log_value(cuts.clipboard.owner, "%p");
+  c_log_value(cuts.clipboard.data_source, "%p");
+
   struct c_wl_object *o;
-  c_wl_objects_for_each(client->connection, o) {
+  c_wl_objects_for_each(client->window->conn, o) {
     if (STREQ(o->iface->name, "wl_data_device")) {
       struct c_wl_data_source *data_source = cuts.clipboard.data_source;
       if (!data_source) {
-        wl_data_device_selection(client->connection, o->id, 0);
-
+        wl_data_device_selection(client->window->conn, o->id, 0);
       } else {
-        struct c_wl_object *wl_data_offer = c_wl_object_add(client->connection, 0, o->version, c_wl_interface_get("wl_data_offer"), NULL);
+        struct c_wl_object *wl_data_offer =
+            c_wl_object_add(client->window->conn, 0, o->version,
+                            c_wl_interface_get("wl_data_offer"), NULL);
 
-        wl_data_device_data_offer(client->connection, o->id, wl_data_offer->id);
+        wl_data_device_data_offer(client->window->conn, o->id, wl_data_offer->id);
         for (size_t i = 0; i < data_source->mimes; i++) {
-          wl_data_offer_offer(client->connection, wl_data_offer->id, data_source->mimetypes[i]);
+          wl_data_offer_offer(client->window->conn, wl_data_offer->id, data_source->mimetypes[i]);
         }
 
-        wl_data_device_selection(client->connection, o->id, wl_data_offer->id);
+        wl_data_device_selection(client->window->conn, o->id, wl_data_offer->id);
       }
     }
   }
@@ -236,9 +238,6 @@ void client_close(struct client *client) {
     c_window_unfocus(client->window);
     cuts.focused_client = NULL;
   }
-
-  if (client->connection == cuts.clipboard.owner)
-    memset(&cuts.clipboard, 0, sizeof(cuts.clipboard));
 
   c_scene_remove_window(cuts.scene, client->window);
   client_free(client);
@@ -259,7 +258,6 @@ static void *on_wl_output_bind(struct c_wl_connection *conn,
                                struct c_wl_object *wl_output, void *userdata) {
 
   struct c_output *output = userdata;
-
   struct c_wl_output *_output = c_malloc(sizeof(*_output));
   _output->id = wl_output->id;
   _output->output = output;
@@ -288,7 +286,7 @@ static void *on_wl_output_bind(struct c_wl_connection *conn,
   }
 
   wl_output_done(conn, wl_output->id);
-  return NULL;
+  return _output;
 }
 
 int wl_seat_get_keyboard(struct c_wl_connection *conn, union c_wl_arg *args) {
@@ -311,7 +309,8 @@ int wl_seat_get_keyboard(struct c_wl_connection *conn, union c_wl_arg *args) {
     c_wl_error_set_and_return(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "failed ot get xkb_keymap");
 
   wl_keyboard_keymap(conn, wl_keyboard_id, WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1, keymap_fd, keymap_len);
-  wl_keyboard_repeat_info(conn, wl_keyboard_id, keyboard_repeat_rate, keyboard_repeat_delay);
+  if (self->version > 3)
+    wl_keyboard_repeat_info(conn, wl_keyboard_id, keyboard_repeat_rate, keyboard_repeat_delay);
 
   return 0;
 }
@@ -376,7 +375,7 @@ void on_keyboard_key(struct c_input_keyboard_event *event, void *userdata) {
                         event->mods_locked, event->group, event->changed);
 }
 
-static struct c_wl_surface *find_root_surface(struct c_wl_surface *surface) {
+struct c_wl_surface *find_root_surface(struct c_wl_surface *surface) {
  while (surface->sub.surface && surface->sub.surface->parent) {
    surface = surface->sub.surface->parent;
  }
@@ -387,60 +386,73 @@ static struct c_wl_surface *find_root_surface(struct c_wl_surface *surface) {
  return surface;
 }
 
-int on_surface_new(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
-  struct c_wl_surface *surface = c_wl_object_get(conn, args[1].n)->data;
-  struct c_wl_surface *root_surface = find_root_surface(surface);
+void assign_output_to_surface(struct c_wl_object *wl_surface) {
+  struct c_wl_surface *surface = wl_surface->data;
 
-  if (surface == root_surface) {
-    struct c_wl_object *o;
-    c_wl_objects_for_each(conn, o) {
-      if (STREQ(o->iface->name, "wl_output")) {
-        struct c_wl_output *wl_output = o->data;
-        if (wl_output->output == cuts.focused_output) {
-          surface->output = wl_output;
-          goto exit;
-        }
-      }
+  if (surface->output) return;
+
+  struct c_wl_object *o;
+  struct c_wl_output *output;
+
+  c_wl_objects_for_each(wl_surface->conn, o) {
+    if (STREQ(o->iface->name, "wl_output") &&
+        (output = o->data)->output == cuts.focused_output) {
+      c_ref(output);
+      surface->output = output;
+      break;
     }
   }
-
-  root_surface->output = surface->output;
-exit:
-  return 0;
 }
 
 int on_surface_commit(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
-  struct c_wl_surface *surface = c_wl_self(conn, args)->data;
-  c_output_damage(cuts.mgr, surface->output->output);
+  struct c_wl_object *wl_surface = c_wl_self(conn, args);
+  struct c_wl_surface *surface = wl_surface->data;
+
+  assign_output_to_surface(wl_surface);
+
+  if (surface->output)
+    c_output_damage(cuts.mgr, surface->output->output);
+
   return 0;
 }
 
 int on_surface_destroy(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
-  struct c_wl_surface *surface = c_wl_self(conn, args)->data;
-  c_list_remove(&surface->output->output->frame_surfaces, surface);
-  c_output_damage(cuts.mgr, surface->output->output);
+  struct c_wl_object *wl_surface = c_wl_self(conn, args);
+  struct c_wl_surface *surface = wl_surface->data;
+  if (!surface->output) return 0;
+
+  struct c_output *output = surface->output->output;
+  c_list_remove(&output->frame_surfaces, wl_surface);
+  c_output_damage(cuts.mgr, output);
+
+  c_unref(surface->output);
+
   return 0;
 }
 
 int on_surface_frame(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
-  struct c_wl_surface *surface = c_wl_self(conn, args)->data;
-  if (c_list_idx(surface->output->output->frame_surfaces, surface) < 0) {
-    c_list_push(cuts.focused_output->frame_surfaces, surface, 0);
-  }
+  struct c_wl_object *wl_surface = c_wl_self(conn, args);
+  struct c_wl_surface *surface = wl_surface->data;
+  if (!surface->output) return 0;
+
+  struct c_output *output = surface->output->output;
+
+  if (c_list_idx(output->frame_surfaces, wl_surface) < 0)
+    c_list_push(output->frame_surfaces, wl_surface, 0);
+
   return 0;
 }
 
 int on_window_new(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
   struct c_xdg_surface *surface = c_wl_self(conn, args)->data;
 
-  struct client *client = client_new();
+  struct client *client = client_new(conn);
   if (!client) {
     cleanup(1, NULL);
-    return 1;
+    return -1;
   }
 
   client->output = cuts.focused_output;
-  client->connection = surface->surface->conn;
   client->window->surface = surface;
   client->window->border_width = border.width;
   client->window->title = &surface->toplevel.title;
@@ -476,7 +488,7 @@ int on_window_close(struct c_wl_connection *conn, c_wl_args args, void *userdata
 void on_connection_gone(struct c_wl_connection *conn, void *userdata) {
   struct client *client;
   c_list_for_each(cuts.clients, client) {
-    if (client->connection == conn) {
+    if (client->window->conn == conn) {
       int is_visible = client->tag & cuts.focused_tag;
       struct c_output *output = client->output;
 
@@ -491,10 +503,8 @@ void on_connection_gone(struct c_wl_connection *conn, void *userdata) {
 
 int on_data_source_destroy(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
   struct c_wl_data_source *data_source = c_wl_self(conn, args)->data;
-  if (data_source == cuts.clipboard.data_source) {
-    cuts.clipboard.owner = NULL;
-    cuts.clipboard.data_source = NULL;
-  }
+  if (data_source == cuts.clipboard.data_source)
+    memset(&cuts.clipboard, 0, sizeof(cuts.clipboard));
 
   return 0;
 }
@@ -528,9 +538,15 @@ int on_set_selection(struct c_wl_connection *conn, c_wl_args args, void *userdat
   if (cuts.clipboard.owner)
     wl_data_source_cancelled(cuts.clipboard.owner, cuts.clipboard.data_source->id);
 
+  c_log_value(cuts.clipboard.owner, "%p");
+  c_log_value(cuts.clipboard.data_source, "%p");
+
   cuts.clipboard.owner = conn;
   cuts.clipboard.data_source = data_source;
   
+  c_log_value(cuts.clipboard.owner, "%p");
+  c_log_value(cuts.clipboard.data_source, "%p");
+
   struct c_wl_object *wl_data_offer =
       c_wl_object_add(conn, 0, wl_data_device->version,
                       c_wl_interface_get("wl_data_offer"), NULL);
@@ -545,7 +561,7 @@ int on_set_selection(struct c_wl_connection *conn, c_wl_args args, void *userdat
 }
 
 void quit(bind_args *args) {
-  raise(SIGTERM);
+  c_event_loop_stop(cuts.loop);
 }
 
 void spawn(bind_args *args) {
@@ -691,6 +707,24 @@ void toggle_floating(bind_args *args) {
 
   client_push(cuts.focused_client);
   client_toggle_floating(cuts.focused_client);
+}
+
+void change_mfact(bind_args *args) {
+  mfact += args->d;
+  mfact = CLAMP(mfact, 0.05f, 0.95f);
+  
+  struct c_output *output;
+  c_list_for_each(cuts.mgr->outputs, output)
+    LAYOUT(output);
+}
+
+void change_nmaster(bind_args *args) {
+  nmaster += args->i;
+  nmaster = CLAMP(nmaster, 1, 10);
+  
+  struct c_output *output;
+  c_list_for_each(cuts.mgr->outputs, output)
+    LAYOUT(output);
 }
 
 void window_move(int done, bind_args *args) {
@@ -854,7 +888,7 @@ int main() {
 
     c_log(C_LOG_INFO, "Monitor %s:", output->name);
 
-    struct c_output_mode *preferred;
+    struct c_output_mode *preferred = NULL;
     struct c_output_mode *mode;
     c_list_for_each(output->modes, mode) {
       c_log(C_LOG_INFO, "   %s%dx%d@%.3fHz", mode->preferred ? "*" : " ",
@@ -872,6 +906,7 @@ int main() {
       }
     }
 
+    assert(preferred);
     c_output_set_mode(mgr, output, preferred);
 
 mode_iter_end:
@@ -916,11 +951,6 @@ mode_iter_end:
     .gone = on_connection_gone,
   };
   c_wl_display_add_connection_listener(display, &conn_listener, NULL);
-
-  struct c_wl_compositor_listeners comp_listeners = {
-    .create_surface = on_surface_new,
-  };
-  wl_compositor_add_listener(display, &comp_listeners, NULL);
 
   struct c_wl_surface_listeners surface_listeners = {
     .commit = on_surface_commit,

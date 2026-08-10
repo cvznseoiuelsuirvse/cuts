@@ -111,22 +111,21 @@ int zwp_linux_buffer_params_v1_create_immed(struct c_wl_connection *conn, union 
   if (height <= 0)
     c_wl_error_set_and_return(args[0].o, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_INVALID_DIMENSIONS, "invalid height");
 
-  struct c_wl_buffer *c_wl_buffer = c_malloc(sizeof(struct c_wl_buffer));
-  if (!c_wl_buffer)
+  struct c_wl_buffer *buffer = c_malloc(sizeof(struct c_wl_buffer));
+  if (!buffer)
         c_wl_error_set_and_return(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed");
 
-  c_wl_buffer->id = wl_buffer_id;
-  c_wl_buffer->conn = conn;
-  c_wl_buffer->scale = 1;
+  buffer->id = wl_buffer_id;
+  buffer->scale = 1;
 
   dma->drm_format = format;
   dma->width = width;
   dma->height = height;
 
-  c_wl_buffer->dma = dma;
+  buffer->dma = dma;
   c_ref(dma);
 
-  c_wl_object_add(conn, wl_buffer_id, self->version, c_wl_interface_get("wl_buffer"), c_wl_buffer);
+  c_wl_object_add(conn, wl_buffer_id, self->version, c_wl_interface_get("wl_buffer"), buffer);
   return 0;
 }
 

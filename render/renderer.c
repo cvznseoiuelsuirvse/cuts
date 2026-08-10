@@ -29,7 +29,7 @@ static void clear_color(float color[4]) {
 }
 
 static int import_raw(struct c_renderer *render, struct c_rawbuf *shm) {
-	if (c_gles_texture_from_raw(shm) == -1) {
+	if (c_gles_texture_from_raw(render->gl, shm) == -1) {
     c_log(C_LOG_ERROR, "failed to create a texture from shm");
     return -1;
   }
@@ -184,6 +184,7 @@ static int send_feedback(struct c_wl_connection *conn, c_wl_args args, void *use
   zwp_linux_dmabuf_feedback_v1_main_device(conn, feedback->id, &device);
 
   zwp_linux_dmabuf_feedback_v1_format_table(conn, feedback->id, ft_fd, format_table_entries * 16);
+  close(ft_fd);
   zwp_linux_dmabuf_feedback_v1_tranche_target_device(conn, feedback->id, &device);
   zwp_linux_dmabuf_feedback_v1_tranche_flags(conn, feedback->id, ZWP_LINUX_DMABUF_FEEDBACK_V1_TRANCHE_FLAGS_SCANOUT);
 

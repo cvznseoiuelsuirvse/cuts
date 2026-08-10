@@ -201,15 +201,20 @@ static int handle_request(struct c_wl_connection *conn,
   if (handlers)
      handler = handlers[op];
 
-  int status;
+  int status = 0;
+
   if (handler && destructor == op) {
     status = handler(conn, args, userdata);
     if (status) goto out;
+  } else {
+    status |= 1;
   }
 
   if (request.impl) {
     status = request.impl(conn, args);
     if (status) goto out;
+  } else {
+    status |= 1 << 1;
   }
 
   if (handler && destructor != op)
@@ -380,6 +385,7 @@ struct c_wl_object *c_wl_object_add(struct c_wl_connection *conn, c_wl_new_id id
   assert(interface);
 
   struct c_wl_object new_object = {
+    .conn = conn,
     .version = version,
     .iface = interface,
     .data = data,
@@ -456,22 +462,34 @@ struct c_map *c_wl_connection_get_objects(struct c_wl_connection *conn) {
 }
 
 int c_wl_connection_free(struct c_wl_connection *conn) {
-  c_log_value(conn->objects->size, "%d");
   for (int i = conn->objects->size - 1; i >= 0; i--) {
+  // for (size_t i = 0; i < conn->objects->size; i++) {
     struct c_map_pair *mp = conn->objects->pairs[i];
 
     while (mp) {
       struct c_map_pair *next = mp->next;
       struct c_wl_object *object = mp->value;
 
-      c_log(C_LOG_DEBUG, "destroying %s#%d object", object->iface->name, object->id);
+      c_log(C_LOG_DEBUG, "(%p) destroying %s#%d object", conn,
+            object->iface->name, object->id);
+
       if (object->iface->destructor_request >= 0) {
         c_wl_arg arg = {.o = object->id};
-        handle_request(conn, object, &arg, object->iface->destructor_request);
-      } else if (object->data) {
+        if (handle_request(conn, object, &arg,
+                           object->iface->destructor_request) == 3) {
+        // returns 3 if no handlers and no implementation for destructor
+        // 3 == ((1 << 1) & 1)
+          goto unref;
+        }
+        goto iter_end;
+      }
+
+unref:
+      if (object->data) {
         c_unref(object->data);
       }
 
+iter_end:
       mp = next;
     }
   }

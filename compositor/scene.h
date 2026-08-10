@@ -11,7 +11,7 @@ struct c_scene_quad {
   enum c_render_buffer_type buffer_type;
 
 	double  x, y;
-	uint32_t width, height;
+	int32_t width, height;
 
   float uv_offset[2];
   float uv_scale[2];

@@ -5,25 +5,26 @@
 
 #include "wayland/types.h"
 #include "wayland/proto/xdg-shell.h"
+#include "wayland/util.h"
 
 #define PADDED4(n) ((n + 3) & ~3)
 
 void calc_popup_coords(struct c_xdg_surface *surface, int32_t *x, int32_t *y) {
-  struct c_xdg_positioner positioner = surface->popup.positioner;
+  struct c_xdg_positioner *popup = &surface->popup.positioner;
 
   int32_t anchor_x, anchor_y;
   int32_t dx, dy;
 
-  switch (positioner.anchor) {
+  switch (popup->anchor) {
     case XDG_POSITIONER_ANCHOR_RIGHT:
     case XDG_POSITIONER_ANCHOR_TOP_RIGHT:
     case XDG_POSITIONER_ANCHOR_BOTTOM_RIGHT:
-      anchor_x = positioner.anchor_rect.width;
+      anchor_x = popup->anchor_rect.width;
       break;
 
     case XDG_POSITIONER_ANCHOR_TOP:
     case XDG_POSITIONER_ANCHOR_BOTTOM:
-      anchor_x = positioner.anchor_rect.width / 2;
+      anchor_x = popup->anchor_rect.width / 2;
       break;
 
     default:
@@ -31,16 +32,16 @@ void calc_popup_coords(struct c_xdg_surface *surface, int32_t *x, int32_t *y) {
       break;
   }
 
-  switch (positioner.anchor) {
+  switch (popup->anchor) {
     case XDG_POSITIONER_ANCHOR_BOTTOM:
     case XDG_POSITIONER_ANCHOR_BOTTOM_LEFT:
     case XDG_POSITIONER_ANCHOR_BOTTOM_RIGHT:
-      anchor_y = positioner.anchor_rect.height;
+      anchor_y = popup->anchor_rect.height;
       break;
 
     case XDG_POSITIONER_ANCHOR_LEFT:
     case XDG_POSITIONER_ANCHOR_RIGHT:
-      anchor_y = positioner.anchor_rect.height / 2;
+      anchor_y = popup->anchor_rect.height / 2;
       break;
 
     default:
@@ -48,16 +49,16 @@ void calc_popup_coords(struct c_xdg_surface *surface, int32_t *x, int32_t *y) {
       break;
   }
 
-  switch (positioner.gravity) {
+  switch (popup->gravity) {
     case XDG_POSITIONER_GRAVITY_LEFT:
     case XDG_POSITIONER_GRAVITY_TOP_LEFT:
     case XDG_POSITIONER_GRAVITY_BOTTOM_LEFT:
-      dx = -positioner.width;
+      dx = -popup->width;
       break;
 
     case XDG_POSITIONER_GRAVITY_TOP:
     case XDG_POSITIONER_GRAVITY_BOTTOM:
-      dx = -positioner.width / 2;
+      dx = -popup->width / 2;
       break;
 
     default:
@@ -65,16 +66,16 @@ void calc_popup_coords(struct c_xdg_surface *surface, int32_t *x, int32_t *y) {
       break;
   }
 
-  switch (positioner.gravity) {
+  switch (popup->gravity) {
     case XDG_POSITIONER_GRAVITY_TOP:
     case XDG_POSITIONER_GRAVITY_TOP_LEFT:
     case XDG_POSITIONER_GRAVITY_TOP_RIGHT:
-      dy = -positioner.height;
+      dy = -popup->height;
       break;
 
     case XDG_POSITIONER_GRAVITY_LEFT:
     case XDG_POSITIONER_GRAVITY_RIGHT:
-      dy = -positioner.height / 2;
+      dy = -popup->height / 2;
       break;
 
     default:
@@ -82,8 +83,8 @@ void calc_popup_coords(struct c_xdg_surface *surface, int32_t *x, int32_t *y) {
       break;
   }
 
-  *x = positioner.anchor_rect.x + positioner.x + anchor_x + dx;
-  *y = positioner.anchor_rect.y + positioner.y + anchor_y + dy;
+  *x = popup->anchor_rect.x + popup->x + anchor_x + dx;
+  *y = popup->anchor_rect.y + popup->y + anchor_y + dy;
 
 }
 
@@ -148,7 +149,7 @@ void write_string(char *buffer, uint32_t *offset, const char *string) {
     *offset += padded_string_size ? padded_string_size : sizeof(uint32_t);
 }
 
-void write_array(char *buffer, uint32_t *offset, const void *array, size_t array_size) {
+void write_array(char *buffer, uint32_t *offset, const uint8_t *array, size_t array_size) {
     uint32_t padded_array_size = PADDED4(array_size);
 
     write_u32(buffer, offset, array_size);

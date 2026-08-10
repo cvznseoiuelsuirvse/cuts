@@ -10,6 +10,7 @@
 #define LENGTH(s) (sizeof((s)) /  sizeof(*(s)))
 #define MAX(v1, v2) ((v1) > (v2)) ? (v1) : (v2)
 #define MIN(v1, v2) ((v1) > (v2)) ? (v2) : (v1)
+#define CLAMP(value, min, max) MAX((min), MIN((value), (max)))
 
 #define SWITCH_STR(var) { const char *__switch_var = (var); if (0) {
 #define CASE_STR(value)  } else if (STREQ(__switch_var, (value))) {

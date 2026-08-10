@@ -1,7 +1,11 @@
 #include "cuts.h"
 #include "seat/input.h"
 
+#ifdef USE_LOGO_KEY
+#define LEADER C_KEYBOARD_MOD_LOGO
+#else
 #define LEADER C_KEYBOARD_MOD_ALT
+#endif
 
 #define TAG(n, shift_key)                                                      \
   {LEADER, XKB_KEY_##n, switch_tag, {.u = 1 << (n - 1)}}, {                    \
@@ -16,10 +20,10 @@
 static enum libinput_config_accel_profile accel_profile = LIBINPUT_CONFIG_ACCEL_PROFILE_FLAT;
 
 static const uint32_t gap = 15;
-static const uint32_t background = 0x00000000;
+static const uint32_t background = 0xffffffff;
 
-static const float mfact =      0.5f;
-static const uint32_t nmaster = 2;
+static float mfact      = 0.5f;
+static uint32_t nmaster = 2;
 
 static struct border border = {
   .width = 1,
@@ -42,12 +46,17 @@ static struct key_bind keys[] = {
 	{LEADER,                        XKB_KEY_b, 	                      spawn, 	         {.s = "firefox"}},
 	{LEADER,                        XKB_KEY_c, 	                      spawn, 	         {.s = "chromium --enable-features=UseOzonePlatform --ozone-platform=wayland"}},
 	{LEADER,                        XKB_KEY_x, 	  	                  window_kill,	   {}},
-	{LEADER,                        XKB_KEY_j, 	  	                  move_focus,      {.i = -1}},
-	{LEADER,                        XKB_KEY_k, 	  	                  move_focus,      {.i = 1}},
+	{LEADER,                        XKB_KEY_j, 	  	                  move_focus,      {.i = 1}},
+	{LEADER,                        XKB_KEY_k, 	  	                  move_focus,      {.i = -1}},
   {LEADER | C_KEYBOARD_MOD_SHIFT, XKB_KEY_F,                        toggle_floating, {}},
   {0,                             XKB_KEY_XF86AudioRaiseVolume, 	  spawn, 				   {.s = "wpctl set-volume -l 1 @DEFAULT_SINK@ 10%+"}},
   {0,                             XKB_KEY_XF86AudioLowerVolume, 	  spawn, 				   {.s = "wpctl set-volume -l 1 @DEFAULT_SINK@ 10%-"}},
   {0,                             XKB_KEY_XF86AudioMute, 			      spawn, 				   {.s = "wpctl set-mute @DEFAULT_SINK@ toggle"}},
+  {LEADER,                        XKB_KEY_i,                        change_mfact,    {.d = -0.05f}},
+  {LEADER,                        XKB_KEY_o,                        change_mfact,    {.d = 0.05f}},
+
+  {LEADER | C_KEYBOARD_MOD_SHIFT, XKB_KEY_I,                        change_nmaster,    {.i = -1}},
+  {LEADER | C_KEYBOARD_MOD_SHIFT, XKB_KEY_O,                        change_nmaster,    {.i = 1}},
 
   TAG(1, XKB_KEY_exclam),
   TAG(2, XKB_KEY_at),

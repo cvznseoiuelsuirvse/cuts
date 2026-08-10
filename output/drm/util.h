@@ -14,6 +14,6 @@ void drm_print_mode(drmModeModeInfo *mode);
 enum wl_shm_format_enum drm_fmt_to_wl_shm_fmt(uint32_t format);
 uint32_t wl_shm_fmt_to_drm_fmt(enum wl_shm_format_enum format);
 int drm_fmt_to_gl_fmt(uint32_t drm_format, GLenum *internal_format,
-                        GLenum *format, GLenum *type);
+                      GLenum *format, GLenum *type, int bgra_support);
 
 #endif

@@ -45,7 +45,7 @@ enum c_input_notifier {
 	C_INPUT_NOTIFY_ON_MOUSE_SCROLL, 
 	C_INPUT_NOTIFY_ON_MOUSE_BUTTON, 
 
-	C_INPUT_NOTIFY_ON_keyboard_KEY,
+	C_INPUT_NOTIFY_ON_KEYBOARD_KEY,
 };
 
 static struct xkb_state *get_xkb_state(struct c_input *input) {
@@ -75,7 +75,7 @@ static void c_input_notify_keyboard(struct c_input *input,
     }
 
   switch (notifier) {
-    case C_INPUT_NOTIFY_ON_keyboard_KEY: notify_keyboard(on_keyboard_key); break;
+    case C_INPUT_NOTIFY_ON_KEYBOARD_KEY: notify_keyboard(on_keyboard_key); break;
     default: break;
   }
 }
@@ -221,7 +221,7 @@ static void handle_event_keyboard(struct c_input *input, struct libinput_event_k
     }
   }
 
-  c_input_notify_keyboard(input, &keyboard_event, C_INPUT_NOTIFY_ON_keyboard_KEY);
+  c_input_notify_keyboard(input, &keyboard_event, C_INPUT_NOTIFY_ON_KEYBOARD_KEY);
 }
 
 static void set_accel_profile(struct libinput_device *dev, enum libinput_config_accel_profile profile) {
@@ -238,6 +238,9 @@ static void set_accel_profile(struct libinput_device *dev, enum libinput_config_
       break;
     case LIBINPUT_CONFIG_ACCEL_PROFILE_NONE:
       profile_str = "none";
+      break;
+    default:
+      profile_str = "unknown";
       break;
   }
 

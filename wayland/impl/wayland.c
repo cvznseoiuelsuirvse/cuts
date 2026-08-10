@@ -11,6 +11,7 @@
 
 #include "util/log.h"
 #include "util/malloc.h"
+#include "util/helpers.h"
 #include "render/types.h"
 
 static void damage_surface(struct c_wl_surface *surface, c_wl_args args) {
@@ -144,16 +145,18 @@ int wl_shm_pool_create_buffer(struct c_wl_connection *conn, c_wl_args args) {
 
   uint32_t region_size = (uint32_t)stride * height;
   if ((region_size > pool->size) || (offset > (c_wl_int)(pool->size - region_size))) {
-    c_wl_error_set_and_return(wl_shm_pool_id, WL_DISPLAY_ERROR_INVALID_OBJECT, "requested region too large");
+    c_wl_error_set_and_return(wl_shm_pool_id, WL_DISPLAY_ERROR_INVALID_OBJECT, "requested region is too large");
     return -1;
   }
 
-  struct c_wl_buffer *c_wl_buffer = c_malloc(sizeof(*c_wl_buffer));
+  struct c_wl_buffer *buffer = c_malloc(sizeof(*buffer));
   struct c_rawbuf *buf = c_malloc(sizeof(*buf));
 
-  c_wl_buffer->id = wl_buffer_id;
-  c_wl_buffer->conn = conn;
-  c_wl_buffer->scale = 1;
+  buffer->id = wl_buffer_id;
+  buffer->scale = 1;
+
+  buffer->pool = pool;
+  c_ref(pool);
 
   buf->width = width;
   buf->height = height;
@@ -162,10 +165,10 @@ int wl_shm_pool_create_buffer(struct c_wl_connection *conn, c_wl_args args) {
   buf->offset = offset;
   buf->base_ptr = &pool->ptr;
 
-  c_wl_buffer->shm = buf;
+  buffer->shm = buf;
 
   const struct c_wl_interface *iface = c_wl_interface_get("wl_buffer");
-  c_wl_object_add(conn, wl_buffer_id, iface->version, iface, c_wl_buffer);
+  c_wl_object_add(conn, wl_buffer_id, iface->version, iface, buffer);
 
   return 0;
 }
@@ -179,6 +182,14 @@ int wl_buffer_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
 
   if (wl_buffer->shm)
     c_unref(wl_buffer->shm);
+
+  if (wl_buffer->pool) {
+    if (c_get_refcount(wl_buffer->pool) == 1) {
+      munmap(wl_buffer->pool->ptr, wl_buffer->pool->size);
+      close(wl_buffer->pool->fd);
+    }
+    c_unref(wl_buffer->pool);
+  }
 
   wl_buffer->id = 0;
   c_wl_object_del(conn, self->id);
@@ -207,8 +218,10 @@ int wl_shm_pool_destroy(struct c_wl_connection *conn, c_wl_args args) {
   c_wl_object_id wl_shm_pool_id = args[0].o;
   struct c_wl_shm_pool *pool = c_wl_object_get(conn, wl_shm_pool_id)->data;
 
-  munmap(pool->ptr, pool->size);
-  close(pool->fd);
+  if (c_get_refcount(pool) == 1) {
+    munmap(pool->ptr, pool->size);
+    close(pool->fd);
+  }
 
   c_wl_object_del(conn, wl_shm_pool_id);
   return 0;
@@ -298,7 +311,12 @@ int wl_surface_frame(struct c_wl_connection *conn, c_wl_args args) {
   C_WL_CHECK_IF_NOT_REGISTERED(wl_callback_id, wl_callback);
 
   struct c_wl_surface *surface = self->data;
-  surface->frame = wl_callback_id;
+  if (surface->frames_n == LENGTH(surface->frames)) {
+    c_wl_error_set_and_return(surface->id, WL_DISPLAY_ERROR_IMPLEMENTATION,
+                              "too many frames per surface, only 8 allowed");
+  }
+
+  surface->frames[surface->frames_n++] = wl_callback_id;
   
   const struct c_wl_interface *iface = c_wl_interface_get("wl_callback");
   c_wl_object_add(conn, wl_callback_id, iface->version, iface, NULL);
@@ -431,7 +449,6 @@ int wl_compositor_create_surface(struct c_wl_connection *conn, c_wl_args args) {
   }
 
   c_wl_surface->id = wl_surface_id;
-  c_wl_surface->conn = conn;
 
   c_wl_object_add(conn, wl_surface_id, self->version, c_wl_interface_get("wl_surface"), c_wl_surface);
 

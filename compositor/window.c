@@ -6,7 +6,7 @@
 #include "util/log.h"
 #include "util/helpers.h"
 
-#define window_conn(window) (window)->surface->surface->conn
+#define window_conn(window) (window)->conn
 
 void c_window_deactivate(struct c_window *window) {
   struct c_xdg_surface *xdg_surface = window->surface;
@@ -176,4 +176,3 @@ void c_window_keyboard_key(struct c_window *window, int32_t key, int pressed,
     }
   }
 }
-

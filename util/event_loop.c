@@ -5,8 +5,6 @@
 #include "util/list.h"
 #include "util/log.h"
 
-#define CUTS_MAX_EPOLL_EVENTS 512
-
 struct c_event_loop * c_event_loop_init() {
   struct c_event_loop *loop = calloc(1, sizeof(struct c_event_loop));
 
@@ -47,22 +45,25 @@ int c_event_loop_del(struct c_event_loop *loop, struct c_event_resource *resourc
 
 
 void c_event_loop_free(struct c_event_loop *loop) {
-  c_list_destroy(loop->resources);
+  if (loop->epfd) close(loop->epfd);
+  if (loop->resources) c_list_destroy(loop->resources);
   free(loop);
 }
 
 
-int c_event_loop_run(struct c_event_loop *loop) {
-  if (!loop) { 
-    return -1; 
-  }
+void c_event_loop_stop(struct c_event_loop *loop) {
+  close(loop->epfd);
+  loop->epfd = 0;
+}
 
+int c_event_loop_run(struct c_event_loop *loop) {
   int ret = 0;
   int n;
   struct epoll_event *events = loop->events;
 
-  while (1) {
-    n = epoll_wait(loop->epfd, loop->events, CUTS_MAX_EPOLL_EVENTS, -1);
+  while (loop->epfd) {
+    n = epoll_wait(loop->epfd, loop->events, MAX_EPOLL_EVENTS, -1);
+
     if (n == -1) {
       if (errno != EINTR) {
         c_log_errno(C_LOG_ERROR, "epoll_wait failed");

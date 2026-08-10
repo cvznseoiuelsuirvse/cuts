@@ -226,13 +226,13 @@ int xdg_positioner_set_offset(struct c_wl_connection *conn, union c_wl_arg *args
 
 int xdg_positioner_set_gravity(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_xdg_positioner *p = c_wl_object_get(conn, args[0].o)->data;
-  p->gravity = args[1].i;
+  p->gravity = args[1].u;
   return 0;
 }
 
 int xdg_positioner_set_constraint_adjustment(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_xdg_positioner *p = c_wl_object_get(conn, args[0].o)->data;
-  p->constraint_adjustment = args[1].i;
+  p->constraint_adjustment = args[1].u;
   return 0;
 }
 
@@ -247,7 +247,7 @@ int xdg_positioner_set_anchor_rect(struct c_wl_connection *conn, union c_wl_arg 
 
 int xdg_positioner_set_anchor(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_xdg_positioner *p = c_wl_object_get(conn, args[0].o)->data;
-  p->anchor =  args[1].i;
+  p->anchor =  args[1].u;
   return 0;
 }
 
@@ -260,25 +260,24 @@ int xdg_positioner_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
 
 int xdg_surface_get_popup(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_wl_object *self = c_wl_self(conn, args);
+  c_wl_object_id xdg_popup_id = args[1].n;
 
   struct c_wl_object *popup;
   struct c_wl_object *parent_surface;
   struct c_wl_object *positioner;
 
-  C_WL_CHECK_IF_NOT_REGISTERED(args[1].n, popup);
+  C_WL_CHECK_IF_NOT_REGISTERED(xdg_popup_id, popup);
   C_WL_CHECK_IF_REGISTERED(args[2].o, parent_surface);
   C_WL_CHECK_IF_REGISTERED(args[3].o, positioner);
 
   struct c_xdg_surface *xdg_surface = self->data;
-  struct c_wl_surface *wl_surface = xdg_surface->surface;
   struct c_xdg_surface *xdg_surface_parent = parent_surface->data;
   struct c_xdg_positioner *xdg_positioner = positioner->data;
   
   xdg_surface->surface->role = C_WL_SURFACE_ROLE_XDG_POPUP;
   xdg_surface->parent = xdg_surface_parent;
-  xdg_surface->popup.id = args[1].n;
 
-  memcpy(&xdg_surface->popup.positioner, xdg_positioner, sizeof(*xdg_positioner));
+  memcpy(&xdg_surface->popup, xdg_positioner, sizeof(*xdg_positioner));
 
   if (!xdg_surface_parent->children)
     xdg_surface_parent->children = c_list_new();
@@ -288,12 +287,13 @@ int xdg_surface_get_popup(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_ref(self->data);
   c_wl_object_add(conn, args[1].n, self->version, c_wl_interface_get("xdg_popup"), self->data);
 
-  int32_t x, y;
-  calc_popup_coords(wl_surface->xdg_surface, &x, &y);
+  calc_popup_coords(xdg_surface, &xdg_surface->popup.x, &xdg_surface->popup.y);
 
-  xdg_popup_configure(wl_surface->conn, wl_surface->xdg_surface->popup.id, x, y,
-                      xdg_positioner->width, xdg_positioner->height);
-  xdg_surface_configure(wl_surface->conn, wl_surface->xdg_surface->id, c_wl_serial());
+  xdg_popup_configure(conn, xdg_popup_id, xdg_surface->popup.x,
+                      xdg_surface->popup.y, xdg_positioner->width,
+                      xdg_positioner->height);
+
+  xdg_surface_configure(conn, xdg_surface->id, c_wl_serial());
 
   return 0;
 }

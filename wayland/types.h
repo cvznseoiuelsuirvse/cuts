@@ -51,8 +51,9 @@ enum c_wl_buffer_type {
 
 struct c_wl_buffer {
 	c_wl_object_id id;
-  struct c_wl_connection *conn;
-	 c_wl_int scale;
+  struct c_wl_shm_pool *pool;
+
+  c_wl_int scale;
 
   struct c_dmabuf *dma;
   struct c_rawbuf *shm;
@@ -71,10 +72,9 @@ enum c_wl_surface_roles {
 
 
 struct c_wl_surface {
-	c_wl_object_id          id;
-	struct c_wl_connection *conn;
-
-  c_wl_object_id frame;
+	c_wl_object_id id;
+  c_wl_object_id frames[8];
+  size_t frames_n;
 
 	enum c_wl_surface_roles role;
 	struct {
@@ -157,8 +157,8 @@ struct c_xdg_surface {
   struct c_wl_surface *surface;
 
   struct {
-    c_wl_object_id id;
     struct c_xdg_positioner positioner;
+    c_wl_int x, y;
   } popup;
 
   c_list *children;

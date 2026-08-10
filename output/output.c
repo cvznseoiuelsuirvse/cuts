@@ -99,11 +99,15 @@ static void page_flip_handler(int fd, unsigned int sequence,
   output->swapchain.front ^= 1;
   output->waiting_for_flip = 0;
 
+  struct c_wl_object *wl_surface;
   struct c_wl_surface *surface;
-  c_list_for_each(output->frame_surfaces, surface) {
-    if (surface->frame) {
-      c_wl_connection_callback_done(surface->conn, surface->frame);
-      surface->frame = 0;
+
+  c_list_for_each(output->frame_surfaces, wl_surface) {
+    if ((surface = wl_surface->data)) {
+      for (size_t i = 0; i < surface->frames_n; i++) {
+        c_wl_connection_callback_done(wl_surface->conn, surface->frames[i]);
+      }
+      surface->frames_n = 0;
     }
   }
 }

@@ -26,6 +26,7 @@ struct c_window {
 
   enum c_window_states state;
 
+  struct c_wl_connection *conn;
   struct c_xdg_surface *surface;
 };
 

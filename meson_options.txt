@@ -1,0 +1,1 @@
+option('logo_key', type: 'boolean', value: false)

@@ -104,7 +104,9 @@ static int has_ext_gles(const char *ext, const char *exts) {
 
 }
 
-static void gl_log(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar *message, const void *userParam) {
+static void gl_log(GLenum source, GLenum type, GLuint id, GLenum severity,
+                   GLsizei length, const GLchar *message,
+                   const void *userParam) {
   enum c_log_level log_level;
   switch (type) {
     case GL_DEBUG_TYPE_ERROR_KHR:               log_level = C_LOG_ERROR;  break;
@@ -120,7 +122,6 @@ static void gl_log(GLenum source, GLenum type, GLuint id, GLenum severity, GLsiz
 	}
 
   c_log(log_level, "[GL] %s", message);
-  
 };
 
 static int load_gl_exts(struct c_gles *gl) {
@@ -137,12 +138,12 @@ static int load_gl_exts(struct c_gles *gl) {
     return -1;
   }
 
-  if (has_ext_gles("GL_OES_EGL_image", exts)) {
-    load_gl_proc(glEGLImageTargetRenderbufferStorageOES);
-  } else {
-    c_log(C_LOG_ERROR, "GL_OES_EGL_image not supported");
-    return -1;
-  }
+  // if (has_ext_gles("GL_OES_EGL_image", exts)) {
+  //   load_gl_proc(glEGLImageTargetRenderbufferStorageOES);
+  // } else {
+  //   c_log(C_LOG_ERROR, "GL_OES_EGL_image not supported");
+  //   return -1;
+  // }
 
   if (has_ext_gles("GL_KHR_debug", exts)) {
     glEnable(GL_DEBUG_OUTPUT);
@@ -153,6 +154,14 @@ static int load_gl_exts(struct c_gles *gl) {
 
     gl->proc.glDebugMessageCallbackKHR(gl_log, NULL);
   }
+
+  if (has_ext_gles("GL_EXT_texture_format_BGRA8888", exts)) {
+    gl->ext_support.EXT_texture_format_BGRA8888 = 1;
+  } else {
+    c_log(C_LOG_WARNING, "GL_EXT_texture_format_BGRA8888 not supported");
+  }
+
+  
 
   return 0;
 
@@ -182,8 +191,7 @@ static void create_verts(uint32_t width, uint32_t height, double x, double y,
 	vp->tr_y = value_transform_y(y, max_height);
 }
 
-
-int c_gles_texture_from_raw(struct c_rawbuf *buf) {
+int c_gles_texture_from_raw(struct c_gles *gl, struct c_rawbuf *buf) {
   struct c_gles_texture *texture = calloc(1, sizeof(*texture));
   if (!texture) {
     c_log_errno(C_LOG_ERROR, "failed to allocate c_gles_texture");
@@ -203,12 +211,13 @@ int c_gles_texture_from_raw(struct c_rawbuf *buf) {
 
 
   GLenum internal_format, format, type;
-  if (drm_fmt_to_gl_fmt(buf->format, &internal_format, &format, &type) == -1) {
-    c_log(C_LOG_WARNING, "unable to find the corresponding GL formats for the DRM format 0x%"PRIX32);
+  if (drm_fmt_to_gl_fmt(buf->format, &internal_format, &format, &type,
+                        gl->ext_support.EXT_texture_format_BGRA8888) == -1) {
+    c_log(C_LOG_WARNING, "unable to find corresponding GL formats for the DRM format 0x%"PRIX32);
     c_log(C_LOG_WARNING, "using default values");
     internal_format = GL_RGBA;
-    internal_format = GL_RGBA;
-    internal_format = GL_UNSIGNED_BYTE;
+    format = GL_RGBA;
+    type = GL_UNSIGNED_BYTE;
   }
 
   glTexImage2D(texture->target, 0, internal_format, buf->width, buf->height, 0,
@@ -260,7 +269,7 @@ void c_gles_draw_quad(struct c_gles *gl, struct c_output *output,
   if (texture->target == GL_TEXTURE_2D)
     gl_program = gl->program;
   else
-    gl_program = gl->ext_program;
+    gl_program = gl->external_program;
 
 
   glUseProgram(gl_program);
@@ -309,8 +318,8 @@ void c_gles_free(struct c_gles *gl) {
     glDeleteProgram(gl->program);
   }
 
-  if (gl->ext_program) {
-    glDeleteProgram(gl->ext_program);
+  if (gl->external_program) {
+    glDeleteProgram(gl->external_program);
   }
 
   if (gl->vao)
@@ -358,7 +367,7 @@ static int create_program(struct c_gles *gl, int is_ext) {
   glDeleteShader(fragment);
 
   if (is_ext)
-    gl->ext_program = prog;
+    gl->external_program = prog;
   else
     gl->program = prog;
 
