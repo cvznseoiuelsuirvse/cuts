@@ -59,10 +59,13 @@ struct c_output {
 		int front;
 		struct c_framebuffer *buffers[2];
 	} swapchain;
+
+  struct c_drm_sync_object *timeline;
+
 };
 
 struct c_output_manager;
-typedef void (*on_redraw_handler)(struct c_output_manager *mgr, struct c_output *output, void *userdata);
+typedef int (*on_redraw_handler)(struct c_output_manager *mgr, struct c_output *output, void *userdata);
 
 struct c_output_manager {
   int drm_fd;
@@ -79,7 +82,7 @@ struct c_output_manager {
 struct c_output_manager *c_output_manager_init(struct c_session *session, struct c_event_loop *loop, struct c_wl_display *display);
 void c_output_manager_free(struct c_output_manager *mgr);
 void c_output_set_mode(struct c_output_manager *mgr, struct c_output *output, struct c_output_mode *mode);
-void c_output_damage(struct c_output_manager *mgr, struct c_output *output);
+int c_output_damage(struct c_output_manager *mgr, struct c_output *output);
 void c_output_register_on_redraw(struct c_output_manager *mgr, on_redraw_handler handler, void *userdata);
 
 #endif

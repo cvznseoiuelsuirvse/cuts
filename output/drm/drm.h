@@ -12,6 +12,7 @@
 void c_drm_free_output(int drm_fd, struct c_output *output);
 c_list *c_drm_get_outputs(int drm_fd);
 int c_drm_atomic_commit(int drm_fd, struct c_output *output,
-                        struct c_output_mode *mode, int flags, void *userdata);
+                        struct c_output_mode *mode, int flags, void *userdata,
+                        int in_fence_fd);
 
 #endif

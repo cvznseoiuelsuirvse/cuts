@@ -5,8 +5,11 @@
 #include <inttypes.h>
 
 #include "output/drm/drm.h"
+#include "output/drm/syncobj.h"
 #include "output/drm/util.h"
+
 #include "output/output.h"
+
 #include "render/framebuffer.h"
 
 #include "util/log.h"
@@ -141,7 +144,7 @@ get_props:
 
 }
 
-static int get_output_objects(int drm_fd, struct c_output *output,
+static int get_output_drm_objects(int drm_fd, struct c_output *output,
                               drmModeConnectorPtr connector,
                               drmModeResPtr resource, uint32_t *taken_crtcs) {
 
@@ -191,6 +194,10 @@ void c_drm_free_output(int drm_fd, struct c_output* output) {
     free_properties(&output->connector);
   }
 
+  if (output->timeline) {
+    c_drm_sync_object_free(output->timeline);
+  }
+
   c_list_destroy(output->modes);
 }
 
@@ -213,7 +220,7 @@ c_list *c_drm_get_outputs(int drm_fd) {
 
     struct c_output output = {0};
 
-    if (get_output_objects(drm_fd, &output, connector, resources, &taken_crtcs)) goto iter_end_error;
+    if (get_output_drm_objects(drm_fd, &output, connector, resources, &taken_crtcs)) goto iter_end_error;
 
     output.orig_crtc = drmModeGetCrtc(drm_fd, output.crtc.id);
 
@@ -225,6 +232,12 @@ c_list *c_drm_get_outputs(int drm_fd) {
     snprintf(output.name, sizeof(output.name), "%s-%d",
              drm_connector_str(connector->connector_type),
              connector->connector_type_id);
+
+    output.timeline = c_drm_sync_object_init(drm_fd);
+    if (!output.timeline) {
+      c_log(C_LOG_ERROR, "failed to create timeline sync object for output %s", output.name);
+      goto iter_end_error;
+    }
 
     c_list_push(outputs, &output, sizeof(output));
 
@@ -258,52 +271,53 @@ static int set_object_property_value(drmModeAtomicReq *req,
     }
   }
 
-  if (prop_id == 0) {
-    c_log(C_LOG_ERROR, "failed to set propery %s", name);
-    return -1;
-  }
-
   return drmModeAtomicAddProperty(req, obj->id, prop_id, value);
 }
 
-drmModeAtomicReqPtr atomic_create_req(struct c_output *output, struct c_output_mode *mode) {
+int c_drm_atomic_commit(int drm_fd, struct c_output *output,
+                        struct c_output_mode *mode, int flags, void *userdata,
+                        int in_fence_fd) {
+  int ret = -1;
+
   drmModeAtomicReqPtr req = drmModeAtomicAlloc();
   struct c_output_drm_object *plane = &output->plane;
 
-  if (set_object_property_value(req, &output->connector, "CRTC_ID", output->crtc.id) < 0)         goto error_set_prop;
-	if (set_object_property_value(req, &output->crtc, "MODE_ID", mode->drm.blob_id) < 0)            goto error_set_prop;
-	if (set_object_property_value(req, &output->crtc, "ACTIVE", 1) < 0)                             goto error_set_prop;
-	if (set_object_property_value(req, plane, "FB_ID", c_output_backbuffer(output)->drm_fb_id) < 0) goto error_set_prop;
-	if (set_object_property_value(req, plane, "CRTC_ID", output->crtc.id) < 0)                      goto error_set_prop;
-	if (set_object_property_value(req, plane, "SRC_X", 0) < 0)                                      goto error_set_prop;
-	if (set_object_property_value(req, plane, "SRC_Y", 0) < 0)                                      goto error_set_prop;
-	if (set_object_property_value(req, plane, "SRC_W", mode->width << 16) < 0)                      goto error_set_prop;
-	if (set_object_property_value(req, plane, "SRC_H", mode->height << 16) < 0)                     goto error_set_prop;
-	if (set_object_property_value(req, plane, "CRTC_X", 0) < 0)                                     goto error_set_prop;
-	if (set_object_property_value(req, plane, "CRTC_Y", 0) < 0)                                     goto error_set_prop;
-	if (set_object_property_value(req, plane, "CRTC_W", mode->width) < 0)                           goto error_set_prop;
-	if (set_object_property_value(req, plane, "CRTC_H", mode->height) < 0)                          goto error_set_prop;
+  if (set_object_property_value(req, &output->connector, "CRTC_ID", output->crtc.id) < 0)         goto set_prop_error;
+	if (set_object_property_value(req, &output->crtc, "MODE_ID", mode->drm.blob_id) < 0)            goto set_prop_error;
+	if (set_object_property_value(req, &output->crtc, "ACTIVE", 1) < 0)                             goto set_prop_error;
+	if (set_object_property_value(req, plane, "FB_ID", c_output_backbuffer(output)->drm_fb_id) < 0) goto set_prop_error;
+	if (set_object_property_value(req, plane, "CRTC_ID", output->crtc.id) < 0)                      goto set_prop_error;
+	if (set_object_property_value(req, plane, "SRC_X", 0) < 0)                                      goto set_prop_error;
+	if (set_object_property_value(req, plane, "SRC_Y", 0) < 0)                                      goto set_prop_error;
+	if (set_object_property_value(req, plane, "SRC_W", mode->width << 16) < 0)                      goto set_prop_error;
+	if (set_object_property_value(req, plane, "SRC_H", mode->height << 16) < 0)                     goto set_prop_error;
+	if (set_object_property_value(req, plane, "CRTC_X", 0) < 0)                                     goto set_prop_error;
+	if (set_object_property_value(req, plane, "CRTC_Y", 0) < 0)                                     goto set_prop_error;
+	if (set_object_property_value(req, plane, "CRTC_W", mode->width) < 0)                           goto set_prop_error;
+	if (set_object_property_value(req, plane, "CRTC_H", mode->height) < 0)                          goto set_prop_error;
+  if (in_fence_fd > -1 && set_object_property_value(req, plane, "IN_FENCE_FD", in_fence_fd) < 0)  goto set_prop_error;
 
-  return req;
+  ret = 0;
 
-error_set_prop:
-  drmModeAtomicFree(req);
-  return NULL;
-}
-
-int c_drm_atomic_commit(int drm_fd, struct c_output *output,
-                        struct c_output_mode *mode, int flags, void *userdata) {
-  drmModeAtomicReqPtr req = atomic_create_req(output, mode);
   if (!req) {
     c_log_errno(C_LOG_ERROR, "failed to prepare atomic request");
-    return -1;
+    ret = -1;
+    goto out;
   }
 
-  int ret = 0;
   ret = drmModeAtomicCommit(drm_fd, req, flags, userdata);
-  if (ret)
-    c_log_errno(C_LOG_ERROR, "failed to atomic commit");
+  if (ret) {
+    c_log_errno(C_LOG_ERROR, "drmModeAtomicCommit failed");
+    ret = -1;
+    goto out;
+  }
 
+out:
   drmModeAtomicFree(req);
   return ret;
+
+set_prop_error:
+  c_log_errno(C_LOG_ERROR, "failed to set property");
+  drmModeAtomicFree(req);
+  return -1;
 }

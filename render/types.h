@@ -11,6 +11,11 @@ enum c_render_buffer_type {
   C_BUFFER_DMA,
 };
 
+enum c_renderer_quad_type {
+  C_RENDERER_SOLID,
+  C_RENDERER_BUFFER,
+};
+
 struct c_format {
 	uint32_t drm_format;
 	uint64_t modifier;
@@ -42,6 +47,20 @@ struct c_rawbuf {
 	int stride;
 	int offset;
 	struct c_gles_texture *texture;
+};
+
+struct c_renderer_quad {
+  enum c_renderer_quad_type type;
+  union {
+    float color[4];
+    struct {
+      void *buffer;
+      enum c_render_buffer_type buffer_type;
+    };
+  };
+
+	double  x, y;
+	int32_t width, height;
 };
 
 #endif

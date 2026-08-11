@@ -7,8 +7,10 @@
 #include "output/output.h"
 #include "output/cursor.h"
 #include "output/drm/drm.h"
+#include "output/drm/syncobj.h"
 
 #include "render/framebuffer.h"
+#include "render/gl/egl.h"
 
 #include "util/log.h"
 #include "util/event_loop.h"
@@ -125,14 +127,37 @@ static int handle_drm_event(struct c_output_manager *mgr) {
   return 0;
 }
 
-static void schedule_pageflip(struct c_output_manager *mgr, struct c_output *output) {
+static int schedule_pageflip(struct c_output_manager *mgr, struct c_output *output) {
+  int ret = 0;
   if (output->need_redraw && !output->waiting_for_flip) {
-    mgr->on_redraw(mgr, output, mgr->on_redraw_userdata);
-    c_drm_atomic_commit(mgr->drm_fd, output, output->current_mode,
-                        DRM_MODE_ATOMIC_NONBLOCK | DRM_MODE_PAGE_FLIP_EVENT,
-                        output);
+    if (mgr->on_redraw(mgr, output, mgr->on_redraw_userdata)) return -1;
+
+    int fence_fd;
+    if (mgr->renderer->egl->ext_support.KHR_fence_sync) {
+      fence_fd = c_drm_export_sync_file(output->timeline); 
+      if (fence_fd == -1) {
+        c_log(C_LOG_ERROR, "failed to export sync file");
+        ret = -1;
+        goto out;
+      }
+
+    } else {
+      fence_fd = -1;
+    }
+
+    if (c_drm_atomic_commit(mgr->drm_fd, output, output->current_mode,
+                            DRM_MODE_ATOMIC_NONBLOCK | DRM_MODE_PAGE_FLIP_EVENT,
+                            output, fence_fd)) {
+      c_log(C_LOG_ERROR, "failed to atomic commit");
+      ret = -1;
+    }
+
+    if (fence_fd > -1) close(fence_fd);
     output->waiting_for_flip = 1;
   }
+
+out:
+  return ret;
 }
 
 C_EVENT_CALLBACK drm_callback(struct c_event_loop *loop, int fd, void *userdata) {
@@ -142,14 +167,14 @@ C_EVENT_CALLBACK drm_callback(struct c_event_loop *loop, int fd, void *userdata)
 
   struct c_output *output;
   c_list_for_each(mgr->outputs, output)
-    schedule_pageflip(mgr, output);
+    if (schedule_pageflip(mgr, output)) return C_EVENT_ERROR_FATAL;
 
   return C_EVENT_OK;
 }
 
-void c_output_damage(struct c_output_manager *mgr, struct c_output *output) {
+int c_output_damage(struct c_output_manager *mgr, struct c_output *output) {
   output->need_redraw = 1;
-  schedule_pageflip(mgr, output);
+  return schedule_pageflip(mgr, output);
 }
 
 void c_output_set_mode(struct c_output_manager *mgr, struct c_output *output, struct c_output_mode *mode) {
@@ -161,7 +186,7 @@ void c_output_set_mode(struct c_output_manager *mgr, struct c_output *output, st
   output->current_mode = mode;
   create_swapchain(output, mgr);
 
-  c_drm_atomic_commit(mgr->drm_fd, output, mode, DRM_MODE_ATOMIC_ALLOW_MODESET, NULL);
+  c_drm_atomic_commit(mgr->drm_fd, output, mode, DRM_MODE_ATOMIC_ALLOW_MODESET, NULL, -1);
 
   glViewport(0, 0, mode->width, mode->height);
   c_output_damage(mgr, output);

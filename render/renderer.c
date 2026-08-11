@@ -9,24 +9,18 @@
 #include <GLES2/gl2ext.h>
 
 #include "output/drm/util.h"
+#include "output/drm/syncobj.h"
+
 #include "render/renderer.h"
 #include "render/gl/egl.h"
 #include "render/gl/gles.h"
 #include "render/framebuffer.h"
-#include "compositor/scene.h"
 
 #include "wayland/proto/wayland.h"
 #include "wayland/proto/linux-dmabuf-v1.h"
 
 #include "util/log.h"
 #include "util/shm.h"
-
-#define GL_COLOR_VEC4(v) v[0], v[1], v[2], v[3]
-
-static void clear_color(float color[4]) {
-  glClearColor(GL_COLOR_VEC4(color));
-  glClear(GL_COLOR_BUFFER_BIT);
-}
 
 static int import_raw(struct c_renderer *render, struct c_rawbuf *shm) {
 	if (c_gles_texture_from_raw(render->gl, shm) == -1) {
@@ -205,32 +199,61 @@ static int send_feedback(struct c_wl_connection *conn, c_wl_args args, void *use
   return 0;
 }
 
-void c_renderer_draw(struct c_renderer *render, struct c_output *output,
-                     struct c_scene_quad *quads, size_t quad_n,
-                     float backgroup[4]) {
-  struct c_framebuffer *back_buffer = output->swapchain.buffers[output->swapchain.front ^ 1];
-
-  glBindFramebuffer(GL_FRAMEBUFFER, back_buffer->fbo);
-  clear_color(backgroup);
-
-	for (size_t i = 0; i < quad_n; i++) {
-    struct c_scene_quad quad = quads[i];
-
-		struct c_gles_texture *texture = ensure_imported(render, quad.buffer, quad.buffer_type);
-		if (!texture) {
-      c_log(C_LOG_WARNING, "failed to import %s buffer", quad.buffer_type == C_BUFFER_DMA ? "DMA" : "SHM");
-      continue;
+int c_renderer_draw(struct c_renderer *renderer, struct c_output *output,
+                    struct c_renderer_quad *quad) {
+  if (quad->type == C_RENDERER_BUFFER) {
+    struct c_gles_texture *texture = ensure_imported(renderer, quad->buffer, quad->buffer_type);
+    if (!texture) {
+      c_log(C_LOG_ERROR, "failed to import %s buffer", quad->buffer_type == C_BUFFER_DMA ? "DMA" : "SHM");
+      return -1;
     }
-		c_gles_draw_quad(render->gl, output, &quads[i], texture);
-	}
+    c_gles_add_texture(renderer->gl, output, quad, texture);
+  } else {
+    c_gles_add_solid(renderer->gl, output, quad);
+  }
+  return 0;
+}
 
-  glFlush();
-  glFinish();
+void c_renderer_begin(struct c_renderer *renderer, struct c_output *output) {
+  struct c_framebuffer *back_buffer = output->swapchain.buffers[output->swapchain.front ^ 1];
+  glBindFramebuffer(GL_FRAMEBUFFER, back_buffer->fbo);
+  glClearColor(0, 0, 0, 0);
+  glClear(GL_COLOR_BUFFER_BIT);
+}
+
+int c_renderer_commit(struct c_renderer *render, struct c_output *output) {
+  if (render->egl->ext_support.KHR_fence_sync) {
+    EGLSyncKHR sync = c_egl_create_sync(render->egl);
+    if (!sync) {
+      c_log(C_LOG_ERROR, "failed to create EGLSyncKHR");
+      return -1;
+    }
+
+    EGLint fence_fd = c_egl_dup_fence_fd(render->egl, sync);
+    if (fence_fd == -1) {
+      c_log(C_LOG_ERROR, "failed to dup fence fd");
+      return -1;
+    }
+    c_egl_destroy_sync(render->egl, sync);
+
+    output->timeline->point++;
+    if (c_drm_import_sync_file(output->timeline, fence_fd)) {
+      c_log(C_LOG_ERROR, "failed to import sync file into timeline");
+      return -1;
+    }
+    close(fence_fd);
+
+  } else {
+    glFlush();
+    glFinish();
+  }
 
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
   output->need_redraw = 0;
+  return 0;
 }
+
 static int on_shm_buffer_create(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
   struct c_renderer *renderer = userdata;
 
@@ -304,7 +327,9 @@ struct c_renderer *c_renderer_init(struct c_output_manager *mgr, struct c_wl_dis
   zwp_linux_dmabuf_v1_add_listener(display, &linux_dmabuf_listeners, mgr);
 
   c_wl_interface_support("wl_shm", on_wl_shm_bind, render);
-  c_wl_interface_support("zwp_linux_dmabuf_v1", NULL, NULL);
+  
+  if (render->egl->ext_support.EXT_image_dma_buf_import)
+    c_wl_interface_support("zwp_linux_dmabuf_v1", NULL, NULL);
 
   return render;
 

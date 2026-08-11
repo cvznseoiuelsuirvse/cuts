@@ -8,7 +8,7 @@
 #include "wayland/display.h"
 #include "wayland/server.h"
 #include "render/types.h"
-#include "compositor/scene.h"
+
 
 struct c_renderer {
 	struct c_egl *egl;
@@ -21,8 +21,9 @@ struct c_renderer {
 
 struct c_renderer *c_renderer_init(struct c_output_manager *mgr, struct c_wl_display *display);
 void c_renderer_free(struct c_renderer *renderer);
-void c_renderer_draw(struct c_renderer *render, struct c_output *output,
-                     struct c_scene_quad *quads, size_t quad_n,
-                     float background[4]);
 int c_renderer_create_format_table(struct c_renderer *renderer);
+
+void c_renderer_begin(struct c_renderer *renderer, struct c_output *output);
+int c_renderer_draw(struct c_renderer *render, struct c_output *output, struct c_renderer_quad *quad);
+int c_renderer_commit(struct c_renderer *render, struct c_output *output);
 #endif

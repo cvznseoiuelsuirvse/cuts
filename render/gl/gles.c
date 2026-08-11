@@ -13,8 +13,10 @@
 #include "output/drm/util.h"
 
 #define VERTEX_SHADER_PATH  "render/shaders/shader.vert"
-#define TEX_SHADER_PATH     "render/shaders/texture.frag"
-#define TEX_EXT_SHADER_PATH "render/shaders/texture_external.frag"
+
+#define FRAG_SOLID_SHADER_PATH   "render/shaders/solid.frag"
+#define FRAG_TEX_SHADER_PATH     "render/shaders/texture.frag"
+#define FRAG_TEX_EXT_SHADER_PATH "render/shaders/texture_external.frag"
 
 #define VERT_POS_TOP_LEFT(vp)     vp.tl_x, -(vp.tl_y)
 #define VERT_POS_BOTTOM_LEFT(vp)  vp.bl_x, -(vp.bl_y)
@@ -26,12 +28,14 @@
 #define VERT_BOTTOM_RIGHT(vp) VERT_POS_BOTTOM_RIGHT(vp), 1.0f, 1.0f
 #define VERT_TOP_RIGHT(vp)    VERT_POS_TOP_RIGHT(vp),    1.0f, 0.0f
 
-#define VERTS(vp)                                                          \
+#define VERTS(vp)                                                              \
   {                                                                            \
-      VERT_TOP_LEFT(vp),     VERT_BOTTOM_LEFT(vp),                     \
-      VERT_BOTTOM_RIGHT(vp), VERT_TOP_LEFT(vp),                        \
-      VERT_BOTTOM_RIGHT(vp), VERT_TOP_RIGHT(vp),                       \
+      VERT_TOP_LEFT(vp), VERT_BOTTOM_LEFT(vp),  VERT_BOTTOM_RIGHT(vp),         \
+      VERT_TOP_LEFT(vp), VERT_BOTTOM_RIGHT(vp), VERT_TOP_RIGHT(vp),            \
   }
+
+#define get_location(prog, name)                                               \
+  GLint name##_loc = glGetUniformLocation(prog, #name);
 
 struct vert_pos {
 	float tl_x, tl_y;
@@ -253,23 +257,35 @@ int c_gles_texture_from_dma(struct c_gles *gl, struct c_dmabuf *buf) {
   return 0;
 }
 
-void c_gles_draw_quad(struct c_gles *gl, struct c_output *output,
-                      struct c_scene_quad *quad,
+void c_gles_add_solid(struct c_gles *gl, struct c_output *output, struct c_renderer_quad *quad) {
+  struct c_output_mode *mode = output->current_mode;
+  GLuint gl_program = gl->solid_program;
+
+  glUseProgram(gl_program);
+  glBindBuffer(GL_ARRAY_BUFFER, gl->vbo);
+  
+	struct vert_pos vp = {0};
+	create_verts(quad->width, quad->height, quad->x, quad->y, &vp, mode->width, mode->height);
+
+  float verts[] = VERTS(vp);
+  glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
+
+  get_location(gl_program, color);
+  glUniform4f(color_loc, quad->color[0], quad->color[1], quad->color[2], quad->color[3]);
+
+	glDrawArrays(GL_TRIANGLES, 0, 6);
+}
+
+void c_gles_add_texture(struct c_gles *gl, struct c_output *output,
+                      struct c_renderer_quad *quad,
                       struct c_gles_texture *texture) {
-#define get_location(name)                                                     \
-  GLint name##_loc = glGetUniformLocation(gl_program, #name);
-
-#define border_color_args                                                      \
-  quad->border_color[0], quad->border_color[1], quad->border_color[2],         \
-      quad->border_color[3]
-
   struct c_output_mode *mode = output->current_mode;
 
   GLuint gl_program;
   if (texture->target == GL_TEXTURE_2D)
-    gl_program = gl->program;
+    gl_program = gl->tex_program;
   else
-    gl_program = gl->external_program;
+    gl_program = gl->tex_ext_program;
 
 
   glUseProgram(gl_program);
@@ -279,48 +295,26 @@ void c_gles_draw_quad(struct c_gles *gl, struct c_output *output,
 	glBindTexture(texture->target, texture->texture);
 
 	struct vert_pos vp = {0};
-	create_verts(
-      quad->width,
-      quad->height,
-      quad->x,
-      quad->y,
-      &vp, 
-      mode->width,
-      mode->height
-    );
+	create_verts(quad->width, quad->height, quad->x, quad->y, &vp, mode->width, mode->height);
 
   float verts[] = VERTS(vp);
   glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
 
-  get_location(tex);
+  get_location(gl_program, tex);
   glUniform1i(tex_loc, 0);
-
-  get_location(draw_border);
-  glUniform1i(draw_border_loc, quad->border_width > 0);
-
-  get_location(border_size);
-  glUniform2f(border_size_loc, (float)quad->border_width / quad->width, (float)quad->border_width / quad->height);
-
-  get_location(border_color);
-  glUniform4f(border_color_loc, border_color_args);
-
-  get_location(uv_offset);
-  glUniform2f(uv_offset_loc, quad->uv_offset[0], quad->uv_offset[1]);
-
-  get_location(uv_scale);
-  glUniform2f(uv_scale_loc, quad->uv_scale[0], quad->uv_scale[1]);
 
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 }
 
 void c_gles_free(struct c_gles *gl) {
-  if (gl->program) {
-    glDeleteProgram(gl->program);
-  }
+  if (gl->tex_program)
+    glDeleteProgram(gl->tex_program);
 
-  if (gl->external_program) {
-    glDeleteProgram(gl->external_program);
-  }
+  if (gl->tex_ext_program)
+    glDeleteProgram(gl->tex_ext_program);
+
+  if (gl->solid_program)
+    glDeleteProgram(gl->solid_program);
 
   if (gl->vao)
     glDeleteVertexArrays(1, &gl->vao);
@@ -332,51 +326,46 @@ void c_gles_free(struct c_gles *gl) {
 }
 
 
-static int create_program(struct c_gles *gl, int is_ext) {
+static int create_program(struct c_gles *gl, const char *frag_shader, GLuint *prog) {
   GLuint vertex, fragment;
   if (!(vertex = compile_shader(VERTEX_SHADER_PATH, GL_VERTEX_SHADER))) {
     c_log(C_LOG_ERROR, "failed to compile vertex shader");
     return -1;
   }
 
-  if (!(fragment = compile_shader(is_ext ? TEX_EXT_SHADER_PATH : TEX_SHADER_PATH, GL_FRAGMENT_SHADER))) {
-    c_log(C_LOG_ERROR, "failed to compile %sfragment shader", is_ext ? "external " : "");
+  if (!(fragment = compile_shader(frag_shader, GL_FRAGMENT_SHADER))) {
+    c_log(C_LOG_ERROR, "failed to compile %s shader", frag_shader);
     return -1;
   }
 
-  GLuint prog = glCreateProgram();
-  glAttachShader(prog, vertex);
-  glAttachShader(prog, fragment);
+  *prog = glCreateProgram();
+  glAttachShader(*prog, vertex);
+  glAttachShader(*prog, fragment);
 
-  glLinkProgram(prog);
+  glLinkProgram(*prog);
 
   GLint success_link = 0;
-  glGetProgramiv(prog, GL_LINK_STATUS, &success_link);
+  glGetProgramiv(*prog, GL_LINK_STATUS, &success_link);
   if (success_link == GL_FALSE) {
     GLint err_size = 0;
-    glGetProgramiv(prog, GL_INFO_LOG_LENGTH, &err_size);
+    glGetProgramiv(*prog, GL_INFO_LOG_LENGTH, &err_size);
     char err[err_size];
-    glGetProgramInfoLog(prog, err_size, &err_size, err);
+    glGetProgramInfoLog(*prog, err_size, &err_size, err);
     c_log(C_LOG_ERROR, "glLinkProgram failed: %s", err);
     goto err_link;
   }
 
-  glDetachShader(prog, vertex);
-  glDetachShader(prog, fragment);
+  glDetachShader(*prog, vertex);
+  glDetachShader(*prog, fragment);
   glDeleteShader(vertex);
   glDeleteShader(fragment);
-
-  if (is_ext)
-    gl->external_program = prog;
-  else
-    gl->program = prog;
 
   return 0;
 
 err_link:
-  glDetachShader(prog, vertex);
-  glDetachShader(prog, fragment);
-  glDeleteProgram(prog);
+  glDetachShader(*prog, vertex);
+  glDetachShader(*prog, fragment);
+  glDeleteProgram(*prog);
   glDeleteShader(vertex);
   glDeleteShader(fragment);
 
@@ -397,12 +386,17 @@ struct c_gles *c_gles_init() {
   c_log(C_LOG_INFO, "GL vendor %s", glGetString(GL_VENDOR));
   c_log(C_LOG_INFO, "GL display extensions %s", glGetString(GL_EXTENSIONS));
 
-  if (create_program(gl, 0) == -1) {
+  if (create_program(gl, FRAG_SOLID_SHADER_PATH, &gl->solid_program) == -1) {
     c_log(C_LOG_ERROR, "failed to create program");
     goto err;
   }
 
-  if (create_program(gl, 1) == -1) {
+  if (create_program(gl, FRAG_TEX_SHADER_PATH, &gl->tex_program) == -1) {
+    c_log(C_LOG_ERROR, "failed to create program");
+    goto err;
+  }
+
+  if (create_program(gl, FRAG_TEX_EXT_SHADER_PATH, &gl->tex_ext_program) == -1) {
     c_log(C_LOG_ERROR, "failed to create program");
     goto err;
   }

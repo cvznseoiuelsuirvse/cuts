@@ -5,6 +5,7 @@ output_sources = files(
   'cursor.c',
   'drm/drm.c',
   'drm/util.c',
+  'drm/syncobj.c',
 )
 
 output_dep = declare_dependency(

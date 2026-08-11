@@ -14,22 +14,29 @@
     }                                                                          \
   }
 
+#define COLOR_TO_VEC4(n)                                                       \
+  {                                                                            \
+      ((n >> 24) & 0xff) / 255.0f,                                             \
+      ((n >> 16) & 0xff) / 255.0f,                                             \
+      ((n >> 8) & 0xff) / 255.0f,                                              \
+      ((n >> 0) & 0xff) / 255.0f,                                              \
+  }
+
 #define MOUSE_DRAG(func) 1, .drag_handler=func
 #define MOUSE_CLICK(func) 0, .handler=func
 
 static enum libinput_config_accel_profile accel_profile = LIBINPUT_CONFIG_ACCEL_PROFILE_FLAT;
 
-static const uint32_t gap = 15;
-static const uint32_t background = 0xffffffff;
+static uint32_t gap = 0;
+static const float background_color[4] = COLOR_TO_VEC4(0x000000ff);
+
+static uint32_t border_width    = 1;
+static const float border_focus[4]    = COLOR_TO_VEC4(0x777777ff);
+static const float border_default[4]  = COLOR_TO_VEC4(0x444444ff);
 
 static float mfact      = 0.5f;
 static uint32_t nmaster = 2;
 
-static struct border border = {
-  .width = 1,
-  .c_focus = 0x777777ff,
-  .c_default = 0x444444ff,
-};
 
 static struct xkb_rule_names xkb_rules = {
     .layout = "us,ru",
@@ -46,8 +53,8 @@ static struct key_bind keys[] = {
 	{LEADER,                        XKB_KEY_b, 	                      spawn, 	         {.s = "firefox"}},
 	{LEADER,                        XKB_KEY_c, 	                      spawn, 	         {.s = "chromium --enable-features=UseOzonePlatform --ozone-platform=wayland"}},
 	{LEADER,                        XKB_KEY_x, 	  	                  window_kill,	   {}},
-	{LEADER,                        XKB_KEY_j, 	  	                  move_focus,      {.i = 1}},
-	{LEADER,                        XKB_KEY_k, 	  	                  move_focus,      {.i = -1}},
+	{LEADER,                        XKB_KEY_j, 	  	                  move_focus,      {.i = -1}},
+	{LEADER,                        XKB_KEY_k, 	  	                  move_focus,      {.i = 1}},
   {LEADER | C_KEYBOARD_MOD_SHIFT, XKB_KEY_F,                        toggle_floating, {}},
   {0,                             XKB_KEY_XF86AudioRaiseVolume, 	  spawn, 				   {.s = "wpctl set-volume -l 1 @DEFAULT_SINK@ 10%+"}},
   {0,                             XKB_KEY_XF86AudioLowerVolume, 	  spawn, 				   {.s = "wpctl set-volume -l 1 @DEFAULT_SINK@ 10%-"}},

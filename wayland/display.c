@@ -149,6 +149,7 @@ void c_wl_display_get_interface_listener(struct c_wl_display *display, const cha
   }
 }
 
+
 void c_wl_display_add_connection_listener(
     struct c_wl_display *display,
     struct c_wl_display_connection_listener *listener, void *userdata) {

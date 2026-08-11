@@ -21,9 +21,6 @@ struct c_window {
   char **title;
   char **app_id;
 
-  uint32_t border_color;
-  uint32_t border_width;
-
   enum c_window_states state;
 
   struct c_wl_connection *conn;

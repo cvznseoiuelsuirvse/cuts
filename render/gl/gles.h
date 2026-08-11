@@ -5,7 +5,7 @@
 #include <GLES2/gl2ext.h>
 
 #include "render/types.h"
-#include "compositor/scene.h"
+#include "output/output.h"
 
 struct c_gles_texture {
   GLuint texture;
@@ -13,8 +13,9 @@ struct c_gles_texture {
 };
 
 struct c_gles {
-	GLuint program;
-	GLuint external_program;
+	GLuint solid_program;
+	GLuint tex_program;
+	GLuint tex_ext_program;
 
 	GLuint vbo;
 	GLuint vao;
@@ -34,8 +35,11 @@ struct c_gles *c_gles_init();
 void c_gles_free(struct c_gles *gl);
 int c_gles_texture_from_dma(struct c_gles *gl, struct c_dmabuf *buf);
 int c_gles_texture_from_raw(struct c_gles *gl, struct c_rawbuf *buf);
-void c_gles_draw_quad(struct c_gles *gl, struct c_output *output,
-                      struct c_scene_quad *quad,
-                      struct c_gles_texture *texture);
+void c_gles_add_solid(struct c_gles *gl, struct c_output *output,
+                     struct c_renderer_quad *quad);
+
+void c_gles_add_texture(struct c_gles *gl, struct c_output *output,
+                     struct c_renderer_quad *quad,
+                     struct c_gles_texture *texture);
 
 #endif

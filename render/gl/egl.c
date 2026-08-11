@@ -20,6 +20,7 @@
 #define EGL_DMA_BUF_PLANEX_PITCH_EXT(n)       EGL_DMA_BUF_PLANE0_FD_EXT + (n) * 3 + 2
 #define EGL_DMA_BUF_PLANEX_MODIFIER_LO_EXT(n) EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT + (n) * 2
 #define EGL_DMA_BUF_PLANEX_MODIFIER_HI_EXT(n) EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT + (n) * 2 + 1
+
 #define egl_error(func) c_log(C_LOG_ERROR, func " failed: %s", egl_error_string(eglGetError()))
 #define egl_case_str( value ) case value: return #value
 
@@ -62,20 +63,18 @@ static int has_ext_egl(const char *ext, const char *exts) {
 }
 
 static int load_egl_exts(struct c_egl *egl) {
+#define load_egl_proc(name) egl->proc.name = (void *)eglGetProcAddress(#name);
+
   const char *exts_display = eglQueryString(egl->display, EGL_EXTENSIONS);
 
-#define load_egl_proc(name) egl->proc.name = (void *)eglGetProcAddress(#name);
-  if (has_ext_egl("EGL_KHR_image_base", exts_display)) {
-    load_egl_proc(eglCreateImageKHR);
-    load_egl_proc(eglDestroyImageKHR);
-  } else {
-    c_log(C_LOG_ERROR, "EGL_KHR_image_base not supported");
+  if (!has_ext_egl("EGL_KHR_surfaceless_context", exts_display)) {
+    c_log(C_LOG_ERROR, "EGL_KHR_surfaceless_context not supported");
     return -1;
   }
 
-  if (!has_ext_egl("EGL_EXT_image_dma_buf_import", exts_display)) {
-    c_log(C_LOG_ERROR, "EGL_EXT_image_dma_buf_import not supported");
-    return -1;
+
+  if (has_ext_egl("EGL_EXT_image_dma_buf_import", exts_display)) {
+    egl->ext_support.EXT_image_dma_buf_import = 1;
   }
 
   if (has_ext_egl("EGL_EXT_image_dma_buf_import_modifiers", exts_display)) {
@@ -84,9 +83,22 @@ static int load_egl_exts(struct c_egl *egl) {
     load_egl_proc(eglQueryDmaBufModifiersEXT);
   }
 
-  if (!has_ext_egl("EGL_KHR_surfaceless_context", exts_display)) {
-    c_log(C_LOG_ERROR, "EGL_KHR_surfaceless_context not supported");
+  if (egl->ext_support.EXT_image_dma_buf_import &&
+      !has_ext_egl("EGL_KHR_image_base", exts_display)) {
+    c_log(C_LOG_ERROR, "EGL_KHR_image_base not supported (required for import DMA buffers)");
     return -1;
+  }
+
+  load_egl_proc(eglCreateImageKHR);
+  load_egl_proc(eglDestroyImageKHR);
+
+  if (has_ext_egl("EGL_KHR_fence_sync", exts_display) &&
+      has_ext_egl("EGL_ANDROID_native_fence_sync", exts_display)) {
+    egl->ext_support.ANDROID_native_fence_sync = 1;
+    egl->ext_support.KHR_fence_sync = 1;
+    load_egl_proc(eglCreateSyncKHR);
+    load_egl_proc(eglDestroySyncKHR);
+    load_egl_proc(eglDupNativeFenceFDANDROID);
   }
 
   return 0;
@@ -272,6 +284,30 @@ EGLImageKHR c_egl_create_image_from_dmabuf(struct c_egl *egl, struct c_dmabuf *d
     egl_error("eglCreateImageKHR");
 
   return image;
+}
+
+EGLSyncKHR c_egl_create_sync(struct c_egl *egl) {
+  EGLSyncKHR sync = egl->proc.eglCreateSyncKHR(egl->display, EGL_SYNC_NATIVE_FENCE_ANDROID, NULL);
+  if (sync == EGL_NO_SYNC_KHR) {
+    egl_error("eglCreateSyncKHR");
+    return NULL;
+  }
+
+  return sync;
+}
+
+void c_egl_destroy_sync(struct c_egl *egl, EGLSyncKHR sync) {
+  if (egl->proc.eglDestroySyncKHR(egl->display, sync) != EGL_TRUE)
+    egl_error("eglDestroySyncKHR");
+}
+
+EGLint c_egl_dup_fence_fd(struct c_egl *egl, EGLSyncKHR sync) {
+  EGLint fence_fd = egl->proc.eglDupNativeFenceFDANDROID(egl->display, sync);
+  if (fence_fd == EGL_NO_NATIVE_FENCE_FD_ANDROID) {
+    egl_error("eglDupNativeFenceFDANDROID");
+    return -1;
+  }
+  return fence_fd;
 }
 
 void c_egl_free(struct c_egl *egl) {

@@ -7,14 +7,8 @@
 #include "output/output.h"
 
 #include "util/log.h"
-#include "util/helpers.h"
 
 #define MAX_QUADS 1024
-
-struct surface_geom {
-  float x, y;
-  uint32_t width, height;
-};
 
 static void get_surface_buf_size(struct c_wl_surface *surface, int32_t *width, int32_t *height) {
   if (surface->active->dma) {
@@ -26,20 +20,18 @@ static void get_surface_buf_size(struct c_wl_surface *surface, int32_t *width, i
   }
 }
 
-static void collect_surface_tree(struct c_window *window, struct c_wl_surface *surface,
+static void collect_window_tree(struct c_window *window, struct c_wl_surface *surface,
                                  double x, double y,
-                                 struct c_scene_quad *out, int *count, int max, int depth) {
+                                 c_list *quads, int depth) {
   if (!surface->active) return;
-  if (*count >= max) return;
 
   int32_t buf_width, buf_height;
   get_surface_buf_size(surface, &buf_width, &buf_height);
 
-  struct c_scene_quad q = {
+  struct c_renderer_quad q = {
+    .type = C_RENDERER_BUFFER,
     .buffer = surface->active->dma ? (void *)surface->active->dma : (void *)surface->active->shm,
     .buffer_type = surface->active->dma ? C_BUFFER_DMA : C_BUFFER_RAW,
-    .uv_scale = {1.0f, 1.0f},
-    .uv_offset = {0.0f, 0.0f},
   };
 
   double base_x, base_y;
@@ -49,10 +41,8 @@ static void collect_surface_tree(struct c_window *window, struct c_wl_surface *s
     q.height = window->height;
     q.x = window->x;
     q.y = window->y;
-    q.border_width = window->border_width;
-    memcpy(q.border_color, (float[4])HEX_TO_VEC4(window->border_color), sizeof(q.border_color));
-    base_x = window->x + window->border_width;
-    base_y = window->y + window->border_width;
+    base_x = window->x;
+    base_y = window->y;
   } else {
     q.width = buf_width;
     q.height = buf_height;
@@ -71,49 +61,43 @@ static void collect_surface_tree(struct c_window *window, struct c_wl_surface *s
     w_w = surface->xdg_surface->width;
     w_h = surface->xdg_surface->height;
 
-    q.uv_offset[0] = (float)w_x / buf_width;
-    q.uv_offset[1] = (float)w_y / buf_height;
+    q.width  /= ((double)w_w / buf_width);
+    q.height /= ((double)w_h / buf_height);
 
-    q.uv_scale[0] = (float)w_w / buf_width;
-    q.uv_scale[1] = (float)w_h / buf_height;
+    q.x -= w_x * ((double)buf_width  / w_w);
+    q.y -= w_y * ((double)buf_height / w_h);
   }
 
   c_log(C_LOG_DEBUG, "%*s surface#%d (%d) %p %dx%d x=%f y=%f", depth, " ",
         surface->id, q.buffer_type, surface, q.width, q.height, q.x, q.y);
 
-  out[(*count)++] = q;
+  c_list_push(quads, &q, sizeof(q));
 
   if (surface->sub.children) {
     struct c_wl_subsurface *sub_s;
     c_list_for_each(surface->sub.children, sub_s) {
       if (!sub_s->surface->active) continue;
-      if (*count >= max) return;
 
       get_surface_buf_size(sub_s->surface, &buf_width, &buf_height);
 
-      struct c_scene_quad q_sub = {
+      struct c_renderer_quad q_sub = {
+        .type = C_RENDERER_BUFFER,
         .buffer = sub_s->surface->active->dma ? (void *)sub_s->surface->active->dma : (void *)sub_s->surface->active->shm,
         .buffer_type = sub_s->surface->active->dma ? C_BUFFER_DMA : C_BUFFER_RAW,
 
         .width = buf_width,
         .height = buf_height,
 
-        .border_width = 0,
-
         .x = base_x + sub_s->x - w_x,
         .y = base_y + sub_s->y - w_y,
-
-        .uv_scale = {1.0f, 1.0f},
-        .uv_offset = {0.0f, 0.0f},
       };
 
       c_log(C_LOG_DEBUG, "%*s SUB-surface#%d (%d) %p %dx%d x=%f y=%f",
             depth + 2, " ", sub_s->id, q_sub.buffer_type, sub_s, q_sub.width,
             q_sub.height, q_sub.x, q_sub.y);
 
-      out[(*count)++] = q_sub;
-
-      collect_surface_tree(NULL, sub_s->surface, q_sub.x, q_sub.y, out, count, max, depth + 1);
+      c_list_push(quads, &q_sub, sizeof(q_sub));
+      collect_window_tree(NULL, sub_s->surface, q_sub.x, q_sub.y, quads, depth + 1);
     }
   }
 
@@ -121,11 +105,11 @@ static void collect_surface_tree(struct c_window *window, struct c_wl_surface *s
     struct c_xdg_surface *xdg_s;
     c_list_for_each(surface->xdg_surface->children, xdg_s) {
       if (!xdg_s->surface->active) continue;
-      if (*count >= max) return;
 
       get_surface_buf_size(xdg_s->surface, &buf_width, &buf_height);
 
-      struct c_scene_quad q_sub = {
+      struct c_renderer_quad q_sub = {
+        .type = C_RENDERER_BUFFER,
         .buffer = xdg_s->surface->active->dma
                       ? (void *)xdg_s->surface->active->dma
                       : (void *)xdg_s->surface->active->shm,
@@ -134,41 +118,75 @@ static void collect_surface_tree(struct c_window *window, struct c_wl_surface *s
         .width = xdg_s->popup.positioner.width ? xdg_s->popup.positioner.width : buf_width,
         .height = xdg_s->popup.positioner.height ? xdg_s->popup.positioner.height : buf_height,
 
-        .border_width = 0,
-
         .x = base_x + xdg_s->x + xdg_s->popup.x,
         .y = base_y + xdg_s->y + xdg_s->popup.y,
-
-        .uv_scale = {1.0f, 1.0f},
-        .uv_offset = {0.0f, 0.0f},
       };
 
       c_log(C_LOG_DEBUG, "%*s XDG-surface#%d (%d) %p %dx%d x=%f y=%f", depth,
             " ", xdg_s->id, q_sub.buffer_type, xdg_s, q_sub.width, q_sub.height,
             q_sub.x, q_sub.y);
 
-      out[(*count)++] = q_sub;
-
-      collect_surface_tree(NULL, xdg_s->surface, q_sub.x, q_sub.y, out, count, max, depth + 1);
+      c_list_push(quads, &q_sub, sizeof(q_sub));
+      collect_window_tree(NULL, xdg_s->surface, q_sub.x, q_sub.y, quads, depth + 1);
     }
   }
 }
 
-static int collect(struct c_scene *scene, struct c_output *output, struct c_scene_quad *out, int max_quads) {
-  int count = 0;
-  struct c_window *window;
-  c_list_for_each(scene->windows, window) {
-    collect_surface_tree(window, window->surface->surface, 0, 0, out, &count, max_quads, 0);
-  }
-	return count;
+static void create_rect_quad(struct c_scene_rect *rect, struct c_renderer_quad *quad) {
+  quad->type = C_RENDERER_SOLID;
+  quad->x = rect->x;
+  quad->y = rect->y;
+  quad->width = rect->width;
+  quad->height = rect->height;
+  quad->color[0] = rect->color[0];
+  quad->color[1] = rect->color[1];
+  quad->color[2] = rect->color[2];
+  quad->color[3] = rect->color[3];
+
 }
 
-static void on_redraw(struct c_output_manager *mgr, struct c_output *output, void *userdata) {
+static int on_redraw(struct c_output_manager *mgr, struct c_output *output, void *userdata) {
   struct c_scene *scene = userdata;
 
-	struct c_scene_quad quads[MAX_QUADS];
-	int n = collect(scene, output, quads, MAX_QUADS);
-  c_renderer_draw(mgr->renderer, output, quads, n, scene->bg_color);
+  c_renderer_begin(mgr->renderer, output);
+
+  struct c_scene_node *node;
+  struct c_renderer_quad *quad;
+  c_list_for_each(scene->nodes, node) {
+    if (node->is_hidden) continue;
+
+    switch (node->type) {
+      case C_SCENE_WINDOW:
+        c_list_for_each(node->quads, quad)
+          c_renderer_draw(mgr->renderer, output, quad);
+        break;
+
+      case C_SCENE_RECT:
+        c_renderer_draw(mgr->renderer, output, node->quad);
+        break;
+    }
+  }
+
+  return c_renderer_commit(mgr->renderer, output);
+}
+
+static struct c_scene_node *node_create(enum c_scene_node_types type, void *data) {
+  struct c_scene_node *node = calloc(1, sizeof(*node));
+  node->type = type;
+  node->data = data;
+
+  if (node->type == C_SCENE_WINDOW)
+    node->quads = c_list_new();
+
+  return node;
+}
+
+static void node_remove(struct c_scene_node *node) {
+  if (node->type == C_SCENE_WINDOW)
+    c_list_destroy(node->quads);
+  else
+    free(node->quad);
+  free(node);
 }
 
 struct c_scene *c_scene_init(struct c_output_manager *mgr) {
@@ -179,28 +197,68 @@ struct c_scene *c_scene_init(struct c_output_manager *mgr) {
   }
 
   c_output_register_on_redraw(mgr, on_redraw, scene);
-  scene->windows = c_list_new();
+  scene->nodes = c_list_new();
 
   return scene;
 }
 
 void c_scene_free(struct c_scene *scene) {
-	if (scene->windows)
-    c_list_destroy(scene->windows);
+	if (scene->nodes) {
+    struct c_scene_node *node;
+    c_list_for_each(scene->nodes, node) {
+      node_remove(node);
+    }
+    c_list_destroy(scene->nodes);
+  }
+  free(scene);
 }
 
-void c_scene_add_window(struct c_scene *scene, struct c_window *window) {
-  c_list_push(scene->windows, window, 0);
+struct c_scene_node *c_scene_add_window(struct c_scene *scene, struct c_window *window) {
+  struct c_scene_node *node = node_create(C_SCENE_WINDOW, window);
+  c_list_push(scene->nodes, node, 0);
+
+  collect_window_tree(window, window->surface->surface, window->x, window->y,
+                      node->quads, 0);
+  return node;
 }
 
-void c_scene_remove_window(struct c_scene *scene, struct c_window *window) {
-  c_list_remove(&scene->windows, window);
+struct c_scene_node *c_scene_add_rect(struct c_scene *scene, struct c_scene_rect *rect) {
+  struct c_renderer_quad *quad = calloc(1, sizeof(*quad));
+  create_rect_quad(rect, quad);
+
+  struct c_scene_node *node = node_create(C_SCENE_RECT, rect);
+  c_list_push(scene->nodes, node, 0);
+  node->quad = quad;
+
+  return node;
 }
 
-void c_scene_clear(struct c_scene *scene, struct c_output *output) {
-  c_list_clear(scene->windows);
+void c_scene_node_update(struct c_scene_node *node) {
+  struct c_window *window;
+  struct c_scene_rect *rect;
+
+  switch (node->type) {
+    case C_SCENE_WINDOW:
+      window = node->data;
+      c_list_clear(node->quads);
+      collect_window_tree(window, window->surface->surface, window->x,
+                          window->y, node->quads, 0);
+      break;
+
+    case C_SCENE_RECT:
+      rect = node->data;
+      create_rect_quad(rect, node->quad);
+
+      break;
+  }
 }
 
-inline void c_scene_set_background(struct c_scene *scene, float color[4]) {
-  memcpy(scene->bg_color, color, sizeof(float) * 4);
+void c_scene_node_remove(struct c_scene *scene, struct c_scene_node *node) {
+  node_remove(node);
+  c_list_remove(&scene->nodes, node);
+}
+
+void c_scene_node_raise(struct c_scene *scene, struct c_scene_node *node) {
+  c_list_remove(&scene->nodes, node);
+  c_list_push(scene->nodes, node, 0);
 }

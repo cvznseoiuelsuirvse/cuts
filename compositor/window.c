@@ -11,8 +11,8 @@
 void c_window_deactivate(struct c_window *window) {
   struct c_xdg_surface *xdg_surface = window->surface;
 
-  uint32_t width = window->width - window->border_width * 2;
-  uint32_t height = window->height - window->border_width * 2;
+  uint32_t width = window->width;
+  uint32_t height = window->height;
 
   c_wl_array arr = {0};
   xdg_toplevel_configure(window_conn(window), xdg_surface->toplevel.id, width, height, &arr);
@@ -29,8 +29,8 @@ void c_window_activate(struct c_window *window) {
     .data = &state,
   };
 
-  uint32_t width = window->width - window->border_width * 2;
-  uint32_t height = window->height - window->border_width * 2;
+  uint32_t width = window->width;
+  uint32_t height = window->height;
 
   xdg_toplevel_configure(window_conn(window), xdg_surface->toplevel.id, width, height, &arr);
   xdg_surface_configure(window_conn(window), xdg_surface->id, c_wl_serial());

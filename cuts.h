@@ -13,9 +13,6 @@ struct monitor {
 };
 
 struct border {
-  uint32_t width;
-  uint32_t c_focus;
-  uint32_t c_default;
 };
 
 typedef union {

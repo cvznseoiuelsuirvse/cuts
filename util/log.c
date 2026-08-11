@@ -124,9 +124,9 @@ void c_log_wl_request(struct c_wl_connection *conn, struct c_wl_object *object, 
         break;
 
       case 'a':
-      arr = args[i].a;
-      printf("[%u]", arr->size);
-      print_buffer(arr->data, arr->size);
+        arr = args[i].a;
+        printf("[%u]", arr->size);
+        print_buffer(arr->data, arr->size);
       break;
 
     }

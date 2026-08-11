@@ -26,9 +26,8 @@
 
 #define LAYOUT(output)                                                         \
   {                                                                            \
-    c_scene_clear(cuts.scene, output);                                         \
     cuts.layout.func();                                                        \
-    c_output_damage(cuts.mgr, output);                                         \
+    output_damage(output);                                                     \
   }
 
 #define clients_for_each_in_tag(client) \
@@ -41,6 +40,8 @@
     c_log(C_LOG_ERROR, "failed to initialize " #t);                            \
     goto out_label;                                                            \
   }
+
+#define node_window(node) (struct c_window *)(node->data)
 
 #define pointer_x cuts.pointer.x[cuts.pointer.coords]
 #define pointer_y cuts.pointer.y[cuts.pointer.coords]
@@ -61,8 +62,11 @@ struct bar {
 
 struct client {
   uint32_t tag;
+  uint64_t z;
   struct c_output *output;
-  struct c_window *window;
+  struct c_scene_node *window;
+  struct c_scene_node *border;
+  struct c_scene_rect  border_rect;
 };
 
 struct {
@@ -92,7 +96,9 @@ struct {
   int focused_client_idx;
 	struct layout layout;
   struct bar bar;
+  struct c_scene_rect background;
 
+  uint64_t next_z;
 } cuts = {0};
 
 struct tile_layout {
@@ -141,7 +147,24 @@ void window_move(int done, bind_args *args);
 
 void cleanup(int err, void *userdata);
 
-struct client *client_move_focus(int direction) {
+void client_set_visibility(struct client *client, int is_visible) {
+  client->window->is_hidden = !is_visible;
+  client->border->is_hidden = !is_visible;
+}
+
+void client_raise(struct client *client) {
+  c_scene_node_raise(cuts.scene, client->border);
+  c_scene_node_raise(cuts.scene, client->window);
+  client->z = ++cuts.next_z;
+}
+
+void client_toggle_floating(struct client *client) {
+  struct c_window *window = node_window(client->window);
+  window->state ^= C_WINDOW_FLOAT;
+}
+
+
+struct client *tag_move_focus(int direction) {
   uint32_t clients = 0;
 
   struct client *client;
@@ -164,29 +187,39 @@ struct client *client_move_focus(int direction) {
 }
 
 
-struct client *client_new(struct c_wl_connection *connection) {
+struct c_scene_node *window_new(struct c_wl_connection *connection, struct c_xdg_surface *surface) {
   struct c_window *window = calloc(1, sizeof(*window));
   if (!window) {
     c_log_errno(C_LOG_ERROR, "failed to allocate window for a new client");
     return NULL;
   }
 
+  window->conn = connection;
+  window->surface = surface;
+  window->title = &surface->toplevel.title;
+  window->app_id = &surface->toplevel.app_id;
+
+  return c_scene_add_window(cuts.scene, window);
+;
+};
+
+struct client *client_new(struct c_wl_connection *connection) {
   struct client *client = calloc(1, sizeof(*client));
-  if (!window) {
+  if (!client) {
     c_log_errno(C_LOG_ERROR, "failed to allocate a new client");
-    free(window);
     return NULL;
   }
 
-  window->conn = connection;
-  client->window = window;
   client->tag = cuts.focused_tag;
-
+  client->output = cuts.focused_output;
+  client->border = c_scene_add_rect(cuts.scene, &client->border_rect);
   return client;
 }
 
 void client_free(struct client *client) {
-  free(client->window);
+  c_scene_node_remove(cuts.scene, client->border);
+  free(client->window->data);
+  c_scene_node_remove(cuts.scene, client->window);
   free(client);
 }
 
@@ -195,56 +228,69 @@ void client_change_focus(struct client *client, double hotspot_x, double hotspot
   if (client == cuts.focused_client) return;
 
   if (cuts.focused_client) {
-    c_window_deactivate(cuts.focused_client->window);
-    c_window_unfocus(cuts.focused_client->window);
-    cuts.focused_client->window->border_color = border.c_default;
+    c_window_deactivate(node_window(cuts.focused_client->window));
+    c_window_unfocus(node_window(cuts.focused_client->window));
+
+    struct c_scene_rect *border_rect = &cuts.focused_client->border_rect;
+    border_rect->color[0] = border_default[0];
+    border_rect->color[1] = border_default[1];
+    border_rect->color[2] = border_default[2];
+    border_rect->color[3] = border_default[3];
+    c_scene_node_update(cuts.focused_client->border);
+
   }
 
-  c_window_activate(client->window);
-
-  c_log_value(cuts.clipboard.owner, "%p");
-  c_log_value(cuts.clipboard.data_source, "%p");
+  struct c_window *window = node_window(client->window);
+  c_window_activate(window);
 
   struct c_wl_object *o;
-  c_wl_objects_for_each(client->window->conn, o) {
+  struct c_wl_connection *conn = window->conn;
+
+  c_wl_objects_for_each(conn, o) {
     if (STREQ(o->iface->name, "wl_data_device")) {
       struct c_wl_data_source *data_source = cuts.clipboard.data_source;
       if (!data_source) {
-        wl_data_device_selection(client->window->conn, o->id, 0);
+        wl_data_device_selection(conn, o->id, 0);
       } else {
         struct c_wl_object *wl_data_offer =
-            c_wl_object_add(client->window->conn, 0, o->version,
+            c_wl_object_add(conn, 0, o->version,
                             c_wl_interface_get("wl_data_offer"), NULL);
 
-        wl_data_device_data_offer(client->window->conn, o->id, wl_data_offer->id);
+        wl_data_device_data_offer(conn, o->id, wl_data_offer->id);
         for (size_t i = 0; i < data_source->mimes; i++) {
-          wl_data_offer_offer(client->window->conn, wl_data_offer->id, data_source->mimetypes[i]);
+          wl_data_offer_offer(conn, wl_data_offer->id, data_source->mimetypes[i]);
         }
 
-        wl_data_device_selection(client->window->conn, o->id, wl_data_offer->id);
+        wl_data_device_selection(conn, o->id, wl_data_offer->id);
       }
     }
   }
 
-  c_window_focus(client->window, hotspot_x, hotspot_y);
+  c_window_focus(window, hotspot_x, hotspot_y);
   cuts.focused_client = client;
-  cuts.focused_client->window->border_color = border.c_focus;
+
+  struct c_scene_rect *border_rect = &cuts.focused_client->border_rect;
+  border_rect->color[0] = border_focus[0];
+  border_rect->color[1] = border_focus[1];
+  border_rect->color[2] = border_focus[2];
+  border_rect->color[3] = border_focus[3];
+  c_scene_node_update(cuts.focused_client->border);
+
 }
 
 void client_close(struct client *client) {
   int is_focused = cuts.focused_client == client;
 
   if (is_focused) {
-    c_window_unfocus(client->window);
+    c_window_unfocus(node_window(client->window));
     cuts.focused_client = NULL;
   }
 
-  c_scene_remove_window(cuts.scene, client->window);
   client_free(client);
   c_list_remove(&cuts.clients, client);
 
   if (is_focused) {
-    struct client *prev = client_move_focus(-1);
+    struct client *prev = tag_move_focus(-1);
 
     if (prev)
       client_change_focus(prev, pointer_x, pointer_y);
@@ -252,6 +298,11 @@ void client_close(struct client *client) {
     else
       cuts.focused_client = NULL;
   }
+}
+
+void output_damage(struct c_output *output) {
+  if (c_output_damage(cuts.mgr, output))
+    c_event_loop_stop(cuts.loop);
 }
 
 static void *on_wl_output_bind(struct c_wl_connection *conn,
@@ -340,15 +391,19 @@ void on_mouse_movement(struct c_input_mouse_event *event, void *userdata) {
   if (cuts.pointer.is_dragging || cuts.clients->size == 0) return;
   struct client *focused = NULL;
 
+  uint64_t h_z = 0;
+
   struct client *client;
   clients_for_each_in_tag(client) {
-    struct c_window *window = client->window;
-    if (CURSOR_INSIDE(event->x, event->y, window))
+    struct c_window *window = node_window(client->window);
+    if (CURSOR_INSIDE(event->x, event->y, window) && client->z >= h_z) {
         focused = client;
+        h_z = client->z;
+    }
   }
 
   if (focused == cuts.focused_client) {
-    c_window_pointer_move(focused->window, event->x, event->y);
+    c_window_pointer_move(node_window(focused->window), event->x, event->y);
   } else if (focused) {
     client_change_focus(focused, event->x, event->y);
   }
@@ -356,7 +411,7 @@ void on_mouse_movement(struct c_input_mouse_event *event, void *userdata) {
 
 void on_mouse_scroll(struct c_input_mouse_event *event, void *userdata) {
   if (!cuts.focused_client) return;
-  c_window_pointer_scroll(cuts.focused_client->window, event->axis,
+  c_window_pointer_scroll(node_window(cuts.focused_client->window), event->axis,
                           event->axis120,
                           (enum wl_pointer_axis_source_enum)event->axis_source,
                           event->axis_discrete);
@@ -364,13 +419,13 @@ void on_mouse_scroll(struct c_input_mouse_event *event, void *userdata) {
 
 void on_mouse_button(struct c_input_mouse_event *event, void *userdata) {
   if (!cuts.focused_client) return;
-  c_window_pointer_button(cuts.focused_client->window, event->button, event->is_pressed);
+  c_window_pointer_button(node_window(cuts.focused_client->window), event->button, event->is_pressed);
 }
 
 void on_keyboard_key(struct c_input_keyboard_event *event, void *userdata) {
   if (!cuts.focused_client) return;
 
-  c_window_keyboard_key(cuts.focused_client->window, event->key, event->pressed,
+  c_window_keyboard_key(node_window(cuts.focused_client->window), event->key, event->pressed,
                         event->mods_depressed, event->mods_latched,
                         event->mods_locked, event->group, event->changed);
 }
@@ -384,6 +439,20 @@ struct c_wl_surface *find_root_surface(struct c_wl_surface *surface) {
    surface = surface->xdg_surface->parent->surface;
  }
  return surface;
+}
+
+struct client *client_from_surface(struct c_wl_surface *surface) {
+  struct c_wl_surface *root = find_root_surface(surface);
+
+  struct client *client;
+  c_list_for_each(cuts.clients, client) {
+    struct c_window *window = node_window(client->window);
+    if (window->surface->surface == root) {
+      return client;
+    }
+  }
+
+  return NULL;
 }
 
 void assign_output_to_surface(struct c_wl_object *wl_surface) {
@@ -408,10 +477,14 @@ int on_surface_commit(struct c_wl_connection *conn, c_wl_args args, void *userda
   struct c_wl_object *wl_surface = c_wl_self(conn, args);
   struct c_wl_surface *surface = wl_surface->data;
 
+  struct client *client;
+  if ((client = client_from_surface(surface)))
+    c_scene_node_update(client->window);
+
   assign_output_to_surface(wl_surface);
 
   if (surface->output)
-    c_output_damage(cuts.mgr, surface->output->output);
+    output_damage(surface->output->output);
 
   return 0;
 }
@@ -419,11 +492,16 @@ int on_surface_commit(struct c_wl_connection *conn, c_wl_args args, void *userda
 int on_surface_destroy(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
   struct c_wl_object *wl_surface = c_wl_self(conn, args);
   struct c_wl_surface *surface = wl_surface->data;
+
+  struct client *client;
+  if ((client = client_from_surface(surface)))
+    c_scene_node_update(client->window);
+
   if (!surface->output) return 0;
 
   struct c_output *output = surface->output->output;
   c_list_remove(&output->frame_surfaces, wl_surface);
-  c_output_damage(cuts.mgr, output);
+  output_damage(output);
 
   c_unref(surface->output);
 
@@ -451,12 +529,8 @@ int on_window_new(struct c_wl_connection *conn, c_wl_args args, void *userdata) 
     cleanup(1, NULL);
     return -1;
   }
-
-  client->output = cuts.focused_output;
-  client->window->surface = surface;
-  client->window->border_width = border.width;
-  client->window->title = &surface->toplevel.title;
-  client->window->app_id = &surface->toplevel.app_id;
+  
+  client->window = window_new(conn, surface);
 
   c_list_insert(&cuts.clients, 0, client, 0);
   client_change_focus(client, pointer_x, pointer_y);
@@ -470,7 +544,8 @@ int on_window_close(struct c_wl_connection *conn, c_wl_args args, void *userdata
 
   struct client *client;
   c_list_for_each(cuts.clients, client) {
-    if (client->window->surface == surface) {
+    struct c_window *window = node_window(client->window);
+    if (window->surface == surface) {
       int is_visible = client->tag & cuts.focused_tag;
       struct c_output *output = client->output;
 
@@ -488,7 +563,8 @@ int on_window_close(struct c_wl_connection *conn, c_wl_args args, void *userdata
 void on_connection_gone(struct c_wl_connection *conn, void *userdata) {
   struct client *client;
   c_list_for_each(cuts.clients, client) {
-    if (client->window->conn == conn) {
+    struct c_window *window = node_window(client->window);
+    if (window->conn == conn) {
       int is_visible = client->tag & cuts.focused_tag;
       struct c_output *output = client->output;
 
@@ -538,15 +614,9 @@ int on_set_selection(struct c_wl_connection *conn, c_wl_args args, void *userdat
   if (cuts.clipboard.owner)
     wl_data_source_cancelled(cuts.clipboard.owner, cuts.clipboard.data_source->id);
 
-  c_log_value(cuts.clipboard.owner, "%p");
-  c_log_value(cuts.clipboard.data_source, "%p");
-
   cuts.clipboard.owner = conn;
   cuts.clipboard.data_source = data_source;
   
-  c_log_value(cuts.clipboard.owner, "%p");
-  c_log_value(cuts.clipboard.data_source, "%p");
-
   struct c_wl_object *wl_data_offer =
       c_wl_object_add(conn, 0, wl_data_device->version,
                       c_wl_interface_get("wl_data_offer"), NULL);
@@ -576,11 +646,11 @@ void spawn(bind_args *args) {
 
 void window_kill(bind_args *args) {
   if (!cuts.focused_client) return;
-  c_window_close(cuts.focused_client->window);
+  c_window_close(node_window(cuts.focused_client->window));
 }
 
 void move_focus(bind_args *args) {
-  struct client *next = client_move_focus(args->i);
+  struct client *next = tag_move_focus(args->i);
 
   if (next)
     client_change_focus(next, pointer_x, pointer_y);
@@ -588,20 +658,26 @@ void move_focus(bind_args *args) {
 
 void switch_tag(bind_args *args) {
   cuts.focused_tag = args->u;
-  LAYOUT(cuts.focused_output);
 
   struct client *c;
+  c_list_for_each(cuts.clients, c)
+    client_set_visibility(c, c->tag & cuts.focused_tag);
+
+  LAYOUT(cuts.focused_output);
+
   clients_for_each_in_tag(c) {
-    client_change_focus(c, 0, 0);
+    client_change_focus(c, pointer_x, pointer_y);
     break;
   }
+
 }
 
 int count_tiled() {
   struct client *client;
   int i = 0;
   clients_for_each_in_tag(client) {
-    if (!(client->window->state & C_WINDOW_FLOAT)) i++;
+    struct c_window *window = node_window(client->window);
+    if (!(window->state & C_WINDOW_FLOAT)) i++;
   }
   return i;
 }
@@ -663,10 +739,8 @@ void tile() {
   struct client *client;
   size_t i = 0;
   clients_for_each_in_tag(client) {
-    struct c_window *window = client->window;
-    c_scene_add_window(cuts.scene, window);
-
-    if (window->state & C_WINDOW_FLOAT) continue;
+    struct c_window *window = node_window(client->window);
+    if (window->state & C_WINDOW_FLOAT) goto update;
 
     if (i < nmaster) {
       window->x = layout.master.x;
@@ -683,30 +757,40 @@ void tile() {
       window->y = layout.y + stack_client_height * (i - master_clients) + gap * (i - master_clients);
     }
 
-    if (cuts.focused_client == client)
-      c_window_activate(window);
-    else
-      c_window_deactivate(window);
-
+    window->x += border_width;
+    window->y += border_width;
+    window->width -= border_width * 2;
+    window->height -= border_width * 2;
     i++;
+
+    struct c_scene_rect *border;
+
+update:
+    border = &client->border_rect;
+    border->x = window->x - border_width;
+    border->y = window->y - border_width;
+    border->width = window->width + border_width * 2;
+    border->height = window->height + border_width * 2;
+
+    if (cuts.focused_client == client) {
+      c_window_activate(window);
+    } else {
+      c_window_deactivate(window);
+    }
+     
+    c_scene_node_update(client->border);
+    c_scene_node_update(client->window);
+
   }
-}
-
-void client_push(struct client *client) {
-  c_list_remove(&cuts.clients, client);
-  c_list_push(cuts.clients, client, 0);
-}
-
-void client_toggle_floating(struct client *client) {
-  cuts.focused_client->window->state ^= C_WINDOW_FLOAT;
-  LAYOUT(client->output);
 }
 
 void toggle_floating(bind_args *args) {
   if (!cuts.focused_client) return;
 
-  client_push(cuts.focused_client);
+  client_raise(cuts.focused_client);
   client_toggle_floating(cuts.focused_client);
+
+  LAYOUT(cuts.focused_client->output);
 }
 
 void change_mfact(bind_args *args) {
@@ -730,16 +814,17 @@ void change_nmaster(bind_args *args) {
 void window_move(int done, bind_args *args) {
   if (!cuts.focused_client) return;
   struct client *focused = cuts.focused_client;
+  struct c_window *window = node_window(focused->window);
 
-  client_push(focused);
-  if (!(focused->window->state & C_WINDOW_FLOAT))
+  client_raise(focused);
+  if (!(window->state & C_WINDOW_FLOAT))
     client_toggle_floating(focused);
     
   double dist_x = pointer_x - pointer_x_prev;
   double dist_y = pointer_y - pointer_y_prev;
 
-  focused->window->x+=dist_x;
-  focused->window->y+=dist_y;
+  window->x+=dist_x;
+  window->y+=dist_y;
 
   cuts.pointer.is_dragging = !done;
 
@@ -750,7 +835,9 @@ void window_move_to_workspace(bind_args *args) {
   if (!cuts.focused_client) return;
 
   cuts.focused_client->tag = args->u;
-  client_push(cuts.focused_client);
+  client_set_visibility(cuts.focused_client, 0);
+  client_raise(cuts.focused_client);
+  tag_move_focus(-1);
 
   LAYOUT(cuts.focused_client->output);
 }
@@ -758,27 +845,41 @@ void window_move_to_workspace(bind_args *args) {
 void window_resize(int done, bind_args *args) {
   if (!cuts.focused_client) return;
   struct client *focused = cuts.focused_client;
+  struct c_window *window = node_window(focused->window);
 
-  client_push(focused);
-  if (!(focused->window->state & C_WINDOW_FLOAT))
+  client_raise(focused);
+  if (!(window->state & C_WINDOW_FLOAT))
     client_toggle_floating(focused);
     
   float dist_x = pointer_x - pointer_x_prev;
   float dist_y = pointer_y - pointer_y_prev;
 
-  focused->window->width+=dist_x;
-  focused->window->height+=dist_y;
+  window->width+=dist_x;
+  window->height+=dist_y;
 
-  c_window_activate(focused->window);
+  c_window_activate(window);
 
   cuts.pointer.is_dragging = !done;
-
 
   LAYOUT(focused->output);
 }
 
+void set_background(struct c_output_mode *mode) {
+  struct c_scene_rect *background = &cuts.background;
 
-void create_bar() {}
+  background->color[0] = background_color[0];
+  background->color[1] = background_color[1];
+  background->color[2] = background_color[2];
+  background->color[3] = background_color[3];
+
+  background->x = 0; // temp
+  background->y = 0; // temp
+
+  background->width = mode->width;
+  background->height = mode->height;
+
+  c_scene_add_rect(cuts.scene, background);
+}
 
 void set_cursor(struct c_output *output, int size) {
   struct c_cursor *cursor = output->cursor;
@@ -801,17 +902,10 @@ void set_cursor(struct c_output *output, int size) {
 }
 
 void cleanup(int err, void *userdata) {
-
   if (cuts.display) {
     c_wl_display_free(cuts.display);
     cuts.display = NULL;
   }
-
-  if (cuts.scene) {
-    c_scene_free(cuts.scene);
-    cuts.scene = NULL;
-  }
-
 
   if (cuts.mgr) {
     c_output_manager_free(cuts.mgr);
@@ -824,6 +918,11 @@ void cleanup(int err, void *userdata) {
       client_free(client);
     c_list_destroy(cuts.clients);
     cuts.clients = NULL;
+  }
+
+  if (cuts.scene) {
+    c_scene_free(cuts.scene);
+    cuts.scene = NULL;
   }
 
   if (cuts.session) {
@@ -876,9 +975,6 @@ int main() {
   check_init(scene, ret, out);
   cuts.scene = scene;
 
-  float background4[4] = HEX_TO_VEC4(background);
-  c_scene_set_background(scene, background4);
-
   cuts.clients = c_list_new();
   cuts.layout = layouts[0];
 
@@ -899,7 +995,9 @@ int main() {
       for (size_t i = 0; i < LENGTH(monitors); i++) {
         struct monitor m = monitors[i];
         if (STREQ(m.name, output->name) && m.width == mode->width &&
-            m.height == mode->height && m.refresh_rate == (uint32_t)mode->refresh_rate) {
+            m.height == mode->height &&
+            m.refresh_rate == (uint32_t)mode->refresh_rate) {
+          set_background(mode);
           c_output_set_mode(mgr, output, mode);
           goto mode_iter_end;
         }
@@ -907,6 +1005,7 @@ int main() {
     }
 
     assert(preferred);
+    set_background(preferred);
     c_output_set_mode(mgr, output, preferred);
 
 mode_iter_end:
@@ -915,6 +1014,7 @@ mode_iter_end:
     if (!cuts.focused_output)
       cuts.focused_output = output;
   }
+
 
   if (c_input_init_xkb_state(session->input, &xkb_rules) < 0) goto out;
 
