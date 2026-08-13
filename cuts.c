@@ -4,9 +4,12 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <ft2build.h>
+#include FT_FREETYPE_H
 
 #include "wayland/proto/wayland.h"
 #include "wayland/proto/xdg-shell.h"
+#include "render/types.h"
 
 #include "compositor/window.h"
 #include "compositor/scene.h"
@@ -23,6 +26,9 @@
 #include "util/malloc.h"
 
 #include "config.h"
+
+#define MIN_WINDOW_SIZE 2
+#define MAX_STDIN_CHARS 128
 
 #define LAYOUT(output)                                                         \
   {                                                                            \
@@ -41,23 +47,63 @@
     goto out_label;                                                            \
   }
 
-#define node_window(node) (struct c_window *)(node->data)
+#define node_window(node) (struct c_window *)c_scene_node_data(node)
+
+#define set_color(dst, src)                                                  \
+  {                                                                            \
+    dst[0] = src[0];                                                           \
+    dst[1] = src[1];                                                           \
+    dst[2] = src[2];                                                           \
+    dst[3] = src[3];                                                           \
+  }
 
 #define pointer_x cuts.pointer.x[cuts.pointer.coords]
 #define pointer_y cuts.pointer.y[cuts.pointer.coords]
 #define pointer_x_prev cuts.pointer.x[cuts.pointer.coords ^ 1]
 #define pointer_y_prev cuts.pointer.y[cuts.pointer.coords ^ 1]
 
-typedef enum bar_pos {
-  BAR_TOP = 1,
-  BAR_BOTTOM,
-  BAR_RIGHT,
-  BAR_LEFT,
-} bar_pos;
+#define bit_index(n, i)                                                        \
+  {                                                                            \
+    i = 0;                                                                     \
+    uint32_t _n = n;                                                           \
+    while ((_n >>= 1))                                                         \
+      i++;                                                                     \
+  }
+
+#define bar_horizontal(bar) (bar)->pos & (BAR_TOP | BAR_BOTTOM)
+
+#define text_rect_width(text_len, bar)                                         \
+  ((text_len * (bar->glyph.width + bar->glyph.spacing)) - bar->glyph.spacing +  \
+      bar->h_padding * 2)
+
+#define text_rect_height(text_len, bar)                                        \
+  ((text_len * (bar->glyph.height + bar->glyph.spacing)) - bar->glyph.spacing + \
+      bar->v_padding * 2)
+
+struct bar_block {
+  struct c_scene_rect   rect;
+  struct c_scene_node   *rect_node;
+
+  struct c_scene_buffer text;
+  struct c_scene_node   *text_node;
+};
 
 struct bar {
+  FT_Library library;
+  FT_Face face;
+
+  struct {
+    uint32_t spacing;
+    uint32_t width, height;
+  } glyph;
+
+  uint32_t h_padding, v_padding;
+
   uint32_t width, height;
-  bar_pos pos;
+  enum bar_position  pos;
+
+  struct bar_block blocks[12];
+  size_t block_n;
 };
 
 struct client {
@@ -65,8 +111,10 @@ struct client {
   uint64_t z;
   struct c_output *output;
   struct c_scene_node *window;
-  struct c_scene_node *border;
-  struct c_scene_rect  border_rect;
+
+  // top, right, bottom, left
+  struct c_scene_node *border[4];
+  struct c_scene_rect  border_rect[4];
 };
 
 struct {
@@ -134,6 +182,13 @@ int on_window_new(struct c_wl_connection *conn, c_wl_args args, void *userdata);
 int on_window_close(struct c_wl_connection *conn, c_wl_args args, void *userdata);
 int on_set_selection(struct c_wl_connection *conn, c_wl_args args, void *userdata);
 
+void bar_block_write_text(struct bar *bar, struct bar_block *block, const char *text, const uint32_t color[4]);
+void bar_block_clear_text(struct bar *bar, struct bar_block *block);
+void bar_block_update(struct bar_block *block);
+void bar_switch_tag(uint32_t current, uint32_t next);
+void bar_set_title(const char *title);
+void bar_clear_title();
+
 void tile();
 void monocle();
 
@@ -147,13 +202,228 @@ void window_move(int done, bind_args *args);
 
 void cleanup(int err, void *userdata);
 
+static void get_surface_buf_size(struct c_wl_surface *surface, int32_t *width, int32_t *height) {
+  if (surface->active->dma) {
+    *width = surface->active->dma->width / surface->active->scale;
+    *height = surface->active->dma->height / surface->active->scale;
+  } else {
+    *width = surface->active->shm->width / surface->active->scale;
+    *height = surface->active->shm->height / surface->active->scale;
+  }
+}
+
+void collect_window_tree(struct c_window *window, struct c_wl_surface *surface,
+                                 double x, double y,
+                                 c_list *quads, int depth) {
+  if (!surface->active) return;
+
+  int32_t buf_width, buf_height;
+  get_surface_buf_size(surface, &buf_width, &buf_height);
+
+  struct c_renderer_quad q = {
+    .type = C_RENDERER_BUFFER,
+    .buffer = surface->active->dma ? (void *)surface->active->dma : (void *)surface->active->shm,
+    .buffer_type = surface->active->dma ? C_BUFFER_DMA : C_BUFFER_RAW,
+    .uv0 = {0.0f, 0.0f},
+    .uv1 = {1.0f, 1.0f},
+  };
+
+  double base_x, base_y;
+
+  if (window) {
+    q.width = window->width;
+    q.height = window->height;
+    q.x = window->x;
+    q.y = window->y;
+    base_x = window->x;
+    base_y = window->y;
+  } else {
+    q.width = buf_width;
+    q.height = buf_height;
+    q.x = x;
+    q.y = y;
+    base_x = x;
+    base_y = y;
+  }
+
+  double w_x = 0, w_y = 0;
+  uint32_t w_w = buf_width, w_h = buf_height;
+
+  if (surface->xdg_surface && surface->xdg_surface->width > 0) {
+    w_x = surface->xdg_surface->x;
+    w_y = surface->xdg_surface->y;
+    w_w = surface->xdg_surface->width;
+    w_h = surface->xdg_surface->height;
+
+    q.uv0[0] = (float)w_x / buf_width;
+    q.uv0[1] = (float)w_y / buf_height;
+    q.uv1[0] = (float)(w_x + w_w) / buf_width;
+    q.uv1[1] = (float)(w_y + w_h) / buf_height;
+  }
+
+  // c_log(C_LOG_DEBUG, "%*s surface#%d (%d) %p %dx%d x=%f y=%f", depth, " ",
+  //       surface->id, q.buffer_type, surface, q.width, q.height, q.x, q.y);
+
+  c_list_push(quads, &q, sizeof(q));
+
+  if (surface->sub.children) {
+    struct c_wl_subsurface *sub_s;
+    c_list_for_each(surface->sub.children, sub_s) {
+      if (!sub_s->surface->active) continue;
+
+      get_surface_buf_size(sub_s->surface, &buf_width, &buf_height);
+
+      struct c_renderer_quad q_sub = {
+        .type = C_RENDERER_BUFFER,
+        .buffer = sub_s->surface->active->dma ? (void *)sub_s->surface->active->dma : (void *)sub_s->surface->active->shm,
+        .buffer_type = sub_s->surface->active->dma ? C_BUFFER_DMA : C_BUFFER_RAW,
+
+        .width = buf_width,
+        .height = buf_height,
+
+        .x = base_x + sub_s->x - w_x,
+        .y = base_y + sub_s->y - w_y,
+
+        .uv1 = {1.0f, 1.0f},
+      };
+
+      // c_log(C_LOG_DEBUG, "%*s SUB-surface#%d (%d) %p %dx%d x=%f y=%f",
+      //       depth + 2, " ", sub_s->id, q_sub.buffer_type, sub_s, q_sub.width,
+      //       q_sub.height, q_sub.x, q_sub.y);
+
+      c_list_push(quads, &q_sub, sizeof(q_sub));
+      collect_window_tree(NULL, sub_s->surface, q_sub.x, q_sub.y, quads, depth + 1);
+    }
+  }
+
+  if (surface->xdg_surface && surface->xdg_surface->children) {
+    struct c_xdg_surface *xdg_s;
+    c_list_for_each(surface->xdg_surface->children, xdg_s) {
+      if (!xdg_s->surface->active) continue;
+
+      get_surface_buf_size(xdg_s->surface, &buf_width, &buf_height);
+
+      struct c_renderer_quad q_sub = {
+        .type = C_RENDERER_BUFFER,
+        .buffer = xdg_s->surface->active->dma
+                      ? (void *)xdg_s->surface->active->dma
+                      : (void *)xdg_s->surface->active->shm,
+        .buffer_type = xdg_s->surface->active->dma ? C_BUFFER_DMA : C_BUFFER_RAW,
+
+        .width = xdg_s->popup.positioner.width ? xdg_s->popup.positioner.width : buf_width,
+        .height = xdg_s->popup.positioner.height ? xdg_s->popup.positioner.height : buf_height,
+
+        .x = base_x + xdg_s->x + xdg_s->popup.x,
+        .y = base_y + xdg_s->y + xdg_s->popup.y,
+
+        .uv1 = {1.0f, 1.0f},
+      };
+
+      // c_log(C_LOG_DEBUG, "%*s XDG-surface#%d (%d) %p %dx%d x=%f y=%f", depth,
+      //       " ", xdg_s->id, q_sub.buffer_type, xdg_s, q_sub.width, q_sub.height,
+      //       q_sub.x, q_sub.y);
+
+      c_list_push(quads, &q_sub, sizeof(q_sub));
+      collect_window_tree(NULL, xdg_s->surface, q_sub.x, q_sub.y, quads, depth + 1);
+    }
+  }
+}
+
+void scene_collect_window(struct c_scene_node *node, c_list *quads) {
+  struct c_window *window = c_scene_node_data(node);
+  collect_window_tree(window, window->surface->surface, window->x, window->y, quads, 0);
+}
+
+void client_border_create(struct client *client) {
+  client->border[0] = c_scene_add_rect(cuts.scene, &client->border_rect[0]);
+  client->border[1] = c_scene_add_rect(cuts.scene, &client->border_rect[1]);
+  client->border[2] = c_scene_add_rect(cuts.scene, &client->border_rect[2]);
+  client->border[3] = c_scene_add_rect(cuts.scene, &client->border_rect[3]);
+}
+
+void client_border_delete(struct client *client) {
+  c_scene_node_remove(cuts.scene, client->border[0]);
+  c_scene_node_remove(cuts.scene, client->border[1]);
+  c_scene_node_remove(cuts.scene, client->border[2]);
+  c_scene_node_remove(cuts.scene, client->border[3]);
+}
+
+void client_border_set_color(struct client *client, const uint32_t color[4]) {
+  set_color(client->border_rect[0].color, color);
+  c_scene_node_update(client->border[0]);
+
+  set_color(client->border_rect[1].color, color);
+  c_scene_node_update(client->border[1]);
+
+  set_color(client->border_rect[2].color, color);
+  c_scene_node_update(client->border[2]);
+   
+  set_color(client->border_rect[3].color, color);
+  c_scene_node_update(client->border[3]);
+}
+
+void client_border_sync(struct client *client) {
+#define set_geom(dst, _x, _y, _width, _height)                                 \
+  {                                                                            \
+    (dst).x = (_x);                                                            \
+    (dst).y = (_y);                                                            \
+    (dst).width = (_width);                                                    \
+    (dst).height = (_height);                                                  \
+  }
+
+  struct c_window *window = node_window(client->window);
+
+  double x, y;
+  uint32_t width, height;
+
+  x = window->x;
+  y = window->y;
+  width = window->width;
+  height = window->height;
+
+  // top
+  set_geom(client->border_rect[0], x - border_width, y - border_width,
+           width + border_width * 2, border_width);
+  c_scene_node_update(client->border[0]);
+
+  // right
+  set_geom(client->border_rect[1], x + width, y - border_width,
+           border_width, height + border_width * 2);
+  c_scene_node_update(client->border[1]);
+
+  // bottom
+  set_geom(client->border_rect[2], x - border_width, y + height,
+           width + border_width * 2, border_width);
+  c_scene_node_update(client->border[2]);
+   
+  // left
+  set_geom(client->border_rect[3], x - border_width, y - border_width,
+           border_width, height + border_width * 2);
+  c_scene_node_update(client->border[3]);
+}
+
+void client_border_set_visibility(struct client *client, int is_visible) {
+  c_scene_node_set_visibility(client->border[0], is_visible);
+  c_scene_node_set_visibility(client->border[1], is_visible);
+  c_scene_node_set_visibility(client->border[2], is_visible);
+  c_scene_node_set_visibility(client->border[3], is_visible);
+
+}
+
+void client_border_raise(struct client *client) {
+  c_scene_node_raise(cuts.scene, client->border[0]);
+  c_scene_node_raise(cuts.scene, client->border[1]);
+  c_scene_node_raise(cuts.scene, client->border[2]);
+  c_scene_node_raise(cuts.scene, client->border[3]);
+}
+
 void client_set_visibility(struct client *client, int is_visible) {
-  client->window->is_hidden = !is_visible;
-  client->border->is_hidden = !is_visible;
+  c_scene_node_set_visibility(client->window, is_visible);
+  client_border_set_visibility(client, is_visible);
 }
 
 void client_raise(struct client *client) {
-  c_scene_node_raise(cuts.scene, client->border);
+  client_border_raise(client);
   c_scene_node_raise(cuts.scene, client->window);
   client->z = ++cuts.next_z;
 }
@@ -163,8 +433,7 @@ void client_toggle_floating(struct client *client) {
   window->state ^= C_WINDOW_FLOAT;
 }
 
-
-struct client *tag_move_focus(int direction) {
+struct client *tag_select_client(int direction) {
   uint32_t clients = 0;
 
   struct client *client;
@@ -199,9 +468,11 @@ struct c_scene_node *window_new(struct c_wl_connection *connection, struct c_xdg
   window->title = &surface->toplevel.title;
   window->app_id = &surface->toplevel.app_id;
 
-  return c_scene_add_window(cuts.scene, window);
-;
-};
+  struct c_scene_node *window_node = c_scene_add_window(cuts.scene, window);
+  c_scene_node_set_collect(window_node, scene_collect_window);
+
+  return window_node;
+}
 
 struct client *client_new(struct c_wl_connection *connection) {
   struct client *client = calloc(1, sizeof(*client));
@@ -212,35 +483,35 @@ struct client *client_new(struct c_wl_connection *connection) {
 
   client->tag = cuts.focused_tag;
   client->output = cuts.focused_output;
-  client->border = c_scene_add_rect(cuts.scene, &client->border_rect);
+  client_border_create(client);
   return client;
 }
 
 void client_free(struct client *client) {
-  c_scene_node_remove(cuts.scene, client->border);
-  free(client->window->data);
+  client_border_delete(client);
+
+  free(c_scene_node_data(client->window));
   c_scene_node_remove(cuts.scene, client->window);
+
   free(client);
 }
 
+void client_unfocus(struct client *client) {
+  c_window_deactivate(node_window(cuts.focused_client->window));
+  c_window_unfocus(node_window(cuts.focused_client->window));
 
-void client_change_focus(struct client *client, double hotspot_x, double hotspot_y) {
-  if (client == cuts.focused_client) return;
+  client_border_set_color(cuts.focused_client, border_default);
+  cuts.focused_client = NULL;
+}
 
-  if (cuts.focused_client) {
-    c_window_deactivate(node_window(cuts.focused_client->window));
-    c_window_unfocus(node_window(cuts.focused_client->window));
-
-    struct c_scene_rect *border_rect = &cuts.focused_client->border_rect;
-    border_rect->color[0] = border_default[0];
-    border_rect->color[1] = border_default[1];
-    border_rect->color[2] = border_default[2];
-    border_rect->color[3] = border_default[3];
-    c_scene_node_update(cuts.focused_client->border);
-
-  }
-
+void client_focus(struct client *client, double hotspot_x, double hotspot_y) {
   struct c_window *window = node_window(client->window);
+
+  if (*window->title)
+    bar_set_title(*window->title);
+
+  client_border_set_color(client, border_focus);
+
   c_window_activate(window);
 
   struct c_wl_object *o;
@@ -269,34 +540,36 @@ void client_change_focus(struct client *client, double hotspot_x, double hotspot
   c_window_focus(window, hotspot_x, hotspot_y);
   cuts.focused_client = client;
 
-  struct c_scene_rect *border_rect = &cuts.focused_client->border_rect;
-  border_rect->color[0] = border_focus[0];
-  border_rect->color[1] = border_focus[1];
-  border_rect->color[2] = border_focus[2];
-  border_rect->color[3] = border_focus[3];
-  c_scene_node_update(cuts.focused_client->border);
+}
+
+void client_change_focus(struct client *client, double hotspot_x, double hotspot_y) {
+  if (client == cuts.focused_client) return;
+
+  if (cuts.focused_client)
+    client_unfocus(cuts.focused_client);
+
+  client_focus(client, hotspot_x, hotspot_y);
 
 }
 
 void client_close(struct client *client) {
   int is_focused = cuts.focused_client == client;
 
-  if (is_focused) {
-    c_window_unfocus(node_window(client->window));
-    cuts.focused_client = NULL;
-  }
+  if (is_focused)
+    client_unfocus(client);
 
   client_free(client);
   c_list_remove(&cuts.clients, client);
 
   if (is_focused) {
-    struct client *prev = tag_move_focus(-1);
+    struct client *prev = tag_select_client(-1);
 
-    if (prev)
+    if (prev) {
       client_change_focus(prev, pointer_x, pointer_y);
-
-    else
+    } else {
       cuts.focused_client = NULL;
+      bar_clear_title();
+    }
   }
 }
 
@@ -388,7 +661,7 @@ void on_mouse_movement(struct c_input_mouse_event *event, void *userdata) {
   pointer_x = event->x;
   pointer_y = event->y;
 
-  if (cuts.pointer.is_dragging || cuts.clients->size == 0) return;
+  if (cuts.pointer.is_dragging || !cuts.focused_client) return;
   struct client *focused = NULL;
 
   uint64_t h_z = 0;
@@ -441,6 +714,17 @@ struct c_wl_surface *find_root_surface(struct c_wl_surface *surface) {
  return surface;
 }
 
+struct client *client_from_connection(struct c_wl_connection *connection) {
+  struct client *client;
+  struct c_window *window;
+  c_list_for_each(cuts.clients, client) {
+    if ((window = node_window(client->window)) && window->conn == connection)
+      return client;
+  }
+
+  return NULL;
+}
+
 struct client *client_from_surface(struct c_wl_surface *surface) {
   struct c_wl_surface *root = find_root_surface(surface);
 
@@ -478,7 +762,7 @@ int on_surface_commit(struct c_wl_connection *conn, c_wl_args args, void *userda
   struct c_wl_surface *surface = wl_surface->data;
 
   struct client *client;
-  if ((client = client_from_surface(surface)))
+  if ((client = client_from_connection(conn)))
     c_scene_node_update(client->window);
 
   assign_output_to_surface(wl_surface);
@@ -494,17 +778,15 @@ int on_surface_destroy(struct c_wl_connection *conn, c_wl_args args, void *userd
   struct c_wl_surface *surface = wl_surface->data;
 
   struct client *client;
-  if ((client = client_from_surface(surface)))
+  if ((client = client_from_connection(conn)))
     c_scene_node_update(client->window);
 
   if (!surface->output) return 0;
 
   struct c_output *output = surface->output->output;
-  c_list_remove(&output->frame_surfaces, wl_surface);
+  c_list_remove(&output->active_surfaces, wl_surface);
   output_damage(output);
-
   c_unref(surface->output);
-
   return 0;
 }
 
@@ -515,8 +797,8 @@ int on_surface_frame(struct c_wl_connection *conn, c_wl_args args, void *userdat
 
   struct c_output *output = surface->output->output;
 
-  if (c_list_idx(output->frame_surfaces, wl_surface) < 0)
-    c_list_push(output->frame_surfaces, wl_surface, 0);
+  if (c_list_idx(output->active_surfaces, wl_surface) < 0)
+    c_list_push(output->active_surfaces, wl_surface, 0);
 
   return 0;
 }
@@ -536,6 +818,17 @@ int on_window_new(struct c_wl_connection *conn, c_wl_args args, void *userdata) 
   client_change_focus(client, pointer_x, pointer_y);
 
   LAYOUT(client->output);
+  return 0;
+}
+
+int on_set_title(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
+  struct c_xdg_surface *surface = c_wl_self(conn, args)->data;
+  struct c_window *focused_window = node_window(cuts.focused_client->window);
+
+  if (focused_window->surface == surface) {
+    bar_set_title(surface->toplevel.title);
+  }
+
   return 0;
 }
 
@@ -640,7 +933,7 @@ void spawn(bind_args *args) {
     open("/dev/null", O_RDWR);
     dup2(STDERR_FILENO, STDOUT_FILENO);
     setsid();
-    execvp("/bin/sh", (char *const []){"/bin/sh", "-c", args->s, NULL});
+    execvp("/bin/sh", (char *const []){"/bin/sh", "-c", (char *const)args->s, NULL});
   }
 }
 
@@ -650,13 +943,16 @@ void window_kill(bind_args *args) {
 }
 
 void move_focus(bind_args *args) {
-  struct client *next = tag_move_focus(args->i);
-
+  struct client *next = tag_select_client(args->i);
   if (next)
     client_change_focus(next, pointer_x, pointer_y);
 }
 
 void switch_tag(bind_args *args) {
+  if (cuts.focused_tag == args->u) return;
+
+  bar_switch_tag(cuts.focused_tag, args->u);
+
   cuts.focused_tag = args->u;
 
   struct client *c;
@@ -665,11 +961,18 @@ void switch_tag(bind_args *args) {
 
   LAYOUT(cuts.focused_output);
 
-  clients_for_each_in_tag(c) {
-    client_change_focus(c, pointer_x, pointer_y);
-    break;
-  }
+  struct client *prev = tag_select_client(-1);
 
+  if (prev) {
+    client_change_focus(prev, pointer_x, pointer_y);
+    return;
+
+  } 
+  
+  if (cuts.focused_client)
+    client_unfocus(cuts.focused_client);
+   
+  bar_clear_title();
 }
 
 int count_tiled() {
@@ -705,7 +1008,6 @@ void calc_tile_layout(struct c_output *output, struct tile_layout *layout) {
   if (cuts.bar.pos == BAR_LEFT) {
     layout->width -= cuts.bar.width;
     layout->x += cuts.bar.width;
-
   }
 
   layout->master.x = layout->x;
@@ -763,22 +1065,14 @@ void tile() {
     window->height -= border_width * 2;
     i++;
 
-    struct c_scene_rect *border;
-
 update:
-    border = &client->border_rect;
-    border->x = window->x - border_width;
-    border->y = window->y - border_width;
-    border->width = window->width + border_width * 2;
-    border->height = window->height + border_width * 2;
-
     if (cuts.focused_client == client) {
       c_window_activate(window);
     } else {
       c_window_deactivate(window);
     }
      
-    c_scene_node_update(client->border);
+    client_border_sync(client);
     c_scene_node_update(client->window);
 
   }
@@ -819,6 +1113,11 @@ void window_move(int done, bind_args *args) {
   client_raise(focused);
   if (!(window->state & C_WINDOW_FLOAT))
     client_toggle_floating(focused);
+
+  if (done) {
+    pointer_x_prev = pointer_x;
+    pointer_y_prev = pointer_y;
+  }
     
   double dist_x = pointer_x - pointer_x_prev;
   double dist_y = pointer_y - pointer_y_prev;
@@ -837,7 +1136,11 @@ void window_move_to_workspace(bind_args *args) {
   cuts.focused_client->tag = args->u;
   client_set_visibility(cuts.focused_client, 0);
   client_raise(cuts.focused_client);
-  tag_move_focus(-1);
+
+  struct client *next;
+  if ((next = tag_select_client(1)))
+    client_change_focus(next, pointer_x, pointer_y);
+
 
   LAYOUT(cuts.focused_client->output);
 }
@@ -850,12 +1153,17 @@ void window_resize(int done, bind_args *args) {
   client_raise(focused);
   if (!(window->state & C_WINDOW_FLOAT))
     client_toggle_floating(focused);
+
+  if (done) {
+    pointer_x_prev = pointer_x;
+    pointer_y_prev = pointer_y;
+  }
     
   float dist_x = pointer_x - pointer_x_prev;
   float dist_y = pointer_y - pointer_y_prev;
 
-  window->width+=dist_x;
-  window->height+=dist_y;
+  window->width = CLAMP(window->width + dist_x, MIN_WINDOW_SIZE, UINT32_MAX);
+  window->height = CLAMP(window->height + dist_y, MIN_WINDOW_SIZE, UINT32_MAX);
 
   c_window_activate(window);
 
@@ -864,13 +1172,257 @@ void window_resize(int done, bind_args *args) {
   LAYOUT(focused->output);
 }
 
+void bar_destroy() {
+  struct bar *bar = &cuts.bar;
+  for (size_t i = 0; i < bar->block_n; i++) {
+    struct bar_block block = bar->blocks[i];
+    free(block.text.buffer);
+  }
+
+  if (bar->face) FT_Done_Face(bar->face);
+  if (bar->library) FT_Done_FreeType(bar->library);
+}
+
+void bar_set_title(const char *title) {
+  struct bar_block *block;
+  block = &cuts.bar.blocks[tags];
+
+  bar_block_write_text(&cuts.bar, block, title, font_color);
+  bar_block_update(block);
+}
+
+void bar_clear_title() {
+  struct bar_block *block;
+  block = &cuts.bar.blocks[tags];
+  bar_block_clear_text(&cuts.bar, block);
+  bar_block_update(block);
+}
+
+void bar_switch_tag(uint32_t current, uint32_t next) {
+  char label[2] = {0, 0};
+  struct bar_block *block;
+  int tag_i;
+
+  bit_index(current, tag_i);
+  block = &cuts.bar.blocks[tag_i];
+
+  set_color(block->rect.color, background_color);
+  label[0] = tag_i + 49;
+
+  bar_block_write_text(&cuts.bar, block, label, border_default);
+  bar_block_update(block);
+
+  bit_index(next, tag_i);
+  block = &cuts.bar.blocks[tag_i];
+
+  set_color(block->rect.color, border_default);
+  label[0] = tag_i + 49;
+
+  bar_block_write_text(&cuts.bar, block, label, font_color);
+  bar_block_update(block);
+}
+
+void bar_block_init(struct bar *bar, struct bar_block *block) {
+  struct c_scene_rect *rect = &block->rect;
+  block->rect_node = c_scene_add_rect(cuts.scene, &block->rect);
+
+  block->text.width = rect->width;
+  block->text.height = rect->height;
+
+  uint32_t buffer_size = block->text.width * 4 * block->text.height;
+  uint8_t *buffer = calloc(buffer_size, 1);
+
+  block->text.buffer = buffer;
+
+  block->text.x = block->rect.x + bar->h_padding;
+  block->text.y = block->rect.y + bar->v_padding;
+
+  block->text_node = c_scene_add_buffer(cuts.scene, &block->text);
+  
+}
+
+void bar_block_update(struct bar_block *block) {
+  c_scene_node_update(block->rect_node);
+  c_scene_node_update(block->text_node);
+}
+
+void bar_block_clear_text(struct bar *bar, struct bar_block *block) {
+  uint8_t *buffer = block->text.buffer;
+  uint32_t buffer_size = block->text.width * 4 * block->text.height;
+  memset(buffer, 0, buffer_size);
+}
+
+void bar_block_write_text(struct bar *bar, struct bar_block *block, const char *text, const uint32_t color[4]) {
+  FT_Face face = bar->face;
+  FT_GlyphSlot slot = bar->face->glyph;
+
+  bar_block_clear_text(bar, block);
+
+  uint8_t *buffer = block->text.buffer;
+  uint32_t width = block->text.width;
+
+  int ascent = bar->face->size->metrics.ascender >> 6;
+  uint32_t baseline = ascent;
+
+  uint32_t pos_x = 0;
+  uint32_t pos_y = 0;
+
+  FT_Int32 load_flags;
+  if (bar_horizontal(bar))
+    load_flags = FT_LOAD_DEFAULT;
+  else
+    load_flags = FT_LOAD_VERTICAL_LAYOUT;
+
+  for (size_t n = 0; n < strlen(text); n++) {
+    FT_UInt glyph_index = FT_Get_Char_Index(face, text[n]);
+
+    FT_Load_Glyph(face, glyph_index, load_flags);
+    FT_Render_Glyph(slot, FT_RENDER_MODE_NORMAL);
+
+    for (size_t g_y = 0; g_y < slot->bitmap.rows; g_y++) {
+      for (size_t g_x = 0; g_x < slot->bitmap.width; g_x++) {
+        int buffer_i;
+
+        if (bar_horizontal(bar))
+          buffer_i = (baseline - slot->bitmap_top + g_y) * width + pos_x + g_x + slot->bitmap_left;
+
+        else
+          buffer_i = (pos_y + baseline - slot->bitmap_top + g_y) * width + g_x + slot->bitmap_left;
+
+        uint8_t coverage = slot->bitmap.buffer[g_y * slot->bitmap.width + g_x];
+        uint8_t r = (color[0] * coverage) / 255;
+        uint8_t g = (color[1] * coverage) / 255;
+        uint8_t b = (color[2] * coverage) / 255;
+        uint32_t color_u32 = coverage << 24 | b << 16 | g << 8 | r;
+        *((uint32_t *)buffer + buffer_i) = color_u32;
+      }
+    }
+
+    pos_x += (slot->advance.x >> 6) + bar->glyph.spacing;
+    pos_y += (slot->advance.y >> 6) + bar->glyph.spacing;
+  }
+
+}
+
+void bar_create(struct c_output_mode *mode) {
+  struct bar *bar = &cuts.bar;
+  FT_Error error = 0;
+
+  uint32_t font_size = 14;
+
+  bar->pos = bar_pos;
+  bar->block_n = tags + 2;
+
+  if ((error = FT_Init_FreeType(&bar->library))) {
+    c_log(C_LOG_ERROR, "failed to initialize freetype: %s", FT_Error_String(error));
+    quit(NULL);
+  }
+
+  if ((error = FT_New_Face(cuts.bar.library, "/usr/share/fonts/noto/NotoSansMono-Medium.ttf", 0, &bar->face))) {
+    c_log(C_LOG_ERROR, "failed to create new face: %s", FT_Error_String(error));
+    goto ft_error;
+  }
+
+  if ((error = FT_Set_Pixel_Sizes(bar->face, 0, font_size))) {
+    c_log(C_LOG_ERROR, "failed to set pixel sizes: %s" , FT_Error_String(error));
+    goto ft_error;
+  }
+
+  FT_UInt glyph_index = FT_Get_Char_Index(bar->face, 'a');
+  FT_Load_Glyph(bar->face, glyph_index, FT_LOAD_DEFAULT);
+  FT_Render_Glyph(bar->face->glyph, FT_RENDER_MODE_NORMAL);
+
+  int ascent  = bar->face->size->metrics.ascender  >> 6;
+  int descent = -(bar->face->size->metrics.descender >> 6);
+
+  bar->glyph.spacing = 2;
+  bar->glyph.height = ascent + descent;
+  bar->glyph.width = bar->face->glyph->bitmap.width;
+
+  if (bar_horizontal(bar)) {
+    bar->height = bar->glyph.height + bar->glyph.spacing * 2;
+    bar->width = mode->width;
+  } else {
+    bar->height = mode->height;
+    bar->width = bar->glyph.width + bar->glyph.spacing * 2;
+  }
+
+  bar->h_padding = (MIN(bar->width, bar->height) - bar->glyph.width) / 2;
+  bar->v_padding = (MIN(bar->width, bar->height) - bar->glyph.height) / 2;
+
+
+  uint32_t pen = 0;
+
+  for (size_t i = 0; i < bar->block_n; i++) {
+    struct bar_block *block = &bar->blocks[i];
+    struct c_scene_rect *rect = &block->rect;
+
+    if (bar->pos & (BAR_RIGHT)) {
+      rect->x = mode->width - bar->width;  
+      rect->y = pen;
+    } else if (bar->pos & (BAR_TOP | BAR_BOTTOM)) {
+      rect->x = pen;
+      rect->y = bar->pos == BAR_TOP ? 0 : mode->height - bar->height;
+    } else {
+      rect->x = 0;
+      rect->y = pen;
+    }
+
+    rect->height = bar->height;
+    rect->width = bar->width;
+
+    if (0 <= i && i < tags) { // tag blocks
+      if (bar_horizontal(bar))
+        rect->width = rect->height;
+      else
+        rect->height = rect->width;
+
+      set_color(rect->color, (!i ? border_default : background_color)); 
+      bar_block_init(bar, block);
+
+      char label[2] = {i + 49, 0};
+      bar_block_write_text(bar, block, label, (!i ? font_color : border_default));
+
+    } else if (i == tags) { // title
+      set_color(rect->color, border_default);
+      if (bar_horizontal(bar))
+        rect->width = mode->width - pen;
+      else
+        rect->height = mode->height - pen;
+
+      bar_block_init(bar, block);
+
+    } else if (i == tags + 1) { // stdin
+      const char *label = "cuts o_0";
+
+      if (bar_horizontal(bar)) {
+        rect->width = text_rect_width(MAX_STDIN_CHARS, bar);
+        rect->x = pen - text_rect_width(strlen(label), bar);
+
+      } else {
+        rect->height = text_rect_height(MAX_STDIN_CHARS, bar);
+        rect->y = pen - text_rect_height(strlen(label), bar);
+      }
+
+      set_color(rect->color, background_color);
+      bar_block_init(bar, block);
+      bar_block_write_text(bar, block, label, border_default);
+    }
+
+    pen += bar->pos & (BAR_TOP | BAR_BOTTOM) ? rect->width : rect->height;
+  } 
+
+  return;
+
+ft_error:
+  bar_destroy();
+  quit(NULL);
+}
+
 void set_background(struct c_output_mode *mode) {
   struct c_scene_rect *background = &cuts.background;
 
-  background->color[0] = background_color[0];
-  background->color[1] = background_color[1];
-  background->color[2] = background_color[2];
-  background->color[3] = background_color[3];
+  set_color(background->color, background_color);
 
   background->x = 0; // temp
   background->y = 0; // temp
@@ -892,13 +1444,50 @@ void set_cursor(struct c_output *output, int size) {
       int dist_x = MIN(x, size - x - 1);
       int dist_y = MIN(y, size - y - 1);
       if (dist_x < b || dist_y < b) {
-        buffer[y * cursor->height + x] = 0xffffffff;
+        buffer[y * cursor->width + x] = 0xffffffff;
       } else {
-        buffer[y * cursor->height + x] = 0xff000000;
+        buffer[y * cursor->width + x] = 0xff000000;
       }
     } 
   }
   c_cursor_update(cuts.mgr, output, buffer, sizeof(buffer));
+}
+
+
+C_EVENT_CALLBACK stdin_text(struct c_event_loop *loop, int fd, void *userdata) {
+  char buffer[MAX_STDIN_CHARS] = {0};
+
+  int read_b;
+  if (!(read_b = read(STDIN_FILENO, buffer, sizeof(buffer) - 1))) {
+    c_log(C_LOG_WARNING, "failed to read stdin");
+    goto out;
+  } 
+  buffer[read_b] = 0;
+
+  struct bar *bar = &cuts.bar;
+  struct bar_block *block = &cuts.bar.blocks[tags + 1];
+  struct c_output *output = cuts.focused_output;
+  struct c_output_mode *mode = output->current_mode;
+  
+  if (bar_horizontal(bar)) {
+    uint32_t text_width = text_rect_width(strlen(buffer), bar);
+    block->rect.x = mode->width - text_width;
+    block->text.x = block->rect.x + bar->h_padding;
+
+  } else {
+    uint32_t text_height = text_rect_height(strlen(buffer), bar);
+    
+    block->rect.y = mode->height - text_height;
+    block->text.y = block->rect.y + bar->v_padding;
+
+  }
+
+  bar_block_write_text(bar, block, buffer, border_default);
+  bar_block_update(block);
+  c_output_damage(cuts.mgr, output);
+
+out:
+  return C_EVENT_OK;
 }
 
 void cleanup(int err, void *userdata) {
@@ -919,6 +1508,8 @@ void cleanup(int err, void *userdata) {
     c_list_destroy(cuts.clients);
     cuts.clients = NULL;
   }
+
+  bar_destroy();
 
   if (cuts.scene) {
     c_scene_free(cuts.scene);
@@ -997,7 +1588,10 @@ int main() {
         if (STREQ(m.name, output->name) && m.width == mode->width &&
             m.height == mode->height &&
             m.refresh_rate == (uint32_t)mode->refresh_rate) {
+
           set_background(mode);
+          bar_create(mode);
+
           c_output_set_mode(mgr, output, mode);
           goto mode_iter_end;
         }
@@ -1006,6 +1600,8 @@ int main() {
 
     assert(preferred);
     set_background(preferred);
+    bar_create(preferred);
+
     c_output_set_mode(mgr, output, preferred);
 
 mode_iter_end:
@@ -1066,6 +1662,7 @@ mode_iter_end:
 
   struct c_xdg_toplevel_listeners xdg_toplevel_listeners = {
     .destroy = on_window_close,
+    .set_title = on_set_title,
   };
   xdg_toplevel_add_listener(display, &xdg_toplevel_listeners, NULL);
 
@@ -1083,6 +1680,9 @@ mode_iter_end:
     .receive = on_data_receive,
   };
   wl_data_offer_add_listener(display, &data_offer_listeners, NULL);
+
+
+  c_event_loop_add(loop, STDIN_FILENO, stdin_text, NULL);
 
   ret = c_event_loop_run(loop);
 

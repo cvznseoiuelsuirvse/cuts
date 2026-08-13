@@ -42,11 +42,12 @@ struct c_dmabuf {
 
 struct c_rawbuf {
 	uint32_t width, height;
-	uint8_t **base_ptr;
+	uint32_t stride;
+	uint8_t *base_ptr;
 	uint32_t format;
-	int stride;
 	int offset;
 	struct c_gles_texture *texture;
+  int dirty;
 };
 
 struct c_renderer_quad {
@@ -61,6 +62,9 @@ struct c_renderer_quad {
 
 	double  x, y;
 	int32_t width, height;
+
+	float uv0[2];
+	float uv1[2];
 };
 
 #endif

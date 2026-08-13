@@ -8,8 +8,8 @@
 #define CONCAT(a, b) a##b
 #define STREQ(s1, s2) (strcmp((s1), (s2)) == 0)
 #define LENGTH(s) (sizeof((s)) /  sizeof(*(s)))
-#define MAX(v1, v2) ((v1) > (v2)) ? (v1) : (v2)
-#define MIN(v1, v2) ((v1) > (v2)) ? (v2) : (v1)
+#define MAX(v1, v2) (((v1) > (v2)) ? (v1) : (v2))
+#define MIN(v1, v2) (((v1) > (v2)) ? (v2) : (v1))
 #define CLAMP(value, min, max) MAX((min), MIN((value), (max)))
 
 #define SWITCH_STR(var) { const char *__switch_var = (var); if (0) {

@@ -53,7 +53,7 @@ struct c_output {
 	int waiting_for_flip;
 	int need_redraw;
 
-  c_list *frame_surfaces;
+  c_list *active_surfaces;
 
 	struct {
 		int front;

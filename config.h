@@ -14,12 +14,12 @@
     }                                                                          \
   }
 
-#define COLOR_TO_VEC4(n)                                                       \
+#define COLOR_TO_BYTES(n)                                                      \
   {                                                                            \
-      ((n >> 24) & 0xff) / 255.0f,                                             \
-      ((n >> 16) & 0xff) / 255.0f,                                             \
-      ((n >> 8) & 0xff) / 255.0f,                                              \
-      ((n >> 0) & 0xff) / 255.0f,                                              \
+      ((n >> 24) & 0xff),                                                      \
+      ((n >> 16) & 0xff),                                                      \
+      ((n >> 8) & 0xff),                                                       \
+      ((n >> 0) & 0xff),                                                       \
   }
 
 #define MOUSE_DRAG(func) 1, .drag_handler=func
@@ -27,16 +27,20 @@
 
 static enum libinput_config_accel_profile accel_profile = LIBINPUT_CONFIG_ACCEL_PROFILE_FLAT;
 
-static uint32_t gap = 0;
-static const float background_color[4] = COLOR_TO_VEC4(0x000000ff);
+static const uint32_t tags = 5;
 
-static uint32_t border_width    = 1;
-static const float border_focus[4]    = COLOR_TO_VEC4(0x777777ff);
-static const float border_default[4]  = COLOR_TO_VEC4(0x444444ff);
+static uint32_t gap          = 15;
+static const uint32_t background_color[4] = COLOR_TO_BYTES(0x2D2D34FF);
+
+static uint32_t border_width              = 3;
+static const uint32_t border_focus[4]     = COLOR_TO_BYTES(0xCEB1BEFF);
+static const uint32_t border_default[4]   = COLOR_TO_BYTES(0xB97375FF);
+
+static const uint32_t font_color[4]    = COLOR_TO_BYTES(0xFFFFFFFF);
+static const enum bar_position bar_pos = BAR_TOP;
 
 static float mfact      = 0.5f;
 static uint32_t nmaster = 2;
-
 
 static struct xkb_rule_names xkb_rules = {
     .layout = "us,ru",

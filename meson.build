@@ -29,10 +29,13 @@ sources = [
   'cuts.c',
 ]
 
+freetype_dep = dependency('freetype2')
+
 executable('cuts',
   sources,
   c_args: c_args,
   dependencies: [
+    freetype_dep,
     output_dep,
     seat_dep,
     compositor_dep,

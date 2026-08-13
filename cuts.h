@@ -12,14 +12,18 @@ struct monitor {
   uint32_t refresh_rate;
 };
 
-struct border {
+enum bar_position {
+  BAR_TOP    = 1 << 0,
+  BAR_BOTTOM = 1 << 1,
+  BAR_RIGHT  = 1 << 2,
+  BAR_LEFT   = 1 << 3,
 };
 
 typedef union {
-	char *const s;
-	int32_t     i;
-	uint32_t    u;
-  double      d;
+	char  const *s;
+	int32_t      i;
+	uint32_t     u;
+  double       d;
 } bind_args;
 
 typedef void(*bind_handler)(bind_args *);

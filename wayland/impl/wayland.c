@@ -163,7 +163,7 @@ int wl_shm_pool_create_buffer(struct c_wl_connection *conn, c_wl_args args) {
   buf->stride = stride;
   buf->format = wl_shm_fmt_to_drm_fmt(format);
   buf->offset = offset;
-  buf->base_ptr = &pool->ptr;
+  buf->base_ptr = pool->ptr;
 
   buffer->shm = buf;
 
@@ -177,8 +177,9 @@ int wl_buffer_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_wl_object *self = c_wl_self(conn, args);
   struct c_wl_buffer *wl_buffer = self->data;
 
-  if (wl_buffer->dma)
+  if (wl_buffer->dma) {
     c_unref(wl_buffer->dma);
+  }
 
   if (wl_buffer->shm)
     c_unref(wl_buffer->shm);
@@ -430,6 +431,13 @@ int wl_surface_commit(struct c_wl_connection *conn, c_wl_args args) {
       c_ref(wl_surface->pending);
 
     wl_surface->active = wl_surface->pending;
+    
+
+  }
+
+  if (wl_surface->active) {
+    struct c_rawbuf *shm = wl_surface->active->shm;
+    if (shm) shm->dirty = 1;
   }
 
   return 0;

@@ -85,18 +85,23 @@ out:
 	return ret;
 }
 
-static struct c_gles_texture *ensure_imported(struct c_renderer *render, void *buffer, enum c_render_buffer_type buf_type) {
-	if (buf_type == C_BUFFER_DMA) {
+static struct c_gles_texture * ensure_imported(struct c_renderer *render, void *buffer,
+                enum c_render_buffer_type buf_type) {
+
+  if (buf_type == C_BUFFER_DMA) {
     struct c_dmabuf *buf = buffer;
-		if (!buf->texture)
+		if (!buf->texture) {
 			if (import_dmabuf(render, buf) < 0) return NULL;
+    }
 
 		return buf->texture;
 
 	} else if (buf_type == C_BUFFER_RAW) {
     struct c_rawbuf *buf = buffer;
-		if (!buf->texture)
+		if (!buf->texture || buf->dirty) {
 			if (import_raw(render, buf) < 0) return NULL;
+      buf->dirty = 0;
+    }
 
 		return buf->texture;
 	}

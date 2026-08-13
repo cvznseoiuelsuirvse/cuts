@@ -86,22 +86,22 @@ void c_wl_object_add_listener(struct c_wl_object *object, void *listeners,
                               void *userdata);
 void c_wl_object_free_listener(struct c_wl_object *object);
 
-  struct c_wl_connection *c_wl_connection_init(int client_fd,
-                                               struct c_wl_display *display);
-  int c_wl_connection_free(struct c_wl_connection * conn);
-  int c_wl_connection_send(struct c_wl_connection * conn,
-                           struct c_wl_message * msg, size_t nargs, ...);
-  int c_wl_connection_dispatch(struct c_wl_connection * conn);
-  void c_wl_connection_callback_done(struct c_wl_connection * conn,
-                                     c_wl_object_id id);
-  struct c_wl_display *c_wl_connection_get_display(struct c_wl_connection *
-                                                   conn);
-  struct c_map *c_wl_connection_get_objects(struct c_wl_connection * conn);
+struct c_wl_connection *c_wl_connection_init(int client_fd,
+                                             struct c_wl_display *display);
+int c_wl_connection_free(struct c_wl_connection * conn);
+int c_wl_connection_send(struct c_wl_connection * conn,
+                         struct c_wl_message * msg, size_t nargs, ...);
+int c_wl_connection_dispatch(struct c_wl_connection * conn);
+void c_wl_connection_callback_done(struct c_wl_connection * conn,
+                                   c_wl_object_id id);
+struct c_wl_display *c_wl_connection_get_display(struct c_wl_connection *
+                                                 conn);
+struct c_map *c_wl_connection_get_objects(struct c_wl_connection * conn);
 
-  int _c_wl_error_set(c_wl_object_id object_id, c_wl_int code, c_wl_string msg,
-                      ...);
-  void c_wl_error_send(struct c_wl_connection * conn);
+int _c_wl_error_set(c_wl_object_id object_id, c_wl_int code, c_wl_string msg,
+                    ...);
+void c_wl_error_send(struct c_wl_connection * conn);
 
-  int c_wl_serial();
+int c_wl_serial();
 
 #endif

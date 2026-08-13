@@ -104,7 +104,7 @@ static void page_flip_handler(int fd, unsigned int sequence,
   struct c_wl_object *wl_surface;
   struct c_wl_surface *surface;
 
-  c_list_for_each(output->frame_surfaces, wl_surface) {
+  c_list_for_each(output->active_surfaces, wl_surface) {
     if ((surface = wl_surface->data)) {
       for (size_t i = 0; i < surface->frames_n; i++) {
         c_wl_connection_callback_done(wl_surface->conn, surface->frames[i]);
@@ -202,7 +202,7 @@ void c_output_manager_free(struct c_output_manager *mgr) {
     struct c_output *output;
     c_list_for_each(mgr->outputs, output) {
       c_cursor_free(output->cursor);
-      c_list_destroy(output->frame_surfaces);
+      c_list_destroy(output->active_surfaces);
       destroy_swapchain(output);
       c_drm_free_output(mgr->drm_fd, output);
     }
@@ -260,7 +260,7 @@ struct c_output_manager *c_output_manager_init(struct c_session *session,
   struct c_output *output;
   c_list_for_each(mgr->outputs, output) {
     output->cursor = c_cursor_init(mgr, session->input, w, h);
-    output->frame_surfaces = c_list_new();
+    output->active_surfaces = c_list_new();
   }
 
   mgr->cursor_output = c_list_get(mgr->outputs, 0);

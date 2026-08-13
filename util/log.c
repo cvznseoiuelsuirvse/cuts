@@ -35,14 +35,13 @@ void format_ms(int ms, char *buffer, size_t buffer_size) {
 void _c_log(enum c_log_level level, const char *file, int line, int insert_nl, const char *format, ...) {
   if (!(level & __log_mask)) return;
 
-
   char time_format[64];
   format_ms(c_since_start_ms(), time_format, sizeof(time_format));
 
   va_list args;
   va_start(args, format);
 
-  if (__color && isatty(fileno(stdout))) {
+  if (__color) {
     switch (level) {
       case C_LOG_ERROR:
         printf("\033[31m[%s] [%s %s:%d] ", time_format, log_level_string(level), file, line);
@@ -82,7 +81,6 @@ void _c_log(enum c_log_level level, const char *file, int line, int insert_nl, c
 
 void c_log_wl_request(struct c_wl_connection *conn, struct c_wl_object *object, struct c_wl_request *request, union c_wl_arg *args) {
   if (!(C_LOG_WAYLAND & __log_mask)) return;
-
   const struct c_wl_interface *iface = object->iface;
   c_log2(C_LOG_WAYLAND, " REQ (%p) %s#%lu.%s(", conn, iface->name, object->id, request->name);
 

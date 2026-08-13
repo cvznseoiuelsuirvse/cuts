@@ -23,15 +23,15 @@
 #define VERT_POS_TOP_RIGHT(vp)    vp.tr_x, -(vp.tr_y)
 #define VERT_POS_BOTTOM_RIGHT(vp) vp.br_x, -(vp.br_y)
 
-#define VERT_TOP_LEFT(vp)     VERT_POS_TOP_LEFT(vp),     0.0f, 0.0f
-#define VERT_BOTTOM_LEFT(vp)  VERT_POS_BOTTOM_LEFT(vp),  0.0f, 1.0f
-#define VERT_BOTTOM_RIGHT(vp) VERT_POS_BOTTOM_RIGHT(vp), 1.0f, 1.0f
-#define VERT_TOP_RIGHT(vp)    VERT_POS_TOP_RIGHT(vp),    1.0f, 0.0f
+#define VERT_TOP_LEFT(vp, uv0, uv1)     VERT_POS_TOP_LEFT(vp),     uv0[0], uv0[1]
+#define VERT_BOTTOM_LEFT(vp, uv0, uv1)  VERT_POS_BOTTOM_LEFT(vp),  uv0[0], uv1[1]
+#define VERT_BOTTOM_RIGHT(vp, uv0, uv1) VERT_POS_BOTTOM_RIGHT(vp), uv1[0], uv1[1]
+#define VERT_TOP_RIGHT(vp, uv0, uv1)    VERT_POS_TOP_RIGHT(vp),    uv1[0], uv0[1]
 
-#define VERTS(vp)                                                              \
+#define VERTS(vp, uv0, uv1)                                                    \
   {                                                                            \
-      VERT_TOP_LEFT(vp), VERT_BOTTOM_LEFT(vp),  VERT_BOTTOM_RIGHT(vp),         \
-      VERT_TOP_LEFT(vp), VERT_BOTTOM_RIGHT(vp), VERT_TOP_RIGHT(vp),            \
+      VERT_TOP_LEFT(vp, uv0, uv1), VERT_BOTTOM_LEFT(vp, uv0, uv1),  VERT_BOTTOM_RIGHT(vp, uv0, uv1),         \
+      VERT_TOP_LEFT(vp, uv0, uv1), VERT_BOTTOM_RIGHT(vp, uv0, uv1), VERT_TOP_RIGHT(vp, uv0, uv1),            \
   }
 
 #define get_location(prog, name)                                               \
@@ -196,24 +196,7 @@ static void create_verts(uint32_t width, uint32_t height, double x, double y,
 }
 
 int c_gles_texture_from_raw(struct c_gles *gl, struct c_rawbuf *buf) {
-  struct c_gles_texture *texture = calloc(1, sizeof(*texture));
-  if (!texture) {
-    c_log_errno(C_LOG_ERROR, "failed to allocate c_gles_texture");
-    return -1;
-  }
-
-  buf->texture = texture;
-  texture->target = GL_TEXTURE_2D;
-
-  glGenTextures(1, &texture->texture);
-  glBindTexture(texture->target, texture->texture);
-
-  glTexParameteri(texture->target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  glTexParameteri(texture->target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-  glPixelStorei(GL_UNPACK_ROW_LENGTH, buf->stride / 4);
-
-
+  struct c_gles_texture *texture;
   GLenum internal_format, format, type;
   if (drm_fmt_to_gl_fmt(buf->format, &internal_format, &format, &type,
                         gl->ext_support.EXT_texture_format_BGRA8888) == -1) {
@@ -224,8 +207,33 @@ int c_gles_texture_from_raw(struct c_gles *gl, struct c_rawbuf *buf) {
     type = GL_UNSIGNED_BYTE;
   }
 
-  glTexImage2D(texture->target, 0, internal_format, buf->width, buf->height, 0,
-               format, type, (*buf->base_ptr) + buf->offset);
+  if (!buf->texture) {
+    texture = calloc(1, sizeof(*texture));
+    if (!texture) {
+      c_log_errno(C_LOG_ERROR, "failed to allocate c_gles_texture");
+      return -1;
+    }
+
+    buf->texture = texture;
+    texture->target = GL_TEXTURE_2D;
+
+    glGenTextures(1, &texture->texture);
+    glBindTexture(texture->target, texture->texture);
+
+    glTexParameteri(texture->target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(texture->target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, buf->stride / 4);
+
+    glTexImage2D(texture->target, 0, internal_format, buf->width, buf->height, 0,
+                 format, type, buf->base_ptr + buf->offset);
+
+
+  } else {
+    texture = buf->texture;
+    glBindTexture(texture->target, texture->texture);
+    glTexSubImage2D(texture->target, 0, 0, 0, buf->width, buf->height, format, type, buf->base_ptr + buf->offset);
+  }
 
   glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
   glBindTexture(texture->target, 0);
@@ -267,7 +275,7 @@ void c_gles_add_solid(struct c_gles *gl, struct c_output *output, struct c_rende
 	struct vert_pos vp = {0};
 	create_verts(quad->width, quad->height, quad->x, quad->y, &vp, mode->width, mode->height);
 
-  float verts[] = VERTS(vp);
+  float verts[] = VERTS(vp, quad->uv0, quad->uv1);
   glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
 
   get_location(gl_program, color);
@@ -297,13 +305,14 @@ void c_gles_add_texture(struct c_gles *gl, struct c_output *output,
 	struct vert_pos vp = {0};
 	create_verts(quad->width, quad->height, quad->x, quad->y, &vp, mode->width, mode->height);
 
-  float verts[] = VERTS(vp);
+  float verts[] = VERTS(vp, quad->uv0, quad->uv1);
   glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
 
   get_location(gl_program, tex);
   glUniform1i(tex_loc, 0);
 
 	glDrawArrays(GL_TRIANGLES, 0, 6);
+
 }
 
 void c_gles_free(struct c_gles *gl) {
