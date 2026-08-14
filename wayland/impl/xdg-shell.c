@@ -7,6 +7,7 @@
 #include "wayland/util.h"
 
 #include "util/malloc.h"
+#include "util/log.h"
 
 int xdg_wm_base_get_xdg_surface(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_wl_object *self = c_wl_self(conn, args);
@@ -28,7 +29,10 @@ int xdg_wm_base_get_xdg_surface(struct c_wl_connection *conn, union c_wl_arg *ar
   xdg_surface->id = xdg_surface_id;
 
   xdg_surface->surface = wl_surface;
+  c_ref(wl_surface);
+
   wl_surface->xdg_surface = xdg_surface;
+  c_ref(xdg_surface);
 
   c_wl_object_add(conn, xdg_surface_id, self->version, c_wl_interface_get("xdg_surface"), xdg_surface);
 
@@ -55,20 +59,28 @@ int xdg_surface_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
 
   if (xdg_surface->children) {
     struct c_xdg_surface *s;
-    c_list_for_each(xdg_surface->children, s)
+    c_list_for_each(xdg_surface->children, s) {
       s->parent = NULL;
+      c_unref(s);
+      c_unref(xdg_surface);
+    }
     c_list_destroy(xdg_surface->children);
   }
 
-  if (xdg_surface->surface)
+  if (xdg_surface->surface) {
     xdg_surface->surface->xdg_surface = NULL;
+    c_unref(xdg_surface->surface);
+
+    xdg_surface->surface = NULL;
+    c_unref(xdg_surface);
+  }
 
   c_wl_object_del(conn, xdg_surface_id);
   return 0;
 }
 
 int xdg_surface_set_window_geometry(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_xdg_surface *surface = c_wl_object_get(conn, args[0].o)->data;
+  struct c_xdg_surface *surface = c_wl_self(conn, args)->data;
 
   c_wl_int x = args[1].i;
   c_wl_int y = args[2].i;
@@ -93,20 +105,15 @@ int xdg_surface_get_toplevel(struct c_wl_connection *conn, union c_wl_arg *args)
   struct c_xdg_surface *xdg_surface = self->data;
   xdg_surface->surface->role = C_WL_SURFACE_ROLE_XDG_TOPLEVEL;
   xdg_surface->toplevel.id = xdg_toplevel_id;
+  c_ref(xdg_surface);
 
-  c_ref(self->data);
-  c_wl_object_add(conn, xdg_toplevel_id, self->version, c_wl_interface_get("xdg_toplevel"), self->data);
-
-  struct c_wl_array arr = {0};
-
-  xdg_toplevel_configure(conn, xdg_toplevel_id, 0, 0, &arr);
-  xdg_surface_configure(conn, self->id, c_wl_serial());
+  c_wl_object_add(conn, xdg_toplevel_id, self->version, c_wl_interface_get("xdg_toplevel"), xdg_surface);
 
   return 0;
 }
 
 int xdg_toplevel_set_app_id(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_xdg_surface *surface = c_wl_object_get(conn, args[0].o)->data;
+  struct c_xdg_surface *surface = c_wl_self(conn, args)->data;
   if (surface->toplevel.app_id)
     free(surface->toplevel.app_id);
   surface->toplevel.app_id = strdup(args[1].s);
@@ -114,7 +121,7 @@ int xdg_toplevel_set_app_id(struct c_wl_connection *conn, union c_wl_arg *args) 
 }
 
 int xdg_toplevel_set_title(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_xdg_surface *surface = c_wl_object_get(conn, args[0].o)->data;
+  struct c_xdg_surface *surface = c_wl_self(conn, args)->data;
   if (surface->toplevel.title)
     free(surface->toplevel.title);
 
@@ -123,7 +130,7 @@ int xdg_toplevel_set_title(struct c_wl_connection *conn, union c_wl_arg *args) {
 }
 
 int xdg_toplevel_set_min_size(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_xdg_surface *surface = c_wl_object_get(conn, args[0].o)->data;
+  struct c_xdg_surface *surface = c_wl_self(conn, args)->data;
 
   c_wl_int min_width = args[1].i;
   c_wl_int min_height = args[2].i;
@@ -135,7 +142,7 @@ int xdg_toplevel_set_min_size(struct c_wl_connection *conn, union c_wl_arg *args
 }
 
 int xdg_toplevel_set_max_size(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_xdg_surface *surface = c_wl_object_get(conn, args[0].o)->data;
+  struct c_xdg_surface *surface = c_wl_self(conn, args)->data;
 
   c_wl_int max_width = args[1].i;
   c_wl_int max_height = args[2].i;
@@ -145,6 +152,12 @@ int xdg_toplevel_set_max_size(struct c_wl_connection *conn, union c_wl_arg *args
 
   return 0;
 }
+
+// these 4 are up to the wm
+int xdg_toplevel_set_fullscreen(struct c_wl_connection *conn, c_wl_args args)   { return 0; };
+int xdg_toplevel_unset_fullscreen(struct c_wl_connection *conn, c_wl_args args) { return 0; };
+int xdg_toplevel_set_maximized(struct c_wl_connection *conn, c_wl_args args)    { return 0; };
+int xdg_toplevel_set_minimized(struct c_wl_connection *conn, c_wl_args args)    { return 0; };
 
 int xdg_toplevel_set_parent(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_wl_object *self = c_wl_self(conn, args);
@@ -157,8 +170,10 @@ int xdg_toplevel_set_parent(struct c_wl_connection *conn, union c_wl_arg *args) 
                               "parent and child cannot be the same objects");
 
   if (!xdg_parent_id) {
-    if (xdg_surface->parent)
+    if (xdg_surface->parent) {
       c_list_remove(&xdg_surface->parent->children, xdg_surface);
+      c_unref(xdg_surface);
+    }
 
     xdg_surface->parent = NULL;
     return 0;
@@ -169,22 +184,27 @@ int xdg_toplevel_set_parent(struct c_wl_connection *conn, union c_wl_arg *args) 
   if (!xdg_parent->children)
     xdg_parent->children = c_list_new();
 
-
   c_list_push(xdg_parent->children, xdg_surface, 0);
+  c_ref(xdg_surface);
+
   xdg_surface->parent = xdg_parent;
+  c_ref(xdg_parent);
 
   return 0;
 }
 
 int xdg_toplevel_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_xdg_surface *xdg_surface = c_wl_object_get(conn, args[0].o)->data;
+  struct c_xdg_surface *xdg_surface = c_wl_self(conn, args)->data;
   struct c_xdg_surface *parent = xdg_surface->parent;
 
-
-  if (parent)
+  if (parent) {
     c_list_remove(&parent->children, xdg_surface);
+    // c_unref(xdg_surface);
+    c_unref(parent);
+  }
 
-  if (xdg_surface->surface) xdg_surface->surface->role = 0;
+  c_log_value(xdg_surface->surface, "%p");
+  if (xdg_surface->surface)         xdg_surface->surface->role = 0;
   if (xdg_surface->toplevel.title)  free(xdg_surface->toplevel.title);
   if (xdg_surface->toplevel.app_id) free(xdg_surface->toplevel.app_id);
 
@@ -211,33 +231,33 @@ int xdg_wm_base_create_positioner(struct c_wl_connection *conn, union c_wl_arg *
 }
 
 int xdg_positioner_set_size(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_xdg_positioner *p = c_wl_object_get(conn, args[0].o)->data;
+  struct c_xdg_positioner *p = c_wl_self(conn, args)->data;
   p->width = args[1].i;
   p->height = args[2].i;
   return 0;
 }
 
 int xdg_positioner_set_offset(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_xdg_positioner *p = c_wl_object_get(conn, args[0].o)->data;
+  struct c_xdg_positioner *p = c_wl_self(conn, args)->data;
   p->x = args[1].i;
   p->y = args[2].i;
   return 0;
 }
 
 int xdg_positioner_set_gravity(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_xdg_positioner *p = c_wl_object_get(conn, args[0].o)->data;
+  struct c_xdg_positioner *p = c_wl_self(conn, args)->data;
   p->gravity = args[1].u;
   return 0;
 }
 
 int xdg_positioner_set_constraint_adjustment(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_xdg_positioner *p = c_wl_object_get(conn, args[0].o)->data;
+  struct c_xdg_positioner *p = c_wl_self(conn, args)->data;
   p->constraint_adjustment = args[1].u;
   return 0;
 }
 
 int xdg_positioner_set_anchor_rect(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_xdg_positioner *p = c_wl_object_get(conn, args[0].o)->data;
+  struct c_xdg_positioner *p = c_wl_self(conn, args)->data;
   p->anchor_rect.x =       args[1].i;
   p->anchor_rect.y =       args[2].i;
   p->anchor_rect.width =   args[3].i;
@@ -246,7 +266,7 @@ int xdg_positioner_set_anchor_rect(struct c_wl_connection *conn, union c_wl_arg 
 }
 
 int xdg_positioner_set_anchor(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_xdg_positioner *p = c_wl_object_get(conn, args[0].o)->data;
+  struct c_xdg_positioner *p = c_wl_self(conn, args)->data;
   p->anchor =  args[1].u;
   return 0;
 }
@@ -275,7 +295,9 @@ int xdg_surface_get_popup(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_xdg_positioner *xdg_positioner = positioner->data;
   
   xdg_surface->surface->role = C_WL_SURFACE_ROLE_XDG_POPUP;
+
   xdg_surface->parent = xdg_surface_parent;
+  c_ref(xdg_surface_parent);
 
   memcpy(&xdg_surface->popup, xdg_positioner, sizeof(*xdg_positioner));
 
@@ -283,9 +305,10 @@ int xdg_surface_get_popup(struct c_wl_connection *conn, union c_wl_arg *args) {
     xdg_surface_parent->children = c_list_new();
 
   c_list_push(xdg_surface_parent->children, xdg_surface, 0);
+  c_ref(xdg_surface);
 
-  c_ref(self->data);
-  c_wl_object_add(conn, args[1].n, self->version, c_wl_interface_get("xdg_popup"), self->data);
+  c_ref(xdg_surface);
+  c_wl_object_add(conn, args[1].n, self->version, c_wl_interface_get("xdg_popup"), xdg_surface);
 
   calc_popup_coords(xdg_surface, &xdg_surface->popup.x, &xdg_surface->popup.y);
 
@@ -300,12 +323,14 @@ int xdg_surface_get_popup(struct c_wl_connection *conn, union c_wl_arg *args) {
 
 
 int xdg_popup_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_xdg_surface *xdg_surface = c_wl_object_get(conn, args[0].o)->data;
+  struct c_xdg_surface *xdg_surface = c_wl_self(conn, args)->data;
 
   memset(&xdg_surface->popup, 0, sizeof(xdg_surface->popup));
   xdg_surface->surface->role = 0;
 
   c_list_remove(&xdg_surface->parent->children, xdg_surface);
+  c_unref(xdg_surface);
+  c_unref(xdg_surface->parent);
 
   c_wl_object_del(conn, args[0].o);
   return 0;

@@ -1,10 +1,7 @@
 .venv/
 .cache/
 build/
-ref/
 .clangd
-Makefile
-send.sh
-cmd
+*.sh
 *.log
-asan.supp
+config.h

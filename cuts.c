@@ -100,6 +100,7 @@ struct bar {
   uint32_t h_padding, v_padding;
 
   uint32_t width, height;
+
   enum bar_position  pos;
 
   struct bar_block blocks[12];
@@ -147,6 +148,9 @@ struct {
   struct c_scene_rect background;
 
   uint64_t next_z;
+  int is_fullscreen;
+  int is_quitting;
+
 } cuts = {0};
 
 struct tile_layout {
@@ -167,6 +171,7 @@ void client_free(struct client *client);
 void client_change_focus(struct client *client, double hotspot_x, double hotspot_y);
 void client_close(struct client *client);
 void client_toggle_floating(struct client *client);
+void output_damage(struct c_output *output);
 
 int count_tiled();
 void calc_tile_layout(struct c_output *output, struct tile_layout *layout);
@@ -186,6 +191,7 @@ void bar_block_write_text(struct bar *bar, struct bar_block *block, const char *
 void bar_block_clear_text(struct bar *bar, struct bar_block *block);
 void bar_block_update(struct bar_block *block);
 void bar_switch_tag(uint32_t current, uint32_t next);
+void bar_set_layout(struct layout *layout);
 void bar_set_title(const char *title);
 void bar_clear_title();
 
@@ -200,7 +206,7 @@ void window_kill(bind_args *args);
 void window_toggle_floating(bind_args *args);
 void window_move(int done, bind_args *args);
 
-void cleanup(int err, void *userdata);
+void cleanup(int exit_code);
 
 static void get_surface_buf_size(struct c_wl_surface *surface, int32_t *width, int32_t *height) {
   if (surface->active->dma) {
@@ -417,15 +423,42 @@ void client_border_raise(struct client *client) {
   c_scene_node_raise(cuts.scene, client->border[3]);
 }
 
-void client_set_visibility(struct client *client, int is_visible) {
-  c_scene_node_set_visibility(client->window, is_visible);
-  client_border_set_visibility(client, is_visible);
-}
 
 void client_raise(struct client *client) {
   client_border_raise(client);
   c_scene_node_raise(cuts.scene, client->window);
   client->z = ++cuts.next_z;
+}
+
+void client_set_fullscreen(struct client *client, struct c_output *output) {
+  struct c_window *window = node_window(client->window);
+
+  window->width = output->current_mode->width;
+  window->height = output->current_mode->height;
+
+  window->x = output->x;
+  window->y = output->y;
+  window->state |= C_WINDOW_FULLSCREEN;
+
+  cuts.is_fullscreen = 1;
+  client_raise(client);
+  client_border_set_visibility(client, 0);
+  LAYOUT(output);
+}
+
+void client_unset_fullscreen(struct client *client) {
+  struct c_window *window = node_window(client->window);
+  window->state &= ~C_WINDOW_FULLSCREEN;
+  cuts.is_fullscreen = 0;
+  client_border_set_visibility(client, 1);
+
+  LAYOUT(client->output);
+}
+
+void client_set_visibility(struct client *client, int is_visible) {
+  struct c_window *window = node_window(client->window);
+  c_scene_node_set_visibility(client->window, is_visible);
+  client_border_set_visibility(client, is_visible && (window->state ^ C_WINDOW_FULLSCREEN));
 }
 
 void client_toggle_floating(struct client *client) {
@@ -488,18 +521,17 @@ struct client *client_new(struct c_wl_connection *connection) {
 }
 
 void client_free(struct client *client) {
-  client_border_delete(client);
-
-  free(c_scene_node_data(client->window));
+  struct c_window *window = node_window(client->window);
+  free(window);
   c_scene_node_remove(cuts.scene, client->window);
+  client_border_delete(client);
 
   free(client);
 }
 
 void client_unfocus(struct client *client) {
-  c_window_deactivate(node_window(cuts.focused_client->window));
-  c_window_unfocus(node_window(cuts.focused_client->window));
-
+  struct c_window *window = node_window(client->window);
+  c_window_unfocus(window);
   client_border_set_color(cuts.focused_client, border_default);
   cuts.focused_client = NULL;
 }
@@ -511,8 +543,6 @@ void client_focus(struct client *client, double hotspot_x, double hotspot_y) {
     bar_set_title(*window->title);
 
   client_border_set_color(client, border_focus);
-
-  c_window_activate(window);
 
   struct c_wl_object *o;
   struct c_wl_connection *conn = window->conn;
@@ -613,19 +643,14 @@ static void *on_wl_output_bind(struct c_wl_connection *conn,
   return _output;
 }
 
-int wl_seat_get_keyboard(struct c_wl_connection *conn, union c_wl_arg *args) {
+int on_get_keyboard(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
   struct c_wl_object *self = c_wl_self(conn, args);
+  c_wl_new_id wl_keyboard_id = args[1].n;
 
-  c_wl_object_id wl_keyboard_id = args[1].o;
-  struct c_wl_object *wl_keyboard;
-  C_WL_CHECK_IF_NOT_REGISTERED(wl_keyboard_id, wl_keyboard);
-
-  struct c_input *input = cuts.session->input;
+  struct c_input *input = userdata;
 
   if (!(input->capabilities & WL_SEAT_CAPABILITY_KEYBOARD))
     c_wl_error_set_and_return(args[0].o, WL_SEAT_ERROR_MISSING_CAPABILITY, "pointer device not supported");
-
-  c_wl_object_add(conn, wl_keyboard_id, self->version, c_wl_interface_get("wl_keyboard"), NULL);
 
   int keymap_fd;
   int keymap_len = c_input_get_xkb_keymap_fd(input, &keymap_fd);
@@ -639,19 +664,11 @@ int wl_seat_get_keyboard(struct c_wl_connection *conn, union c_wl_arg *args) {
   return 0;
 }
 
-int wl_seat_get_pointer(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_wl_object *self = c_wl_self(conn, args);
-
-  c_wl_object_id wl_pointer_id = args[1].o;
-  struct c_wl_object *wl_pointer;
-  C_WL_CHECK_IF_NOT_REGISTERED(wl_pointer_id, wl_pointer);
-
-  struct c_input *input = cuts.session->input;
+int on_get_pointer(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
+  struct c_input *input = userdata;
 
   if (!(input->capabilities & WL_SEAT_CAPABILITY_POINTER))
     c_wl_error_set_and_return(args[0].o, WL_SEAT_ERROR_MISSING_CAPABILITY, "pointer device not supported");
-
-  c_wl_object_add(conn, wl_pointer_id, self->version, c_wl_interface_get("wl_pointer"), NULL);
 
   return 0;
 }
@@ -778,7 +795,7 @@ int on_surface_destroy(struct c_wl_connection *conn, c_wl_args args, void *userd
   struct c_wl_surface *surface = wl_surface->data;
 
   struct client *client;
-  if ((client = client_from_connection(conn)))
+  if (!cuts.is_quitting && (client = client_from_connection(conn)))
     c_scene_node_update(client->window);
 
   if (!surface->output) return 0;
@@ -786,6 +803,7 @@ int on_surface_destroy(struct c_wl_connection *conn, c_wl_args args, void *userd
   struct c_output *output = surface->output->output;
   c_list_remove(&output->active_surfaces, wl_surface);
   output_damage(output);
+
   c_unref(surface->output);
   return 0;
 }
@@ -803,21 +821,41 @@ int on_surface_frame(struct c_wl_connection *conn, c_wl_args args, void *userdat
   return 0;
 }
 
+// int on_ack_configure(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
+//   c_wl_uint serial = args[1].u;
+//
+//   struct client *client = client_from_connection(conn);
+//   if (serial == client->fullscreen_serial) {
+//     client_set_fullscreen(client, client->output);
+//     client->fullscreen_serial = 0;
+//   }
+//
+//   return 0;
+// }
+
 int on_window_new(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
   struct c_xdg_surface *surface = c_wl_self(conn, args)->data;
 
   struct client *client = client_new(conn);
   if (!client) {
-    cleanup(1, NULL);
+    quit(NULL);
     return -1;
   }
   
   client->window = window_new(conn, surface);
 
   c_list_insert(&cuts.clients, 0, client, 0);
-  client_change_focus(client, pointer_x, pointer_y);
 
+  c_wl_enum wm_caps[1] = {XDG_TOPLEVEL_WM_CAPABILITIES_FULLSCREEN};
+  c_wl_array arr = {
+    .size = sizeof(wm_caps),
+    .data = wm_caps,
+  };
+
+  xdg_toplevel_wm_capabilities(conn, surface->toplevel.id, &arr);
   LAYOUT(client->output);
+
+  client_change_focus(client, pointer_x, pointer_y);
   return 0;
 }
 
@@ -832,7 +870,40 @@ int on_set_title(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
   return 0;
 }
 
+int on_window_unfullscreen(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
+  struct client *client = client_from_connection(conn);
+  struct c_output *output = client->output;
+
+  client_unset_fullscreen(client);
+
+  LAYOUT(output);
+  return 0;
+}
+
+int on_window_unset_fullscreen(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
+  struct client *client = client_from_connection(conn);
+  client_unset_fullscreen(client);
+  return 0;
+}
+
+int on_window_fullscreen(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
+  struct client *client = client_from_connection(conn);
+
+  struct c_wl_object *wl_output = c_wl_object_get(conn, args[1].o);
+
+  struct c_output *output;
+  if (wl_output)
+    output = ((struct c_wl_output *)wl_output->data)->output;
+  else
+    output = client->output;
+
+  client_set_fullscreen(client, output);
+  return 0;
+}
+
 int on_window_close(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
+  if (cuts.is_quitting) return 0;
+
   struct c_xdg_surface *surface = c_wl_self(conn, args)->data;
 
   struct client *client;
@@ -942,10 +1013,36 @@ void window_kill(bind_args *args) {
   c_window_close(node_window(cuts.focused_client->window));
 }
 
+void set_layout(bind_args *args) {
+  cuts.layout = *(struct layout *)args->p;
+  struct c_output *output;
+
+  bar_set_layout(&cuts.layout);
+
+  c_list_for_each(cuts.mgr->outputs, output)
+    LAYOUT(output);
+}
+
+void toggle_fullscreen(bind_args *args) {
+  struct client *client = cuts.focused_client;
+  if (!client) return;
+
+  if (!cuts.is_fullscreen)
+    client_set_fullscreen(client, client->output);
+  else
+    client_unset_fullscreen(client);
+}
+
 void move_focus(bind_args *args) {
+  if (cuts.is_fullscreen) return;
+
   struct client *next = tag_select_client(args->i);
-  if (next)
+  if (next) {
     client_change_focus(next, pointer_x, pointer_y);
+    if (cuts.layout.func == zoom) {
+      client_raise(next);
+    }
+  }
 }
 
 void switch_tag(bind_args *args) {
@@ -980,7 +1077,7 @@ int count_tiled() {
   int i = 0;
   clients_for_each_in_tag(client) {
     struct c_window *window = node_window(client->window);
-    if (!(window->state & C_WINDOW_FLOAT)) i++;
+    if (!(window->state & (C_WINDOW_FLOAT | C_WINDOW_FULLSCREEN))) i++;
   }
   return i;
 }
@@ -990,6 +1087,7 @@ void calc_tile_layout(struct c_output *output, struct tile_layout *layout) {
 
   layout->width = mode->width - gap * 2;
   layout->height = mode->height - gap * 2;
+
   layout->y = layout->x = gap;
 
   if (cuts.bar.pos == BAR_TOP) {
@@ -1011,10 +1109,43 @@ void calc_tile_layout(struct c_output *output, struct tile_layout *layout) {
   }
 
   layout->master.x = layout->x;
-  layout->master.width = mode->width * mfact - gap * 2;
+  layout->master.width = layout->width * mfact - gap;
 
-  layout->stack.x = layout->master.width + gap * 2;
-  layout->stack.width = mode->width - layout->master.width - gap * 3;
+  layout->stack.x = layout->master.x + layout->master.width + gap;
+  layout->stack.width = layout->width - layout->master.width - gap;
+}
+
+void zoom() {
+  struct tile_layout layout;
+  calc_tile_layout(cuts.focused_output, &layout);
+
+  if (cuts.clients->size == 0) return;
+
+  struct client *client;
+  clients_for_each_in_tag(client) {
+    struct c_window *window = node_window(client->window);
+    if (window->state & C_WINDOW_FLOAT) goto floating;
+    if (window->state & C_WINDOW_FULLSCREEN) goto fullscreen;
+
+    window->width = layout.width - border_width * 2;
+    window->height = layout.height - border_width * 2;
+    window->x = layout.x + border_width;
+    window->y = layout.y + border_width;
+
+floating:
+    client_border_sync(client);
+
+fullscreen:
+    if (cuts.focused_client == client) {
+      c_window_activate(window);
+    } else {
+      c_window_deactivate(window);
+    }
+     
+    c_scene_node_update(client->window);
+
+  }
+
 }
 
 void tile() {
@@ -1042,7 +1173,8 @@ void tile() {
   size_t i = 0;
   clients_for_each_in_tag(client) {
     struct c_window *window = node_window(client->window);
-    if (window->state & C_WINDOW_FLOAT) goto update;
+    if (window->state & C_WINDOW_FULLSCREEN) goto fullscreen;
+    if (window->state & C_WINDOW_FLOAT) goto floating;
 
     if (i < nmaster) {
       window->x = layout.master.x;
@@ -1065,14 +1197,16 @@ void tile() {
     window->height -= border_width * 2;
     i++;
 
-update:
+floating:
+    client_border_sync(client);
+
+fullscreen:
     if (cuts.focused_client == client) {
       c_window_activate(window);
     } else {
       c_window_deactivate(window);
     }
-     
-    client_border_sync(client);
+
     c_scene_node_update(client->window);
 
   }
@@ -1106,7 +1240,8 @@ void change_nmaster(bind_args *args) {
 }
 
 void window_move(int done, bind_args *args) {
-  if (!cuts.focused_client) return;
+  if (!cuts.focused_client || cuts.is_fullscreen) return;
+
   struct client *focused = cuts.focused_client;
   struct c_window *window = node_window(focused->window);
 
@@ -1131,7 +1266,7 @@ void window_move(int done, bind_args *args) {
 }
 
 void window_move_to_workspace(bind_args *args) {
-  if (!cuts.focused_client) return;
+  if (!cuts.focused_client || cuts.focused_tag == args->u) return;
 
   cuts.focused_client->tag = args->u;
   client_set_visibility(cuts.focused_client, 0);
@@ -1146,7 +1281,7 @@ void window_move_to_workspace(bind_args *args) {
 }
 
 void window_resize(int done, bind_args *args) {
-  if (!cuts.focused_client) return;
+  if (!cuts.focused_client || cuts.is_fullscreen) return;
   struct client *focused = cuts.focused_client;
   struct c_window *window = node_window(focused->window);
 
@@ -1185,7 +1320,7 @@ void bar_destroy() {
 
 void bar_set_title(const char *title) {
   struct bar_block *block;
-  block = &cuts.bar.blocks[tags];
+  block = &cuts.bar.blocks[tags + 1];
 
   bar_block_write_text(&cuts.bar, block, title, font_color);
   bar_block_update(block);
@@ -1193,8 +1328,14 @@ void bar_set_title(const char *title) {
 
 void bar_clear_title() {
   struct bar_block *block;
-  block = &cuts.bar.blocks[tags];
+  block = &cuts.bar.blocks[tags + 1];
   bar_block_clear_text(&cuts.bar, block);
+  bar_block_update(block);
+}
+
+void bar_set_layout(struct layout *layout) {
+  struct bar_block *block = &cuts.bar.blocks[tags];
+  bar_block_write_text(&cuts.bar, block, layout->repr, border_default);
   bar_block_update(block);
 }
 
@@ -1228,6 +1369,9 @@ void bar_block_init(struct bar *bar, struct bar_block *block) {
 
   block->text.width = rect->width;
   block->text.height = rect->height;
+
+  c_log_value(block->text.width, "%d");
+  c_log_value(block->text.height, "%d");
 
   uint32_t buffer_size = block->text.width * 4 * block->text.height;
   uint8_t *buffer = calloc(buffer_size, 1);
@@ -1308,10 +1452,8 @@ void bar_create(struct c_output_mode *mode) {
   struct bar *bar = &cuts.bar;
   FT_Error error = 0;
 
-  uint32_t font_size = 14;
-
   bar->pos = bar_pos;
-  bar->block_n = tags + 2;
+  bar->block_n = tags + 3; // tags + layout indicator + title + stdin
 
   if ((error = FT_Init_FreeType(&bar->library))) {
     c_log(C_LOG_ERROR, "failed to initialize freetype: %s", FT_Error_String(error));
@@ -1340,16 +1482,15 @@ void bar_create(struct c_output_mode *mode) {
   bar->glyph.width = bar->face->glyph->bitmap.width;
 
   if (bar_horizontal(bar)) {
-    bar->height = bar->glyph.height + bar->glyph.spacing * 2;
+    bar->height = bar->glyph.height + (bar->glyph.height / 4);
     bar->width = mode->width;
   } else {
     bar->height = mode->height;
-    bar->width = bar->glyph.width + bar->glyph.spacing * 2;
+    bar->width = bar->glyph.width * 3;
   }
 
   bar->h_padding = (MIN(bar->width, bar->height) - bar->glyph.width) / 2;
   bar->v_padding = (MIN(bar->width, bar->height) - bar->glyph.height) / 2;
-
 
   uint32_t pen = 0;
 
@@ -1383,7 +1524,17 @@ void bar_create(struct c_output_mode *mode) {
       char label[2] = {i + 49, 0};
       bar_block_write_text(bar, block, label, (!i ? font_color : border_default));
 
-    } else if (i == tags) { // title
+    } else if (i == tags) { // layout indicator
+      if (bar_horizontal(bar))
+        rect->width = text_rect_width(strlen(cuts.layout.repr), bar);
+      else
+        rect->height = text_rect_height(strlen(cuts.layout.repr), bar);
+
+      set_color(rect->color, background_color);
+      bar_block_init(bar, block);
+      bar_block_write_text(bar, block, cuts.layout.repr, border_default);
+
+    } else if (i == tags + 1) { // title
       set_color(rect->color, border_default);
       if (bar_horizontal(bar))
         rect->width = mode->width - pen;
@@ -1391,8 +1542,8 @@ void bar_create(struct c_output_mode *mode) {
         rect->height = mode->height - pen;
 
       bar_block_init(bar, block);
-
-    } else if (i == tags + 1) { // stdin
+                                  
+    } else if (i == tags + 2) { // stdin
       const char *label = "cuts o_0";
 
       if (bar_horizontal(bar)) {
@@ -1409,7 +1560,7 @@ void bar_create(struct c_output_mode *mode) {
       bar_block_write_text(bar, block, label, border_default);
     }
 
-    pen += bar->pos & (BAR_TOP | BAR_BOTTOM) ? rect->width : rect->height;
+    pen += bar_horizontal(bar) ? rect->width : rect->height;
   } 
 
   return;
@@ -1419,16 +1570,16 @@ ft_error:
   quit(NULL);
 }
 
-void set_background(struct c_output_mode *mode) {
+void set_background(uint32_t width, uint32_t height, double x, double y) {
   struct c_scene_rect *background = &cuts.background;
 
   set_color(background->color, background_color);
 
-  background->x = 0; // temp
-  background->y = 0; // temp
+  background->x = x;
+  background->y = y;
 
-  background->width = mode->width;
-  background->height = mode->height;
+  background->width = width;
+  background->height = height;
 
   c_scene_add_rect(cuts.scene, background);
 }
@@ -1462,10 +1613,14 @@ C_EVENT_CALLBACK stdin_text(struct c_event_loop *loop, int fd, void *userdata) {
     c_log(C_LOG_WARNING, "failed to read stdin");
     goto out;
   } 
+
+  if (buffer[read_b-1] == '\n')
+    buffer[read_b-1] = 0;
+
   buffer[read_b] = 0;
 
   struct bar *bar = &cuts.bar;
-  struct bar_block *block = &cuts.bar.blocks[tags + 1];
+  struct bar_block *block = &cuts.bar.blocks[tags + 2];
   struct c_output *output = cuts.focused_output;
   struct c_output_mode *mode = output->current_mode;
   
@@ -1490,16 +1645,12 @@ out:
   return C_EVENT_OK;
 }
 
-void cleanup(int err, void *userdata) {
-  if (cuts.display) {
-    c_wl_display_free(cuts.display);
-    cuts.display = NULL;
-  }
+void signal_handler(int signal, void *userdata) {
+  c_event_loop_stop(cuts.loop);
+}
 
-  if (cuts.mgr) {
-    c_output_manager_free(cuts.mgr);
-    cuts.mgr = NULL;
-  }
+void cleanup(int err) {
+  cuts.is_quitting = 1;
 
   if (cuts.clients) {
     struct client *client;
@@ -1509,12 +1660,20 @@ void cleanup(int err, void *userdata) {
     cuts.clients = NULL;
   }
 
+  if (cuts.display) {
+    c_wl_display_free(cuts.display);
+    cuts.display = NULL;
+  }
+
   bar_destroy();
 
   if (cuts.scene) {
     c_scene_free(cuts.scene);
     cuts.scene = NULL;
   }
+
+  c_output_manager_free(cuts.mgr);
+  cuts.mgr = NULL;
 
   if (cuts.session) {
     c_session_free(cuts.session);
@@ -1533,9 +1692,9 @@ int main() {
   int ret = 0;
   cuts.focused_tag = 1 << 0;
 
-  c_signal_handler_add(SIGTERM, cleanup, NULL);
-  c_signal_handler_add(SIGINT, cleanup, NULL);
-  c_signal_handler_add(SIGABRT, cleanup, NULL);
+  c_signal_handler_add(SIGTERM, signal_handler, NULL);
+  c_signal_handler_add(SIGINT, signal_handler, NULL);
+  c_signal_handler_add(SIGABRT, signal_handler, NULL);
 
   struct c_log_config cfg;
   cfg.level_mask = C_LOG_INFO | C_LOG_DEBUG | C_LOG_ERROR | C_LOG_WARNING;
@@ -1589,7 +1748,7 @@ int main() {
             m.height == mode->height &&
             m.refresh_rate == (uint32_t)mode->refresh_rate) {
 
-          set_background(mode);
+          set_background(mode->width, mode->height, output->x, output->y);
           bar_create(mode);
 
           c_output_set_mode(mgr, output, mode);
@@ -1599,7 +1758,7 @@ int main() {
     }
 
     assert(preferred);
-    set_background(preferred);
+    set_background(preferred->width, preferred->height, output->x, output->y);
     bar_create(preferred);
 
     c_output_set_mode(mgr, output, preferred);
@@ -1610,7 +1769,6 @@ mode_iter_end:
     if (!cuts.focused_output)
       cuts.focused_output = output;
   }
-
 
   if (c_input_init_xkb_state(session->input, &xkb_rules) < 0) goto out;
 
@@ -1648,6 +1806,12 @@ mode_iter_end:
   };
   c_wl_display_add_connection_listener(display, &conn_listener, NULL);
 
+  struct c_wl_seat_listeners seat_listeners = {
+    .get_keyboard = on_get_keyboard,
+    .get_pointer = on_get_pointer,
+  };
+  wl_seat_add_listener(display, &seat_listeners, session->input);
+
   struct c_wl_surface_listeners surface_listeners = {
     .commit = on_surface_commit,
     .destroy = on_surface_destroy,
@@ -1663,6 +1827,8 @@ mode_iter_end:
   struct c_xdg_toplevel_listeners xdg_toplevel_listeners = {
     .destroy = on_window_close,
     .set_title = on_set_title,
+    .set_fullscreen = on_window_fullscreen,
+    .unset_fullscreen = on_window_unset_fullscreen,
   };
   xdg_toplevel_add_listener(display, &xdg_toplevel_listeners, NULL);
 
@@ -1681,11 +1847,10 @@ mode_iter_end:
   };
   wl_data_offer_add_listener(display, &data_offer_listeners, NULL);
 
-
   c_event_loop_add(loop, STDIN_FILENO, stdin_text, NULL);
 
   ret = c_event_loop_run(loop);
 
 out:
-  cleanup(ret, &cuts);
+  cleanup(ret);
 }

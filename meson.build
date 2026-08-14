@@ -3,11 +3,9 @@ project('cuts', 'c',
   default_options: [
     'warning_level=2',
     'c_std=c11',
-    'optimization=0',
-    'debug=true',
-    'b_sanitize=address',
   ],
 )
+
 
 c_args = [
   '-Wno-unused-parameter',
@@ -25,11 +23,15 @@ subdir('wayland')
 subdir('render')
 subdir('output')
 
-sources = [
-  'cuts.c',
-]
+fs = import('fs')
 
 freetype_dep = dependency('freetype2')
+sources = ['cuts.c']
+
+if not fs.exists('config.h')
+  run_command('cp', 'config.def.h', 'config.h', check: true)
+endif
+
 
 executable('cuts',
   sources,

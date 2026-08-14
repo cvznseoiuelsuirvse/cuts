@@ -8,33 +8,53 @@
 
 #define window_conn(window) (window)->conn
 
-void c_window_deactivate(struct c_window *window) {
+int c_window_deactivate(struct c_window *window) {
   struct c_xdg_surface *xdg_surface = window->surface;
 
   uint32_t width = window->width;
   uint32_t height = window->height;
 
-  c_wl_array arr = {0};
-  xdg_toplevel_configure(window_conn(window), xdg_surface->toplevel.id, width, height, &arr);
-  xdg_surface_configure(window_conn(window), xdg_surface->id, c_wl_serial());
+  int state_size = 0;
+  c_wl_enum state[1] = {0};
 
+  if (window->state & C_WINDOW_FULLSCREEN) {
+    state[state_size++] = XDG_TOPLEVEL_STATE_FULLSCREEN;
+  }
+
+  c_wl_array arr = {
+    .size = state_size * sizeof(*state),
+    .data = &state,
+  };
+
+  int serial = c_wl_serial();
+  xdg_toplevel_configure(window_conn(window), xdg_surface->toplevel.id, width, height, &arr);
+  xdg_surface_configure(window_conn(window), xdg_surface->id, serial);
+  return serial;
 }
 
-void c_window_activate(struct c_window *window) {
+int c_window_activate(struct c_window *window) {
   struct c_xdg_surface *xdg_surface = window->surface;
   
-  c_wl_enum state = XDG_TOPLEVEL_STATE_ACTIVATED;
+  int state_size = 1;
+  c_wl_enum state[2] = {XDG_TOPLEVEL_STATE_ACTIVATED, 0};
+
+  if (window->state & C_WINDOW_FULLSCREEN) {
+    state[state_size++] = XDG_TOPLEVEL_STATE_FULLSCREEN;
+  }
+
   c_wl_array arr = {
-    .size = sizeof(state),
+    .size = state_size * sizeof(*state),
     .data = &state,
   };
 
   uint32_t width = window->width;
   uint32_t height = window->height;
 
+  int serial = c_wl_serial();
   xdg_toplevel_configure(window_conn(window), xdg_surface->toplevel.id, width, height, &arr);
-  xdg_surface_configure(window_conn(window), xdg_surface->id, c_wl_serial());
-  
+  xdg_surface_configure(window_conn(window), xdg_surface->id, serial);
+
+  return serial;
 };
 
 void c_window_focus(struct c_window *window, double mx, double my) {

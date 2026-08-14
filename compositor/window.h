@@ -27,9 +27,9 @@ struct c_window {
   struct c_xdg_surface *surface;
 };
 
+int c_window_activate(struct c_window *window);
+int c_window_deactivate(struct c_window *window);
 void c_window_focus(struct c_window *window, double hotspot_x, double hotspot_y);
-void c_window_activate(struct c_window *window);
-void c_window_deactivate(struct c_window *window);
 void c_window_unfocus(struct c_window *window);
 void c_window_close(struct c_window *window);
 

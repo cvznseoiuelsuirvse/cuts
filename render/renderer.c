@@ -21,6 +21,7 @@
 
 #include "util/log.h"
 #include "util/shm.h"
+#include "util/malloc.h"
 
 static int import_raw(struct c_renderer *render, struct c_rawbuf *shm) {
 	if (c_gles_texture_from_raw(render->gl, shm) == -1) {
@@ -85,7 +86,7 @@ out:
 	return ret;
 }
 
-static struct c_gles_texture * ensure_imported(struct c_renderer *render, void *buffer,
+static struct c_gles_texture *ensure_imported(struct c_renderer *render, void *buffer,
                 enum c_render_buffer_type buf_type) {
 
   if (buf_type == C_BUFFER_DMA) {
@@ -280,20 +281,23 @@ static int on_buffer_destroy(struct c_wl_connection *conn, c_wl_args args, void 
 
   if (buffer->dma && !buffer->shm) {
     struct c_dmabuf *buf = buffer->dma;
-    if (buf->image)
-      eglDestroyImage(render->egl->display, buf->image);
+    if (c_get_refcount(buf) == 1) {
+      if (buf->image)
+        eglDestroyImage(render->egl->display, buf->image);
 
-    if (buf->texture)
-      glDeleteTextures(1, &buf->texture->texture);
+      if (buf->texture)
+        glDeleteTextures(1, &buf->texture->texture);
 
-    free(buf->texture);
-
+      free(buf->texture);
+    }
   } else if (buffer->shm && !buffer->dma) {
     struct c_rawbuf *buf = buffer->shm;
-    if (buf->texture)
-      glDeleteTextures(1, &buf->texture->texture);
+    if (c_get_refcount(buf) == 1) {
+      if (buf->texture)
+        glDeleteTextures(1, &buf->texture->texture);
 
-    free(buf->texture);
+      free(buf->texture);
+    }
   }
 
   return 0;

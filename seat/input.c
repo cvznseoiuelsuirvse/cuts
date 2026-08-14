@@ -1,10 +1,5 @@
-#include <libinput.h>
-#include <libudev.h>
 #include <assert.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <string.h>
-#include <sys/mman.h>
 
 #include "seat/input.h"
 #include "util/log.h"
@@ -202,7 +197,7 @@ static void handle_event_keyboard(struct c_input *input, struct libinput_event_k
 	keyboard_event.mods_depressed = xkb_state_serialize_mods(state, XKB_STATE_MODS_DEPRESSED);
 	keyboard_event.mods_latched   = xkb_state_serialize_mods(state, XKB_STATE_MODS_LATCHED);
 	keyboard_event.mods_locked    = xkb_state_serialize_mods(state, XKB_STATE_MODS_LOCKED);
-	keyboard_event.group          = xkb_state_serialize_mods(state, XKB_STATE_LAYOUT_EFFECTIVE);;
+  keyboard_event.group = xkb_state_serialize_layout(state, XKB_STATE_LAYOUT_EFFECTIVE);
 
   xkb_keysym_t keysym = xkb_state_key_get_one_sym(state, keyboard_event.key + 8);
   xkb_mod_mask_t mod_mask = xkb_state_serialize_mods(state, XKB_STATE_MODS_EFFECTIVE);

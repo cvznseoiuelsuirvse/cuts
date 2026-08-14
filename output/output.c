@@ -133,7 +133,7 @@ static int schedule_pageflip(struct c_output_manager *mgr, struct c_output *outp
     if (mgr->on_redraw(mgr, output, mgr->on_redraw_userdata)) return -1;
 
     int fence_fd;
-    if (mgr->renderer->egl->ext_support.KHR_fence_sync) {
+    if (mgr->renderer->egl->ext_support.KHR_fence_sync && output->timeline) {
       fence_fd = c_drm_export_sync_file(output->timeline); 
       if (fence_fd == -1) {
         c_log(C_LOG_ERROR, "failed to export sync file");

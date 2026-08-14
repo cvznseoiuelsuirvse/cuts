@@ -412,15 +412,6 @@ struct c_wl_object *c_wl_object_add(struct c_wl_connection *conn, c_wl_new_id id
   return c_map_set(conn->objects, id, &new_object, sizeof(struct c_wl_object));
 }
 
-void c_wl_object_add_listener(struct c_wl_object *object, void *listeners, void *userdata) {
-  object->listeners.handlers = listeners;
-  object->listeners.userdata = userdata;
-}
-
-void c_wl_object_free_listener(struct c_wl_object *object) {
-  free(object->listeners.handlers);
-}
-
 inline struct c_wl_object *c_wl_object_get(struct c_wl_connection *conn, c_wl_object_id id) {
   return c_map_get(conn->objects, id);
 }
@@ -472,14 +463,15 @@ struct c_map *c_wl_connection_get_objects(struct c_wl_connection *conn) {
 
 int c_wl_connection_free(struct c_wl_connection *conn) {
   for (int i = conn->objects->size - 1; i >= 0; i--) {
+  // for (size_t i = 0; i < conn->objects->size; i++) {
     struct c_map_pair *mp = conn->objects->pairs[i];
 
     while (mp) {
       struct c_map_pair *next = mp->next;
       struct c_wl_object *object = mp->value;
 
-      c_log(C_LOG_DEBUG, "(%p) destroying %s#%d object", conn,
-            object->iface->name, object->id);
+      c_log(C_LOG_DEBUG, "(%p) destroying %s#%d object. data=%p", conn,
+            object->iface->name, object->id, object->data);
 
       if (object->iface->destructor_request >= 0) {
         c_wl_arg arg = {.o = object->id};

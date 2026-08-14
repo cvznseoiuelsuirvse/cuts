@@ -7,6 +7,7 @@
 
 struct monitor {
   const char *name;
+  double scale;
   uint32_t x, y;
   uint32_t width, height;
   uint32_t refresh_rate;
@@ -24,6 +25,7 @@ typedef union {
 	int32_t      i;
 	uint32_t     u;
   double       d;
+  void        *p;
 } bind_args;
 
 typedef void(*bind_handler)(bind_args *);
@@ -53,7 +55,7 @@ struct mouse_bind {
 
 struct layout {
 	void (*func)();
-	const char *name;
+	const char *repr;
 };
 
 // bind functions
@@ -66,6 +68,8 @@ void toggle_floating(bind_args *);
 void window_move_to_workspace(bind_args *);
 void change_mfact(bind_args *);
 void change_nmaster(bind_args *);
+void set_layout(bind_args *);
+void toggle_fullscreen(bind_args *);
 
 // bind drag functions
 void window_move(int, bind_args *);
@@ -73,5 +77,6 @@ void window_resize(int, bind_args *);
 
 // layout functions
 void tile();
+void zoom();
 
 #endif

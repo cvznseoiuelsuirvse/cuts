@@ -235,8 +235,7 @@ c_list *c_drm_get_outputs(int drm_fd) {
 
     output.timeline = c_drm_sync_object_init(drm_fd);
     if (!output.timeline) {
-      c_log(C_LOG_ERROR, "failed to create timeline sync object for output %s", output.name);
-      goto iter_end_error;
+      c_log(C_LOG_WARNING, "failed to create timeline sync object for output %s", output.name);
     }
 
     c_list_push(outputs, &output, sizeof(output));

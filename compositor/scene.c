@@ -6,6 +6,7 @@
 #include "output/output.h"
 
 #include "util/log.h"
+#include "util/malloc.h"
 
 enum c_scene_node_types {
   C_SCENE_WINDOW,
@@ -27,6 +28,18 @@ struct c_scene_node {
 struct c_scene {
 	c_list *nodes;
 };
+
+static void unref_window_quads(struct c_scene_node *node) {
+  struct c_renderer_quad *quad;
+  c_list_for_each(node->quads, quad)
+    c_unref(quad->buffer);
+}
+
+static void ref_window_quads(struct c_scene_node *node) {
+  struct c_renderer_quad *quad;
+  c_list_for_each(node->quads, quad)
+    c_ref(quad->buffer);
+}
 
 static void create_buffer_quad(struct c_scene_buffer *buffer, struct c_renderer_quad *quad) {
   struct c_rawbuf *rawbuf = &buffer->raw;
@@ -169,9 +182,13 @@ struct c_scene_node *c_scene_add_buffer(struct c_scene *scene, struct c_scene_bu
 void c_scene_node_update(struct c_scene_node *node) {
   switch (node->type) {
     case C_SCENE_WINDOW:
+      unref_window_quads(node);
       c_list_clear(node->quads);
-      if (node->collect)
-        node->collect(node, node->quads);
+
+      if (node->collect) {
+          node->collect(node, node->quads);
+          ref_window_quads(node);
+      }
       break;
 
     case C_SCENE_RECT:
@@ -186,6 +203,9 @@ void c_scene_node_update(struct c_scene_node *node) {
 }
 
 void c_scene_node_remove(struct c_scene *scene, struct c_scene_node *node) {
+  if (node->type == C_SCENE_WINDOW)
+    unref_window_quads(node);
+
   node_remove(node);
   c_list_remove(&scene->nodes, node);
 }
