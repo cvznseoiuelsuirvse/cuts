@@ -5,9 +5,9 @@
 #define DISPATCH_FATAL_ERR  -2
 #define DISPATCH_CLIENT_ERR -3
 
-#define C_WL_CONN_BUF_SIZE 4096
-#define C_WL_CONN_HEADER_SIZE 8
-#define C_WL_STRING_SIZE (C_WL_CONN_BUF_SIZE - C_WL_CONN_HEADER_SIZE - 4) // 4 (string prefix)
+#define BUFFER_SIZE 4096
+#define HEADER_SIZE 8
+#define STRING_SIZE (BUFFER_SIZE - HEADER_SIZE - 4) // 4 (string prefix)
 
 #include <time.h>
 
@@ -56,7 +56,7 @@ typedef union c_wl_arg {
 	c_wl_fd     F;
 	c_wl_enum   e;
 	c_wl_object_id o;
-	char      s[C_WL_STRING_SIZE];
+	char      s[STRING_SIZE];
 } c_wl_arg, *c_wl_args;
 
 struct c_wl_message {

@@ -26,7 +26,10 @@ subdir('output')
 fs = import('fs')
 
 freetype_dep = dependency('freetype2')
-sources = ['cuts.c']
+sources = [
+  'cuts.c',
+  'fontenum.c',
+]
 
 if not fs.exists('config.h')
   run_command('cp', 'config.def.h', 'config.h', check: true)

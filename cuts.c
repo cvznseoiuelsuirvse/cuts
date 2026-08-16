@@ -71,13 +71,14 @@
   }
 
 #define bar_horizontal(bar) (bar)->pos & (BAR_TOP | BAR_BOTTOM)
+#define bar_vertical(bar) (bar)->pos & (BAR_RIGHT | BAR_LEFT)
 
 #define text_rect_width(text_len, bar)                                         \
   ((text_len * (bar->glyph.width + bar->glyph.spacing)) - bar->glyph.spacing +  \
       bar->h_padding * 2)
 
 #define text_rect_height(text_len, bar)                                        \
-  ((text_len * (bar->glyph.height + bar->glyph.spacing)) - bar->glyph.spacing + \
+  ((text_len * (bar->glyph.height + bar->glyph.spacing)) - bar->glyph.spacing +  \
       bar->v_padding * 2)
 
 struct bar_block {
@@ -166,6 +167,8 @@ struct tile_layout {
 
 };
 
+int get_fontpath(const char *font, char *fontpath, size_t size);
+
 struct client *client_new(struct c_wl_connection *conn);
 void client_free(struct client *client);
 void client_change_focus(struct client *client, double hotspot_x, double hotspot_y);
@@ -176,16 +179,16 @@ void output_damage(struct c_output *output);
 int count_tiled();
 void calc_tile_layout(struct c_output *output, struct tile_layout *layout);
 
-int wl_seat_get_keyboard(struct c_wl_connection *conn, union c_wl_arg *args);
-int wl_seat_get_pointer(struct c_wl_connection *conn, union c_wl_arg *args);
-
 void on_mouse_movement(struct c_input_mouse_event *event, void *userdata);
 void on_mouse_scroll(struct c_input_mouse_event *event, void *userdata);
 void on_mouse_button(struct c_input_mouse_event *event, void *userdata);
 void on_keyboard_key(struct c_input_keyboard_event *event, void *userdata);
+
 int on_window_new(struct c_wl_connection *conn, c_wl_args args, void *userdata);
 int on_window_close(struct c_wl_connection *conn, c_wl_args args, void *userdata);
 int on_set_selection(struct c_wl_connection *conn, c_wl_args args, void *userdata);
+int on_get_keyboard(struct c_wl_connection *conn, c_wl_args args, void *userdata);
+int on_get_pointer(struct c_wl_connection *conn, c_wl_args args, void *userdata);
 
 void bar_block_write_text(struct bar *bar, struct bar_block *block, const char *text, const uint32_t color[4]);
 void bar_block_clear_text(struct bar *bar, struct bar_block *block);
@@ -207,6 +210,33 @@ void window_toggle_floating(bind_args *args);
 void window_move(int done, bind_args *args);
 
 void cleanup(int exit_code);
+
+uint32_t utf8_char(const char *s, size_t *i) {
+  const unsigned char *c = (const unsigned char *)s;
+  uint32_t u = c[*i];
+  size_t bytes = 0;
+
+  (*i)++;
+
+  if (u < 0x80) return u;
+  else if ((u & 0xE0) == 0xC0) { u &= 0x3F; bytes = 1; }
+  else if ((u & 0xF0) == 0xE0) { u &= 0x1F; bytes = 2; }
+  else if ((u & 0xF8) == 0xF0) { u &= 0xF;  bytes = 3; }
+  else return 0xFFFD;
+
+  for (size_t j = 1; j <= bytes; j++, ++(*i)) {
+    if (!((c[*i]) & 0x80)) return 0xFFFD;
+    u = (u << 6) | (c[*i] & 0x3f);
+  }
+
+  return u;
+}
+
+size_t utf8_len(const char *s) {
+ size_t i = 0, n = 0;
+ while (s[i]) { utf8_char(s, &i); n++; }
+ return n;
+}
 
 static void get_surface_buf_size(struct c_wl_surface *surface, int32_t *width, int32_t *height) {
   if (surface->active->dma) {
@@ -280,17 +310,20 @@ void collect_window_tree(struct c_window *window, struct c_wl_surface *surface,
       get_surface_buf_size(sub_s->surface, &buf_width, &buf_height);
 
       struct c_renderer_quad q_sub = {
-        .type = C_RENDERER_BUFFER,
-        .buffer = sub_s->surface->active->dma ? (void *)sub_s->surface->active->dma : (void *)sub_s->surface->active->shm,
-        .buffer_type = sub_s->surface->active->dma ? C_BUFFER_DMA : C_BUFFER_RAW,
+          .type = C_RENDERER_BUFFER,
+          .buffer = sub_s->surface->active->dma
+                        ? (void *)sub_s->surface->active->dma
+                        : (void *)sub_s->surface->active->shm,
+          .buffer_type =
+              sub_s->surface->active->dma ? C_BUFFER_DMA : C_BUFFER_RAW,
 
-        .width = buf_width,
-        .height = buf_height,
+          .width = buf_width,
+          .height = buf_height,
 
-        .x = base_x + sub_s->x - w_x,
-        .y = base_y + sub_s->y - w_y,
+          .x = base_x + sub_s->x - w_x,
+          .y = base_y + sub_s->y - w_y,
 
-        .uv1 = {1.0f, 1.0f},
+          .uv1 = {1.0f, 1.0f},
       };
 
       // c_log(C_LOG_DEBUG, "%*s SUB-surface#%d (%d) %p %dx%d x=%f y=%f",
@@ -820,18 +853,6 @@ int on_surface_frame(struct c_wl_connection *conn, c_wl_args args, void *userdat
 
   return 0;
 }
-
-// int on_ack_configure(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
-//   c_wl_uint serial = args[1].u;
-//
-//   struct client *client = client_from_connection(conn);
-//   if (serial == client->fullscreen_serial) {
-//     client_set_fullscreen(client, client->output);
-//     client->fullscreen_serial = 0;
-//   }
-//
-//   return 0;
-// }
 
 int on_window_new(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
   struct c_xdg_surface *surface = c_wl_self(conn, args)->data;
@@ -1370,9 +1391,6 @@ void bar_block_init(struct bar *bar, struct bar_block *block) {
   block->text.width = rect->width;
   block->text.height = rect->height;
 
-  c_log_value(block->text.width, "%d");
-  c_log_value(block->text.height, "%d");
-
   uint32_t buffer_size = block->text.width * 4 * block->text.height;
   uint8_t *buffer = calloc(buffer_size, 1);
 
@@ -1417,8 +1435,11 @@ void bar_block_write_text(struct bar *bar, struct bar_block *block, const char *
   else
     load_flags = FT_LOAD_VERTICAL_LAYOUT;
 
-  for (size_t n = 0; n < strlen(text); n++) {
-    FT_UInt glyph_index = FT_Get_Char_Index(face, text[n]);
+  size_t n = 0, len = strlen(text);
+
+  while (n < len) {
+    uint32_t charcode = utf8_char(text, &n);
+    FT_UInt glyph_index = FT_Get_Char_Index(face, charcode);
 
     FT_Load_Glyph(face, glyph_index, load_flags);
     FT_Render_Glyph(slot, FT_RENDER_MODE_NORMAL);
@@ -1460,7 +1481,14 @@ void bar_create(struct c_output_mode *mode) {
     quit(NULL);
   }
 
-  if ((error = FT_New_Face(cuts.bar.library, "/usr/share/fonts/noto/NotoSansMono-Medium.ttf", 0, &bar->face))) {
+  char font[512];
+  const char *default_font = "/usr/share/fonts/Adwaita/AdwaitaMono-Regular.ttf";
+
+  int font_status = 0;
+  if ((font_status = get_fontpath(font_name, font, 512)) != 0)
+    c_log(C_LOG_WARNING, "couldn't find '%s' font. falling back to '%s'", font_name, default_font);
+
+  if ((error = FT_New_Face(cuts.bar.library, font_status == 0 ? font : default_font, 0, &bar->face))) {
     c_log(C_LOG_ERROR, "failed to create new face: %s", FT_Error_String(error));
     goto ft_error;
   }
@@ -1474,19 +1502,23 @@ void bar_create(struct c_output_mode *mode) {
   FT_Load_Glyph(bar->face, glyph_index, FT_LOAD_DEFAULT);
   FT_Render_Glyph(bar->face->glyph, FT_RENDER_MODE_NORMAL);
 
+
+  bar->glyph.spacing = 1;
+
   int ascent  = bar->face->size->metrics.ascender  >> 6;
   int descent = -(bar->face->size->metrics.descender >> 6);
-
-  bar->glyph.spacing = 2;
   bar->glyph.height = ascent + descent;
-  bar->glyph.width = bar->face->glyph->bitmap.width;
+  bar->glyph.width = (bar->face->glyph->advance.x) >> 6;
+
+  uint32_t pad       = bar->glyph.height / 4;
+  uint32_t thickness = bar->glyph.height + 2 * pad;
 
   if (bar_horizontal(bar)) {
-    bar->height = bar->glyph.height + (bar->glyph.height / 4);
-    bar->width = mode->width;
+   bar->width  = mode->width;
+   bar->height = thickness;
   } else {
-    bar->height = mode->height;
-    bar->width = bar->glyph.width * 3;
+   bar->height = mode->height;
+   bar->width  = thickness;
   }
 
   bar->h_padding = (MIN(bar->width, bar->height) - bar->glyph.width) / 2;
@@ -1498,15 +1530,12 @@ void bar_create(struct c_output_mode *mode) {
     struct bar_block *block = &bar->blocks[i];
     struct c_scene_rect *rect = &block->rect;
 
-    if (bar->pos & (BAR_RIGHT)) {
-      rect->x = mode->width - bar->width;  
+    if (bar_vertical(bar)) {
+      rect->x = bar->pos == BAR_RIGHT ? mode->width - bar->width : 0;
       rect->y = pen;
-    } else if (bar->pos & (BAR_TOP | BAR_BOTTOM)) {
+    } else if (bar_horizontal(bar)) {
       rect->x = pen;
       rect->y = bar->pos == BAR_TOP ? 0 : mode->height - bar->height;
-    } else {
-      rect->x = 0;
-      rect->y = pen;
     }
 
     rect->height = bar->height;
@@ -1549,7 +1578,6 @@ void bar_create(struct c_output_mode *mode) {
       if (bar_horizontal(bar)) {
         rect->width = text_rect_width(MAX_STDIN_CHARS, bar);
         rect->x = pen - text_rect_width(strlen(label), bar);
-
       } else {
         rect->height = text_rect_height(MAX_STDIN_CHARS, bar);
         rect->y = pen - text_rect_height(strlen(label), bar);
@@ -1625,12 +1653,12 @@ C_EVENT_CALLBACK stdin_text(struct c_event_loop *loop, int fd, void *userdata) {
   struct c_output_mode *mode = output->current_mode;
   
   if (bar_horizontal(bar)) {
-    uint32_t text_width = text_rect_width(strlen(buffer), bar);
+    uint32_t text_width = text_rect_width(utf8_len(buffer), bar);
     block->rect.x = mode->width - text_width;
     block->text.x = block->rect.x + bar->h_padding;
 
   } else {
-    uint32_t text_height = text_rect_height(strlen(buffer), bar);
+    uint32_t text_height = text_rect_height(utf8_len(buffer), bar);
     
     block->rect.y = mode->height - text_height;
     block->text.y = block->rect.y + bar->v_padding;
@@ -1698,8 +1726,8 @@ int main() {
 
   struct c_log_config cfg;
   cfg.level_mask = C_LOG_INFO | C_LOG_DEBUG | C_LOG_ERROR | C_LOG_WARNING;
-  cfg.level_mask |= C_LOG_WAYLAND;
-  cfg.color = 1;
+  // cfg.level_mask |= C_LOG_WAYLAND;
+  // cfg.color = 1;
   c_log_setup(&cfg);
 
   struct c_event_loop *loop = c_event_loop_init();

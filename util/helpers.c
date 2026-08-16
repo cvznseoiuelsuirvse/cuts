@@ -17,6 +17,7 @@ void print_buffer(char *buffer, size_t buffer_len) {
     }
     if (i < buffer_len - 1) printf(" ");
   }
+  printf("\n");
 }
 
 int set_nonblocking(int fd) {
@@ -46,3 +47,4 @@ uint32_t hash_string(char *string) {
 
   return hash;
 }
+

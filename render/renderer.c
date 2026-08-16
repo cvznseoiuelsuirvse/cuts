@@ -285,18 +285,16 @@ static int on_buffer_destroy(struct c_wl_connection *conn, c_wl_args args, void 
       if (buf->image)
         eglDestroyImage(render->egl->display, buf->image);
 
-      if (buf->texture)
+      if (buf->texture) {
         glDeleteTextures(1, &buf->texture->texture);
-
-      free(buf->texture);
+        free(buf->texture);
+      }
     }
   } else if (buffer->shm && !buffer->dma) {
     struct c_rawbuf *buf = buffer->shm;
-    if (c_get_refcount(buf) == 1) {
-      if (buf->texture)
+    if (c_get_refcount(buf) == 1 && buf->texture) {
         glDeleteTextures(1, &buf->texture->texture);
-
-      free(buf->texture);
+        free(buf->texture);
     }
   }
 

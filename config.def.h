@@ -34,6 +34,7 @@ static const uint32_t border_default[4]   = COLOR_TO_BYTES(0xB97375FF);
 
 // bar
 static const int font_size = 14;
+static const char *font_name = "Noto Sans Mono Medium";
 static const uint32_t font_color[4]    = COLOR_TO_BYTES(0xFFFFFFFF);
 static const enum bar_position bar_pos = BAR_TOP;
 

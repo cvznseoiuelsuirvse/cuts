@@ -18,7 +18,7 @@
 
 #define MAX_CMSG_FDS 1024
 
-static char            __error_msg[C_WL_STRING_SIZE] = {0};
+static char            __error_msg[STRING_SIZE] = {0};
 static c_wl_int        __error_code = 0;
 static c_wl_object_id  __error_object_id = 0;
 static int        __serial = 1;
@@ -33,11 +33,15 @@ struct c_wl_connection {
   void *listener_data;
 };
 
-struct client_message {
+struct message_header {
   uint32_t object_id;
   uint16_t op;
   uint16_t message_size;
-  char    *buffer;
+};
+
+struct message {
+  struct message_header header;
+  char *data;
 };
 
 struct c_wl_callback {
@@ -119,7 +123,7 @@ int c_wl_connection_send(struct c_wl_connection *conn, struct c_wl_message *msg,
     raise(SIGTERM);
   }
 
-  char buffer[C_WL_CONN_BUF_SIZE] = {0};
+  char buffer[BUFFER_SIZE] = {0};
   uint32_t offset = 0;
   write_u32(buffer, &offset, msg->id);
   write_u16(buffer, &offset, msg->op);
@@ -224,57 +228,55 @@ out:
   return status;
 }
 
-static int dispatch(struct c_wl_connection *conn, 
-                    c_wl_object_id object_id, uint16_t op, uint16_t message_size, 
-                    char *buffer, int **req_fds) {
+static int dispatch(struct c_wl_connection *conn, struct message_header *header, char *data, int **req_fds) {
 
-  struct c_wl_object *object = c_wl_object_get(conn, object_id);
-  if (!object) c_wl_error_set_and_return(object_id, WL_DISPLAY_ERROR_INVALID_OBJECT, "object not registered");
+  struct c_wl_object *object = c_wl_object_get(conn, header->object_id);
+  if (!object) c_wl_error_set_and_return(header->object_id, WL_DISPLAY_ERROR_INVALID_OBJECT, "object not registered");
 
   const struct c_wl_interface *iface = object->iface;
-  if (op > iface->n_requests)
-    c_wl_error_set_and_return(object_id, WL_DISPLAY_ERROR_INVALID_METHOD,
+  if (header->op > iface->n_requests)
+    c_wl_error_set_and_return(header->object_id, WL_DISPLAY_ERROR_INVALID_METHOD,
                               "%s: method with op %d does not exist",
-                              iface->name, op);
+                              iface->name, header->op);
 
-  struct c_wl_request request = iface->requests[op];
+  struct c_wl_request request = iface->requests[header->op];
 
   union c_wl_arg args[request.nargs + 1];
   c_wl_array arr = {0};
-  args[0].o = object_id;
+  args[0].o = header->object_id;
 
-  uint32_t offset = C_WL_CONN_HEADER_SIZE;
+  uint32_t offset = HEADER_SIZE;
   for (size_t i = 1; i <= request.nargs; i++) {
     uint8_t c = request.signature[i-1];
     assert(c != 'a');
 
     switch (c) {
       case 'u': 
-        args[i].u = read_u32(buffer, &offset);
+        args[i].u = read_u32(data, &offset);
         break;
 
       case 'i': 
-        args[i].i = read_i32(buffer, &offset);
+        args[i].i = read_i32(data, &offset);
         break;
 
       case 'f': 
-        args[i].f = read_u32(buffer, &offset);
+        args[i].f = read_u32(data, &offset);
         break;
 
       case 'o': 
-        args[i].o = read_u32(buffer, &offset);
+        args[i].o = read_u32(data, &offset);
         break;
 
       case 'n': 
-        args[i].n = read_u32(buffer, &offset);
+        args[i].n = read_u32(data, &offset);
         break;
 
       case 's': 
-        read_string(buffer, &offset, args[i].s, C_WL_STRING_SIZE);
+        read_string(data, &offset, args[i].s, STRING_SIZE);
         break;
 
       case 'e': 
-        args[i].e = read_i32(buffer, &offset);
+        args[i].e = read_i32(data, &offset);
         break;
 
       case 'F':
@@ -283,8 +285,8 @@ static int dispatch(struct c_wl_connection *conn,
         break;
 
       case 'a':
-        arr.size = read_u32(buffer, &offset);
-        arr.data = read_array(buffer, &offset, arr.size);
+        arr.size = read_u32(data, &offset);
+        arr.data = read_array(data, &offset, arr.size);
         args[i].a = &arr;
         break;
         
@@ -299,7 +301,7 @@ static int dispatch(struct c_wl_connection *conn,
     return DISPATCH_FATAL_ERR;
   }
 
-  int status = handle_request(conn, object, args, op);
+  int status = handle_request(conn, object, args, header->op);
   if (arr.data) free(arr.data);
   return status;
 
@@ -307,16 +309,17 @@ static int dispatch(struct c_wl_connection *conn,
 
 int c_wl_connection_dispatch(struct c_wl_connection *conn) {
   int ret;
-  char buffer[C_WL_CONN_BUF_SIZE];
+  char buffer[BUFFER_SIZE];
 
   int req_fds[MAX_CMSG_FDS];
   size_t n_req_fds = 0;
 
-  int received = connection_read(conn, buffer, C_WL_CONN_BUF_SIZE, req_fds, &n_req_fds);
+  int received = connection_read(conn, buffer, BUFFER_SIZE, req_fds, &n_req_fds);
   if (received <= 0) return DISPATCH_CLIENT_ERR;
 
   size_t msg_count = 0;
-  struct client_message msgs[1024];
+  struct message msgs[BUFFER_SIZE / sizeof(struct message)];
+  struct message_header *header;
 
   int buffer_offset = 0;
 
@@ -324,20 +327,23 @@ int c_wl_connection_dispatch(struct c_wl_connection *conn) {
   c_wl_object_id sync_requests[16] = {0};
 
   while (buffer_offset < received) {
-    if ((received - buffer_offset) < C_WL_CONN_HEADER_SIZE) return -1;
-    if (msg_count > LENGTH(msgs))                    return -1;
-
-    uint32_t tmp = 0;
-    uint32_t object_id = 
-      read_u32(buffer+buffer_offset, &tmp);
-    uint16_t op = 
-      read_u16(buffer+buffer_offset, &tmp);
-    uint16_t message_size = 
-      read_u16(buffer+buffer_offset, &tmp);
+    if ((received - buffer_offset) < HEADER_SIZE)
+      return -1;
+    if (msg_count > LENGTH(msgs))
+      return -1;
 
 
-    if (object_id == 1 && op == 0 && message_size == C_WL_CONN_HEADER_SIZE + sizeof(uint32_t)) {
-      c_wl_object_id wl_callback_id = read_u32(buffer+buffer_offset, &tmp);
+    struct message *msg = &msgs[msg_count];
+    header = &msg->header;
+    memcpy(header, buffer + buffer_offset, HEADER_SIZE);
+    msg->data = buffer+buffer_offset;
+
+    uint32_t message_offset = HEADER_SIZE;
+
+    if (header->object_id == 1 && header->op == 0) {
+      c_log(C_LOG_DEBUG, "new sync");
+      c_wl_object_id wl_callback_id = read_u32(buffer + buffer_offset, &message_offset);
+
       if (c_wl_object_get(conn, wl_callback_id))
         c_wl_error_set_and_return(1, WL_DISPLAY_ERROR_INVALID_OBJECT,
                                   "object %d already registered",
@@ -346,23 +352,21 @@ int c_wl_connection_dispatch(struct c_wl_connection *conn) {
       const struct c_wl_interface *iface = c_wl_interface_get("wl_callback"); 
       c_wl_object_add(conn, wl_callback_id, iface->version, iface, NULL);
       sync_requests[n_sync_requests++] = wl_callback_id;
-      dispatch(conn, object_id, op, message_size, buffer+buffer_offset, 0);
-
-    } else {
-      struct client_message *msg = &msgs[msg_count++];
-      msg->object_id = object_id;
-      msg->op = op;
-      msg->message_size = message_size;
-      msg->buffer = buffer+buffer_offset;
+      dispatch(conn, header, buffer+buffer_offset, 0);
+      goto iter_end;
     }
 
-    buffer_offset+=message_size;
+    msg_count++;
+
+iter_end:
+    buffer_offset += header->message_size;
+
   }
 
   int *req_fds_ptr = req_fds;
   for (size_t i = 0; i < msg_count; i++) {
-    struct client_message msg = msgs[i];
-    ret = dispatch(conn, msg.object_id, msg.op, msg.message_size, msg.buffer, &req_fds_ptr);
+    struct message msg = msgs[i];
+    ret = dispatch(conn, &msg.header, msg.data, &req_fds_ptr);
     if (ret == DISPATCH_PROTO_ERR) 
       break;
 
@@ -370,6 +374,7 @@ int c_wl_connection_dispatch(struct c_wl_connection *conn) {
       goto out;
   }
 
+  c_log_value(n_sync_requests, "%d");
   for (size_t i = 0; i < n_sync_requests; i++)
     c_wl_connection_callback_done(conn, sync_requests[i]);
 
@@ -509,7 +514,7 @@ int _c_wl_error_set(c_wl_object_id object_id, c_wl_int code, c_wl_string msg, ..
   
   va_list args;
   va_start(args, msg);
-  vsnprintf(__error_msg, C_WL_STRING_SIZE, msg, args);
+  vsnprintf(__error_msg, STRING_SIZE, msg, args);
   va_end(args);
   return -1;
 }
