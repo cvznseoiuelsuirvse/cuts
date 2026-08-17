@@ -3,6 +3,7 @@ import sys
 import os
 from typing import Literal
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass
 
 WL_TYPES = {
     "int":      "c_wl_int",
@@ -29,8 +30,31 @@ SIGNATURE = {
 }
 
 
-def parse_event(interface_name: str, event: ET.Element, event_n: int, file_type: Literal["h", "c"]) -> str:
+@dataclass
+class Event:
+    repr: str
+    name: str
+
+    since: int
+    deprecated_since: int
+
+@dataclass
+class Request:
+    name: str
+
+    is_destructor: bool
+    func_decl: str
+    register_field: str
+    listener_field: str 
+
+    since: int
+    deprecated_since: int
+
+def parse_event(interface_name: str, event: ET.Element, event_n: int, file_type: Literal["h", "c"]) -> Event:
     s = """"""
+
+    since = int(event.get("since", 0))
+    deprecated_since = int(event.get("deprecated-since", 0))
     event_name = event.get("name")
 
     desc = next(c for c in event if c.tag == "description")
@@ -74,24 +98,33 @@ def parse_event(interface_name: str, event: ET.Element, event_n: int, file_type:
     else:
         s+=") {\n"
         s+=f"  struct c_wl_message msg = {{{interface_name}, {event_n}, {signature if args else "{0}"}, \"{event_name}\"}};\n"
-        s+=f"  return c_wl_connection_send(conn, &msg, {len(args)}{", " + ', '.join(arg_names) if args else ""});\n"
+        s+=f"  return c_wl_connection_post(conn, &msg, {len(args)}{", " + ', '.join(arg_names) if args else ""});\n"
         s+="}\n"
 
-    return s
+    return Event(s, event_name, since, deprecated_since)
 
 def parse_events(interface_name: str, events: list[ET.Element], file_type: Literal["h", "c"]) -> str:
     s = """"""
+
     for i, ev in enumerate(events):
-        s+=parse_event(interface_name, ev, i, file_type)
+        event = parse_event(interface_name, ev, i, file_type);
+        if event.since and file_type == "h":
+            s+=f"#define C_{interface_name.upper()}_{event.name.upper()}_SINCE {event.since}\n\n"
+        if event.deprecated_since and file_type == "h":
+            s+=f"#define C_{interface_name.upper()}_{event.name.upper()}_DEPRECATED_SINCE {event.deprecated_since}\n\n"
+        s+=event.repr
 
     if interface_name == "wl_display" and file_type == "c":
         s+='C_WL_INTERFACE_REGISTER(wl_callback, 1, 0, -1, {})\n'
 
     return s
 
-def parse_request(interface_name: str, request: ET.Element, file_type: Literal["h", "c"]) -> tuple[bool, str, str, str]:
+def parse_request(interface_name: str, request: ET.Element, file_type: Literal["h", "c"]) -> Request:
     struct = """"""
     decl = """"""
+
+    since = int(request.get("since", 0))
+    deprecated_since = int(request.get("deprecated-since", 0))
 
     request_name = request.get("name")
     is_destructor = request.get("type", "") == "destructor"
@@ -148,7 +181,7 @@ def parse_request(interface_name: str, request: ET.Element, file_type: Literal["
 
     decl+=f"C_WL_REQUEST {interface_name}_{request_name}(struct c_wl_connection *conn, c_wl_args args);\n"
 
-    return is_destructor, decl, struct, listener
+    return Request(request_name, is_destructor, decl, struct, listener, since, deprecated_since)
 
 def parse_requests(interface: ET.Element, requests: list[ET.Element], file_type: Literal["h", "c"]) -> str:
     s = """"""
@@ -157,32 +190,36 @@ def parse_requests(interface: ET.Element, requests: list[ET.Element], file_type:
 
     interface_name = interface.get('name', '')
     interface_version = interface.get('version', 1)
-    ss = [parse_request(interface_name, req, file_type) for req in requests]
+    reqs = [parse_request(interface_name, req, file_type) for req in requests]
 
     if file_type == "h":
-        for _, decl, _, _ in ss:
-            s += decl + "\n"
+        for request in reqs:
+            if request.since:
+                s+=f"#define C_{interface_name.upper()}_{request.name.upper()}_SINCE {request.since}\n\n"
+            if request.deprecated_since:
+                s+=f"#define C_{interface_name.upper()}_{request.name.upper()}_DEPRECATED_SINCE {request.deprecated_since}\n\n"
+            s += request.func_decl + "\n"
 
         s+=f"struct c_{interface_name}_listeners {{\n"
-        for _, _, _, listener in ss:
-            s+="  " + listener + "\n"
+        for request in reqs:
+            s+="  " + request.listener_field + "\n"
         s+="};\n"
         s+=f"void {interface_name}_add_listener(struct c_wl_display *display, struct c_{interface_name}_listeners *listeners, void *userdata);\n"
 
     if file_type == "c":
         destr = -1
-        for i, (is_destr, _, _, _) in enumerate(ss):
-            if is_destr:
+        for i, request in enumerate(reqs):
+            if request.is_destructor:
                 destr = i
 
-        s+=f"C_WL_INTERFACE_REGISTER({interface_name}, {interface_version}, {len(ss)}, {destr}, \n"
-        for i, (_, _, struct, _) in enumerate(ss):
-            s+=struct
+        s+=f"C_WL_INTERFACE_REGISTER({interface_name}, {interface_version}, {len(reqs)}, {destr}, \n"
+        for i, request in enumerate(reqs):
+            s+=request.register_field
 
         s+=")\n"
 
         s+=f"void {interface_name}_add_listener(struct c_wl_display *display, struct c_{interface_name}_listeners *listeners, void *userdata) {{\n"
-        s+=f"  c_wl_display_add_interface_listener(display, \"{interface_name}\", listeners, sizeof(*listeners), userdata);\n"
+        s+=f"  c_wl_display_add_interface_listener(display, \"{interface_name}\", listeners, userdata);\n"
         s+="}\n"
 
     return s

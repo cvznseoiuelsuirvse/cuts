@@ -284,6 +284,8 @@ C_WL_REQUEST xdg_positioner_set_constraint_adjustment(struct c_wl_connection *co
    */
 C_WL_REQUEST xdg_positioner_set_offset(struct c_wl_connection *conn, c_wl_args args);
 
+#define C_XDG_POSITIONER_SET_REACTIVE_SINCE 3
+
    /* When set reactive, the surface is reconstrained if the conditions used
 	for constraining changed, e.g. the parent window moved.
 
@@ -291,6 +293,8 @@ C_WL_REQUEST xdg_positioner_set_offset(struct c_wl_connection *conn, c_wl_args a
 	xdg_popup.configure event is sent with updated geometry, followed by an
 	xdg_surface.configure event. */
 C_WL_REQUEST xdg_positioner_set_reactive(struct c_wl_connection *conn, c_wl_args args);
+
+#define C_XDG_POSITIONER_SET_PARENT_SIZE_SINCE 3
 
    /* Set the parent window geometry the compositor should use when
 	positioning the popup. The compositor may use this information to
@@ -304,6 +308,8 @@ C_WL_REQUEST xdg_positioner_set_reactive(struct c_wl_connection *conn, c_wl_args
     @[2] parent_height: c_wl_int
    */
 C_WL_REQUEST xdg_positioner_set_parent_size(struct c_wl_connection *conn, c_wl_args args);
+
+#define C_XDG_POSITIONER_SET_PARENT_CONFIGURE_SINCE 3
 
    /* Set the serial of an xdg_surface.configure event this positioner will be
 	used in response to. The compositor may use this information together
@@ -501,6 +507,8 @@ C_WL_EVENT xdg_toplevel_configure(struct c_wl_connection *conn, c_wl_object_id x
 	a dialog to ask the user to save their data, etc. */
 C_WL_EVENT xdg_toplevel_close(struct c_wl_connection *conn, c_wl_object_id xdg_toplevel);
 
+#define C_XDG_TOPLEVEL_CONFIGURE_BOUNDS_SINCE 4
+
  /* The configure_bounds event may be sent prior to a xdg_toplevel.configure
 	event to communicate the bounds a window geometry size is recommended
 	to constrain to.
@@ -517,6 +525,8 @@ C_WL_EVENT xdg_toplevel_close(struct c_wl_connection *conn, c_wl_object_id xdg_t
 	xdg_toplevel.configure_bounds will be sent, followed by
 	xdg_toplevel.configure and xdg_surface.configure. */
 C_WL_EVENT xdg_toplevel_configure_bounds(struct c_wl_connection *conn, c_wl_object_id xdg_toplevel, c_wl_int width, c_wl_int height);
+
+#define C_XDG_TOPLEVEL_WM_CAPABILITIES_SINCE 5
 
  /* This event advertises the capabilities supported by the compositor. If
 	a capability isn't supported, clients should hide or disable the UI
@@ -905,6 +915,8 @@ C_WL_EVENT xdg_popup_configure(struct c_wl_connection *conn, c_wl_object_id xdg_
 	point. */
 C_WL_EVENT xdg_popup_popup_done(struct c_wl_connection *conn, c_wl_object_id xdg_popup);
 
+#define C_XDG_POPUP_REPOSITIONED_SINCE 3
+
  /* The repositioned event is sent as part of a popup configuration
 	sequence, together with xdg_popup.configure and lastly
 	xdg_surface.configure to notify the completion of a reposition request.
@@ -971,6 +983,8 @@ C_WL_REQUEST xdg_popup_destroy(struct c_wl_connection *conn, c_wl_args args);
     @[2] serial: c_wl_uint
    */
 C_WL_REQUEST xdg_popup_grab(struct c_wl_connection *conn, c_wl_args args);
+
+#define C_XDG_POPUP_REPOSITION_SINCE 3
 
    /* Reposition an already-mapped popup. The popup will be placed given the
 	details in the passed xdg_positioner object, and a

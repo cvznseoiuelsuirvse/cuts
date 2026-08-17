@@ -15,7 +15,7 @@
 
 enum __input_event_listener_type {
   INPUT_EVENT_LISTENER_MOUSE = 1 << 5,
-  INPUT_EVENT_LISTENER_keyboard,
+  INPUT_EVENT_LISTENER_KEYBOARD,
 };
 
 struct __input_event_listener {
@@ -43,6 +43,9 @@ enum c_input_notifier {
 	C_INPUT_NOTIFY_ON_KEYBOARD_KEY,
 };
 
+static struct libinput_interface interface;
+
+
 static struct xkb_state *get_xkb_state(struct c_input *input) {
   if (!input->xkb.state) {
     c_log(C_LOG_ERROR, "can't get xkb_state from c_input. c_input_init_xkb_state() was never called");
@@ -63,11 +66,13 @@ static void c_input_notify_keyboard(struct c_input *input,
                                  struct c_input_keyboard_event *event, enum c_input_notifier notifier) {
   struct __input_event_listener *l;
 
-  #define notify_keyboard(callback) \
-    c_list_for_each(input->event_listeners, l) { \
-      if (l->type == INPUT_EVENT_LISTENER_keyboard && ((struct c_input_event_listener_keyboard *)l->listener)->callback) \
-        ((struct c_input_event_listener_keyboard *)l->listener)->callback(event, l->userdata); \
-    }
+#define notify_keyboard(callback)                                              \
+  c_list_for_each(input->event_listeners, l) {                                 \
+    if (l->type == INPUT_EVENT_LISTENER_KEYBOARD &&                            \
+        ((struct c_input_event_listener_keyboard *)l->listener)->callback)     \
+      ((struct c_input_event_listener_keyboard *)l->listener)                  \
+          ->callback(event, l->userdata);                                      \
+  }
 
   switch (notifier) {
     case C_INPUT_NOTIFY_ON_KEYBOARD_KEY: notify_keyboard(on_keyboard_key); break;
@@ -79,12 +84,14 @@ static void c_input_notify_mouse(struct c_input *input,
                                  struct c_input_mouse_event *event, enum c_input_notifier notifier) {
   struct __input_event_listener *l;
 
-  #define notify_mouse(callback) \
-    c_list_for_each(input->event_listeners, l) { \
-      if (l->type == INPUT_EVENT_LISTENER_MOUSE && ((struct c_input_event_listener_mouse *)l->listener)->callback) {\
-        ((struct c_input_event_listener_mouse *)l->listener)->callback(event, l->userdata); \
-      } \
-    }
+#define notify_mouse(callback)                                                 \
+  c_list_for_each(input->event_listeners, l) {                                 \
+    if (l->type == INPUT_EVENT_LISTENER_MOUSE &&                               \
+        ((struct c_input_event_listener_mouse *)l->listener)->callback) {      \
+      ((struct c_input_event_listener_mouse *)l->listener)                     \
+          ->callback(event, l->userdata);                                      \
+    }                                                                          \
+  }
 
   switch (notifier) {
     case C_INPUT_NOTIFY_ON_MOUSE_MOVEMENT:  notify_mouse(on_mouse_movement); break;
@@ -158,7 +165,7 @@ static void handle_event_mouse(struct c_input *input, struct libinput_event_poin
     case LIBINPUT_EVENT_POINTER_SCROLL_WHEEL:
       mouse_event.axis = libinput_event_pointer_get_scroll_value(event, LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL);
       mouse_event.axis120 = libinput_event_pointer_get_scroll_value_v120(event, LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL);
-      mouse_event.axis_discrete = mouse_event.axis < 0 ? -1 : 1;
+      mouse_event.axis_discrete = mouse_event.axis120 / 120;
       mouse_event.axis_source = C_MOUSE_AXIS_SOURCE_WHEEL;
 
       c_input_notify_mouse(input, &mouse_event, C_INPUT_NOTIFY_ON_MOUSE_SCROLL);
@@ -336,23 +343,22 @@ C_EVENT_CALLBACK libinput_dispatch_handler(struct c_event_loop *loop, int fd, vo
   return ret == 0 ? C_EVENT_OK : C_EVENT_ERROR_FATAL;
 }
 
-
-static void add_listener(c_list *listeners, enum __input_event_listener_type type, void *listener, size_t listener_size, void *userdata) {
+static void add_listener(c_list *listeners,
+                         enum __input_event_listener_type type, void *listener, void *userdata) {
   struct __input_event_listener l = {
     .userdata = userdata,
-    .listener = malloc(listener_size),
+    .listener = listener,
     .type = type,
   };
-  memcpy(l.listener, listener, listener_size);
   c_list_push(listeners, &l, sizeof(l));
 }
 
 void c_input_add_event_listener_keyboard(struct c_input *input, struct c_input_event_listener_keyboard *listener, void *userdata) {
-  add_listener(input->event_listeners, INPUT_EVENT_LISTENER_keyboard, listener, sizeof(*listener), userdata);
+  add_listener(input->event_listeners, INPUT_EVENT_LISTENER_KEYBOARD, listener, userdata);
 }
 
 void c_input_add_event_listener_mouse(struct c_input *input, struct c_input_event_listener_mouse *listener, void *userdata) {
-  add_listener(input->event_listeners, INPUT_EVENT_LISTENER_MOUSE, listener, sizeof(*listener), userdata);
+  add_listener(input->event_listeners, INPUT_EVENT_LISTENER_MOUSE, listener, userdata);
 }
 
 void c_input_add_combo_handler(struct c_input *input, uint32_t mod_mask,
@@ -438,13 +444,9 @@ error:
 }
 
 void c_input_free(struct c_input *input) {
-  if (input->event_listeners) {
-    struct __input_event_listener *l;
-    c_list_for_each(input->event_listeners, l) {
-      free(l->listener);
-    }
-    c_list_destroy(input->event_listeners);
-  }
+  if (input->libinput)
+    libinput_unref(input->libinput);
+
   if (input->combo_listeners)
     c_list_destroy(input->combo_listeners);
 
@@ -456,9 +458,9 @@ void c_input_free(struct c_input *input) {
 
   if (input->xkb.ctx)
     xkb_context_unref(input->xkb.ctx);
-  
-  if (input->libinput)
-    libinput_unref(input->libinput);
+
+  if (input->event_listeners)
+    c_list_destroy(input->event_listeners);
 
   free(input);
 }
@@ -471,10 +473,9 @@ struct c_input * c_input_init(struct c_event_loop *loop, struct c_input_libinput
   }
 
   input->config = config;
-  struct libinput_interface interface = {
-    .open_restricted = libinput_interface->open_restricted,
-    .close_restricted = libinput_interface->close_restricted,
-  };
+
+  interface.open_restricted = libinput_interface->open_restricted;
+  interface.close_restricted = libinput_interface->close_restricted;
 
   struct udev *udev = udev_new();
   struct libinput *libinput = libinput_udev_create_context(&interface, libinput_interface->userdata, udev);

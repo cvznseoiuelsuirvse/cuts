@@ -559,6 +559,8 @@ C_WL_EVENT wl_shm_format(struct c_wl_connection *conn, c_wl_object_id wl_shm, en
    */
 C_WL_REQUEST wl_shm_create_pool(struct c_wl_connection *conn, c_wl_args args);
 
+#define C_WL_SHM_RELEASE_SINCE 2
+
    /* Using this request a client can tell the server that it is not going to
 	use the shm object anymore.
 
@@ -602,11 +604,15 @@ void wl_buffer_add_listener(struct c_wl_display *display, struct c_wl_buffer_lis
 	event per offered mime type. */
 C_WL_EVENT wl_data_offer_offer(struct c_wl_connection *conn, c_wl_object_id wl_data_offer, c_wl_string mime_type);
 
+#define C_WL_DATA_OFFER_SOURCE_ACTIONS_SINCE 3
+
  /* This event indicates the actions offered by the data source. It
 	will be sent immediately after creating the wl_data_offer object,
 	or anytime the source side changes its offered actions through
 	wl_data_source.set_actions. */
 C_WL_EVENT wl_data_offer_source_actions(struct c_wl_connection *conn, c_wl_object_id wl_data_offer, enum wl_data_device_manager_dnd_action_enum source_actions);
+
+#define C_WL_DATA_OFFER_ACTION_SINCE 3
 
  /* This event indicates the action selected by the compositor after
 	matching the source/destination side actions. Only one action (or
@@ -689,6 +695,8 @@ C_WL_REQUEST wl_data_offer_receive(struct c_wl_connection *conn, c_wl_args args)
    /* Destroy the data offer. */
 C_WL_REQUEST wl_data_offer_destroy(struct c_wl_connection *conn, c_wl_args args);
 
+#define C_WL_DATA_OFFER_FINISH_SINCE 3
+
    /* Notifies the compositor that the drag destination successfully
 	finished the drag-and-drop operation.
 
@@ -704,6 +712,8 @@ C_WL_REQUEST wl_data_offer_destroy(struct c_wl_connection *conn, c_wl_args args)
 	If wl_data_offer.finish request is received for a non drag and drop
 	operation, the invalid_finish protocol error is raised. */
 C_WL_REQUEST wl_data_offer_finish(struct c_wl_connection *conn, c_wl_args args);
+
+#define C_WL_DATA_OFFER_SET_ACTIONS_SINCE 3
 
    /* Sets the actions that the destination side client supports for
 	this operation. This request may trigger the emission of
@@ -784,6 +794,8 @@ C_WL_EVENT wl_data_source_send(struct c_wl_connection *conn, c_wl_object_id wl_d
 	source. */
 C_WL_EVENT wl_data_source_cancelled(struct c_wl_connection *conn, c_wl_object_id wl_data_source);
 
+#define C_WL_DATA_SOURCE_DND_DROP_PERFORMED_SINCE 3
+
  /* The user performed the drop action. This event does not indicate
 	acceptance, wl_data_source.cancelled may still be emitted afterwards
 	if the drop destination does not accept any mime type.
@@ -795,6 +807,8 @@ C_WL_EVENT wl_data_source_cancelled(struct c_wl_connection *conn, c_wl_object_id
 	not be destroyed here. */
 C_WL_EVENT wl_data_source_dnd_drop_performed(struct c_wl_connection *conn, c_wl_object_id wl_data_source);
 
+#define C_WL_DATA_SOURCE_DND_FINISHED_SINCE 3
+
  /* The drop destination finished interoperating with this data
 	source, so the client is now free to destroy this data source and
 	free all associated data.
@@ -802,6 +816,8 @@ C_WL_EVENT wl_data_source_dnd_drop_performed(struct c_wl_connection *conn, c_wl_
 	If the action used to perform the operation was "move", the
 	source can now delete the transferred data. */
 C_WL_EVENT wl_data_source_dnd_finished(struct c_wl_connection *conn, c_wl_object_id wl_data_source);
+
+#define C_WL_DATA_SOURCE_ACTION_SINCE 3
 
  /* This event indicates the action selected by the compositor after
 	matching the source/destination side actions. Only one action (or
@@ -840,6 +856,8 @@ C_WL_REQUEST wl_data_source_offer(struct c_wl_connection *conn, c_wl_args args);
 
    /* Destroy the data source. */
 C_WL_REQUEST wl_data_source_destroy(struct c_wl_connection *conn, c_wl_args args);
+
+#define C_WL_DATA_SOURCE_SET_ACTIONS_SINCE 3
 
    /* Sets the actions that the source side client supports for this
 	operation. This request may trigger wl_data_source.action and
@@ -971,6 +989,8 @@ C_WL_REQUEST wl_data_device_start_drag(struct c_wl_connection *conn, c_wl_args a
     @[2] serial: c_wl_uint
    */
 C_WL_REQUEST wl_data_device_set_selection(struct c_wl_connection *conn, c_wl_args args);
+
+#define C_WL_DATA_DEVICE_RELEASE_SINCE 2
 
    /* This request destroys the data device. */
 C_WL_REQUEST wl_data_device_release(struct c_wl_connection *conn, c_wl_args args);
@@ -1242,6 +1262,8 @@ C_WL_EVENT wl_surface_enter(struct c_wl_connection *conn, c_wl_object_id wl_surf
 	used instead. */
 C_WL_EVENT wl_surface_leave(struct c_wl_connection *conn, c_wl_object_id wl_surface, c_wl_object_id wl_output);
 
+#define C_WL_SURFACE_PREFERRED_BUFFER_SCALE_SINCE 6
+
  /* This event indicates the preferred buffer scale for this surface. It is
 	sent whenever the compositor's preference changes.
 
@@ -1255,6 +1277,8 @@ C_WL_EVENT wl_surface_leave(struct c_wl_connection *conn, c_wl_object_id wl_surf
 
 	The compositor shall emit a scale value greater than 0. */
 C_WL_EVENT wl_surface_preferred_buffer_scale(struct c_wl_connection *conn, c_wl_object_id wl_surface, c_wl_int factor);
+
+#define C_WL_SURFACE_PREFERRED_BUFFER_TRANSFORM_SINCE 6
 
  /* This event indicates the preferred buffer transform for this surface.
 	It is sent whenever the compositor's preference changes.
@@ -1485,6 +1509,8 @@ C_WL_REQUEST wl_surface_set_input_region(struct c_wl_connection *conn, c_wl_args
 	Other interfaces may add further double-buffered surface state. */
 C_WL_REQUEST wl_surface_commit(struct c_wl_connection *conn, c_wl_args args);
 
+#define C_WL_SURFACE_SET_BUFFER_TRANSFORM_SINCE 2
+
    /* This request sets the transformation that the client has already applied
 	to the content of the buffer. The accepted values for the transform
 	parameter are the values for wl_output.transform.
@@ -1521,6 +1547,8 @@ C_WL_REQUEST wl_surface_commit(struct c_wl_connection *conn, c_wl_args args);
    */
 C_WL_REQUEST wl_surface_set_buffer_transform(struct c_wl_connection *conn, c_wl_args args);
 
+#define C_WL_SURFACE_SET_BUFFER_SCALE_SINCE 3
+
    /* This request sets an optional scaling factor on how the compositor
 	interprets the contents of the buffer attached to the window.
 
@@ -1548,6 +1576,8 @@ C_WL_REQUEST wl_surface_set_buffer_transform(struct c_wl_connection *conn, c_wl_
     @[1] scale: c_wl_int
    */
 C_WL_REQUEST wl_surface_set_buffer_scale(struct c_wl_connection *conn, c_wl_args args);
+
+#define C_WL_SURFACE_DAMAGE_BUFFER_SINCE 4
 
    /* This request is used to describe the regions where the pending
 	buffer is different from the current surface contents, and where
@@ -1588,6 +1618,8 @@ C_WL_REQUEST wl_surface_set_buffer_scale(struct c_wl_connection *conn, c_wl_args
     @[4] height: c_wl_int
    */
 C_WL_REQUEST wl_surface_damage_buffer(struct c_wl_connection *conn, c_wl_args args);
+
+#define C_WL_SURFACE_OFFSET_SINCE 5
 
    /* The x and y arguments specify the location of the new pending
 	buffer's upper left corner, relative to the current buffer's upper
@@ -1652,6 +1684,8 @@ void wl_surface_add_listener(struct c_wl_display *display, struct c_wl_surface_l
 	keyboard and touch capabilities, respectively. */
 C_WL_EVENT wl_seat_capabilities(struct c_wl_connection *conn, c_wl_object_id wl_seat, enum wl_seat_capability_enum capabilities);
 
+#define C_WL_SEAT_NAME_SINCE 2
+
  /* In a multi-seat configuration the seat name can be used by clients to
 	help identify which physical devices the seat represents.
 
@@ -1708,6 +1742,8 @@ C_WL_REQUEST wl_seat_get_keyboard(struct c_wl_connection *conn, c_wl_args args);
     @[1] id: c_wl_new_id [[wl_touch]]
    */
 C_WL_REQUEST wl_seat_get_touch(struct c_wl_connection *conn, c_wl_args args);
+
+#define C_WL_SEAT_RELEASE_SINCE 5
 
    /* Using this request a client can tell the server that it is not going to
 	use the seat object anymore. */
@@ -1775,6 +1811,8 @@ C_WL_EVENT wl_pointer_button(struct c_wl_connection *conn, c_wl_object_id wl_poi
 	scroll distance. */
 C_WL_EVENT wl_pointer_axis(struct c_wl_connection *conn, c_wl_object_id wl_pointer, c_wl_uint time, enum wl_pointer_axis_enum axis, c_wl_fixed value);
 
+#define C_WL_POINTER_FRAME_SINCE 5
+
  /* Indicates the end of a set of events that logically belong together.
 	A client is expected to accumulate the data in all events within the
 	frame before proceeding.
@@ -1811,6 +1849,8 @@ C_WL_EVENT wl_pointer_axis(struct c_wl_connection *conn, c_wl_object_id wl_point
 	groups. */
 C_WL_EVENT wl_pointer_frame(struct c_wl_connection *conn, c_wl_object_id wl_pointer);
 
+#define C_WL_POINTER_AXIS_SOURCE_SINCE 5
+
  /* Source information for scroll and other axes.
 
 	This event does not occur on its own. It is sent before a
@@ -1838,6 +1878,8 @@ C_WL_EVENT wl_pointer_frame(struct c_wl_connection *conn, c_wl_object_id wl_poin
 	not guaranteed. */
 C_WL_EVENT wl_pointer_axis_source(struct c_wl_connection *conn, c_wl_object_id wl_pointer, enum wl_pointer_axis_source_enum axis_source);
 
+#define C_WL_POINTER_AXIS_STOP_SINCE 5
+
  /* Stop notification for scroll and other axes.
 
 	For some wl_pointer.axis_source types, a wl_pointer.axis_stop event
@@ -1853,6 +1895,10 @@ C_WL_EVENT wl_pointer_axis_source(struct c_wl_connection *conn, c_wl_object_id w
 	wl_pointer.axis event. The timestamp value may be the same as a
 	preceding wl_pointer.axis event. */
 C_WL_EVENT wl_pointer_axis_stop(struct c_wl_connection *conn, c_wl_object_id wl_pointer, c_wl_uint time, enum wl_pointer_axis_enum axis);
+
+#define C_WL_POINTER_AXIS_DISCRETE_SINCE 5
+
+#define C_WL_POINTER_AXIS_DISCRETE_DEPRECATED_SINCE 8
 
  /* Discrete step information for scroll and other axes.
 
@@ -1886,6 +1932,8 @@ C_WL_EVENT wl_pointer_axis_stop(struct c_wl_connection *conn, c_wl_object_id wl_
 	not guaranteed. */
 C_WL_EVENT wl_pointer_axis_discrete(struct c_wl_connection *conn, c_wl_object_id wl_pointer, enum wl_pointer_axis_enum axis, c_wl_int discrete);
 
+#define C_WL_POINTER_AXIS_VALUE120_SINCE 8
+
  /* Discrete high-resolution scroll information.
 
 	This event carries high-resolution wheel scroll information,
@@ -1908,6 +1956,8 @@ C_WL_EVENT wl_pointer_axis_discrete(struct c_wl_connection *conn, c_wl_object_id
 	The order of wl_pointer.axis_value120 and wl_pointer.axis_source is
 	not guaranteed. */
 C_WL_EVENT wl_pointer_axis_value120(struct c_wl_connection *conn, c_wl_object_id wl_pointer, enum wl_pointer_axis_enum axis, c_wl_int value120);
+
+#define C_WL_POINTER_AXIS_RELATIVE_DIRECTION_SINCE 9
 
  /* Relative directional information of the entity causing the axis
 	motion.
@@ -1986,6 +2036,8 @@ C_WL_EVENT wl_pointer_axis_relative_direction(struct c_wl_connection *conn, c_wl
     @[4] hotspot_y: c_wl_int
    */
 C_WL_REQUEST wl_pointer_set_cursor(struct c_wl_connection *conn, c_wl_args args);
+
+#define C_WL_POINTER_RELEASE_SINCE 3
 
    /* Using this request a client can tell the server that it is not going to
 	use the pointer object anymore.
@@ -2075,6 +2127,8 @@ C_WL_EVENT wl_keyboard_key(struct c_wl_connection *conn, c_wl_object_id wl_keybo
 	group. */
 C_WL_EVENT wl_keyboard_modifiers(struct c_wl_connection *conn, c_wl_object_id wl_keyboard, c_wl_uint serial, c_wl_uint mods_depressed, c_wl_uint mods_latched, c_wl_uint mods_locked, c_wl_uint group);
 
+#define C_WL_KEYBOARD_REPEAT_INFO_SINCE 4
+
  /* Informs the client about the keyboard's repeat rate and delay.
 
 	This event is sent as soon as the wl_keyboard object has been created,
@@ -2088,6 +2142,8 @@ C_WL_EVENT wl_keyboard_modifiers(struct c_wl_connection *conn, c_wl_object_id wl
 	so clients should continue listening for the event past the creation
 	of wl_keyboard. */
 C_WL_EVENT wl_keyboard_repeat_info(struct c_wl_connection *conn, c_wl_object_id wl_keyboard, c_wl_int rate, c_wl_int delay);
+
+#define C_WL_KEYBOARD_RELEASE_SINCE 3
 
 C_WL_REQUEST wl_keyboard_release(struct c_wl_connection *conn, c_wl_args args);
 
@@ -2130,6 +2186,8 @@ C_WL_EVENT wl_touch_frame(struct c_wl_connection *conn, c_wl_object_id wl_touch)
 	No frame event is required after the cancel event. */
 C_WL_EVENT wl_touch_cancel(struct c_wl_connection *conn, c_wl_object_id wl_touch);
 
+#define C_WL_TOUCH_SHAPE_SINCE 6
+
  /* Sent when a touchpoint has changed its shape.
 
 	This event does not occur on its own. It is sent before a
@@ -2157,6 +2215,8 @@ C_WL_EVENT wl_touch_cancel(struct c_wl_connection *conn, c_wl_object_id wl_touch
 	shape if it did not receive this event. */
 C_WL_EVENT wl_touch_shape(struct c_wl_connection *conn, c_wl_object_id wl_touch, c_wl_int id, c_wl_fixed major, c_wl_fixed minor);
 
+#define C_WL_TOUCH_ORIENTATION_SINCE 6
+
  /* Sent when a touchpoint has changed its orientation.
 
 	This event does not occur on its own. It is sent before a
@@ -2181,6 +2241,8 @@ C_WL_EVENT wl_touch_shape(struct c_wl_connection *conn, c_wl_object_id wl_touch,
 	This event is only sent by the compositor if the touch device supports
 	orientation reports. */
 C_WL_EVENT wl_touch_orientation(struct c_wl_connection *conn, c_wl_object_id wl_touch, c_wl_int id, c_wl_fixed orientation);
+
+#define C_WL_TOUCH_RELEASE_SINCE 3
 
 C_WL_REQUEST wl_touch_release(struct c_wl_connection *conn, c_wl_args args);
 
@@ -2246,12 +2308,16 @@ C_WL_EVENT wl_output_geometry(struct c_wl_connection *conn, c_wl_object_id wl_ou
 	refresh rate or the size. */
 C_WL_EVENT wl_output_mode(struct c_wl_connection *conn, c_wl_object_id wl_output, enum wl_output_mode_enum flags, c_wl_int width, c_wl_int height, c_wl_int refresh);
 
+#define C_WL_OUTPUT_DONE_SINCE 2
+
  /* This event is sent after all other properties have been
 	sent after binding to the output object and after any
 	other property changes done after that. This allows
 	changes to the output properties to be seen as
 	atomic, even if they happen via multiple events. */
 C_WL_EVENT wl_output_done(struct c_wl_connection *conn, c_wl_object_id wl_output);
+
+#define C_WL_OUTPUT_SCALE_SINCE 2
 
  /* This event contains scaling geometry information
 	that is not in the geometry event. It may be sent after
@@ -2272,6 +2338,8 @@ C_WL_EVENT wl_output_done(struct c_wl_connection *conn, c_wl_object_id wl_output
 
 	The scale event will be followed by a done event. */
 C_WL_EVENT wl_output_scale(struct c_wl_connection *conn, c_wl_object_id wl_output, c_wl_int factor);
+
+#define C_WL_OUTPUT_NAME_SINCE 4
 
  /* Many compositors will assign user-friendly names to their outputs, show
 	them to the user, allow the user to refer to an output, etc. The client
@@ -2303,6 +2371,8 @@ C_WL_EVENT wl_output_scale(struct c_wl_connection *conn, c_wl_object_id wl_outpu
 	The name event will be followed by a done event. */
 C_WL_EVENT wl_output_name(struct c_wl_connection *conn, c_wl_object_id wl_output, c_wl_string name);
 
+#define C_WL_OUTPUT_DESCRIPTION_SINCE 4
+
  /* Many compositors can produce human-readable descriptions of their
 	outputs. The client may wish to know this description as well, e.g. for
 	output selection purposes.
@@ -2318,6 +2388,8 @@ C_WL_EVENT wl_output_name(struct c_wl_connection *conn, c_wl_object_id wl_output
 
 	The description event will be followed by a done event. */
 C_WL_EVENT wl_output_description(struct c_wl_connection *conn, c_wl_object_id wl_output, c_wl_string description);
+
+#define C_WL_OUTPUT_RELEASE_SINCE 3
 
    /* Using this request a client can tell the server that it is not going to
 	use the output object anymore. */

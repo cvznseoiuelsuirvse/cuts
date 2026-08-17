@@ -45,8 +45,7 @@ struct c_wl_display *c_wl_display_init(struct c_event_loop *loop);
 void c_wl_display_free(struct c_wl_display *display);
 
 void c_wl_display_add_interface_listener(struct c_wl_display *display,
-                                         const char *iface, void *listeners,
-                                         size_t listeners_n, void *userdata);
+                                         const char *iface, void *listeners, void *userdata);
 void c_wl_display_get_interface_listener(struct c_wl_display *display,
                                          const char *iface, void ***handlers,
                                          void **userdata);

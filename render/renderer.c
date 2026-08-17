@@ -23,6 +23,10 @@
 #include "util/shm.h"
 #include "util/malloc.h"
 
+static struct c_wl_buffer_listeners buffer_listeners;
+static struct c_wl_shm_pool_listeners shm_pool_listeneres;
+struct c_zwp_linux_dmabuf_v1_listeners linux_dmabuf_listeners;
+
 static int import_raw(struct c_renderer *render, struct c_rawbuf *shm) {
 	if (c_gles_texture_from_raw(render->gl, shm) == -1) {
     c_log(C_LOG_ERROR, "failed to create a texture from shm");
@@ -184,7 +188,6 @@ static int send_feedback(struct c_wl_connection *conn, c_wl_args args, void *use
   zwp_linux_dmabuf_feedback_v1_main_device(conn, feedback->id, &device);
 
   zwp_linux_dmabuf_feedback_v1_format_table(conn, feedback->id, ft_fd, format_table_entries * 16);
-  close(ft_fd);
   zwp_linux_dmabuf_feedback_v1_tranche_target_device(conn, feedback->id, &device);
   zwp_linux_dmabuf_feedback_v1_tranche_flags(conn, feedback->id, ZWP_LINUX_DMABUF_FEEDBACK_V1_TRANCHE_FLAGS_SCANOUT);
 
@@ -316,21 +319,14 @@ struct c_renderer *c_renderer_init(struct c_output_manager *mgr, struct c_wl_dis
   render->format_table_fd = create_format_table(render);
 
 
-  struct c_wl_buffer_listeners buffer_listeners = {
-    .destroy = on_buffer_destroy,
-  };
+  buffer_listeners.destroy = on_buffer_destroy;
   wl_buffer_add_listener(display, &buffer_listeners, render);
 
-  struct c_wl_shm_pool_listeners shm_pool_listeneres = {
-    .create_buffer = on_shm_buffer_create,
-  };
+  shm_pool_listeneres.create_buffer = on_shm_buffer_create;
   wl_shm_pool_add_listener(display, &shm_pool_listeneres, render);
 
-  struct c_zwp_linux_dmabuf_v1_listeners linux_dmabuf_listeners = {
-    .get_default_feedback = send_feedback,
-    .get_surface_feedback = send_feedback,
-  };
-
+  linux_dmabuf_listeners.get_default_feedback = send_feedback;
+  linux_dmabuf_listeners.get_surface_feedback = send_feedback;
   zwp_linux_dmabuf_v1_add_listener(display, &linux_dmabuf_listeners, mgr);
 
   c_wl_interface_support("wl_shm", on_wl_shm_bind, render);

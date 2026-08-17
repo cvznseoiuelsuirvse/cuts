@@ -88,32 +88,32 @@ void calc_popup_coords(struct c_xdg_surface *surface, int32_t *x, int32_t *y) {
 
 }
 
-int32_t read_i32(char *buffer, uint32_t *offset) {
+int32_t read_i32(uint8_t *buffer, size_t *offset) {
   int32_t val = *(int32_t *)(buffer + *offset);
   *offset += sizeof(int32_t);
   return val;
 }
 
-uint32_t read_u32(char *buffer, uint32_t *offset) {
+uint32_t read_u32(uint8_t *buffer, size_t *offset) {
   uint32_t val = *(uint32_t *)(buffer + *offset);
   *offset += sizeof(uint32_t);
   return val;
 }
 
-uint16_t read_u16(char *buffer, uint32_t *offset) {
+uint16_t read_u16(uint8_t *buffer, size_t *offset) {
   uint16_t val = *(uint16_t *)(buffer + *offset);
   *offset += sizeof(uint16_t);
   return val;
 }
 
-void read_string(char *buffer, uint32_t *offset, char *out, size_t out_size) {
+void read_string(uint8_t *buffer, size_t *offset, char *out, size_t out_size) {
   uint32_t string_size = read_u32(buffer, offset);
   assert(string_size < out_size);
   memcpy(out, buffer + *offset, string_size);
   *offset += PADDED4(string_size);
 }
 
-void *read_array(char *buffer, uint32_t *offset, size_t size) {
+void *read_array(uint8_t *buffer, size_t *offset, size_t size) {
   uint32_t array_size = read_u32(buffer, offset);
   assert(array_size < size);
   void *out = malloc(size);
@@ -123,33 +123,33 @@ void *read_array(char *buffer, uint32_t *offset, size_t size) {
   return out;
 }
 
-void write_i32(char *buffer, uint32_t *offset, int32_t val) {
+void write_i32(uint8_t *buffer, size_t *offset, int32_t val) {
   *(int32_t *)(buffer + *offset) = val;
   *offset += sizeof(int32_t);
 }
 
-void write_u32(char *buffer, uint32_t *offset, uint32_t val) {
+void write_u32(uint8_t *buffer, size_t *offset, uint32_t val) {
   *(uint32_t *)(buffer + *offset) = val;
   *offset += sizeof(uint32_t);
 }
 
-void write_u16(char *buffer, uint32_t *offset, uint16_t val) {
+void write_u16(uint8_t *buffer, size_t *offset, uint16_t val) {
   *(uint16_t *)(buffer + *offset) = val;
   *offset += sizeof(uint16_t);
 }
 
-void write_string(char *buffer, uint32_t *offset, const char *string) {
+void write_string(uint8_t *buffer, size_t *offset, const char *string) {
     uint32_t string_size = strlen(string) + 1;
     uint32_t padded_string_size = PADDED4(string_size);
 
     write_u32(buffer, offset, string_size);
     memset(buffer + *offset, 0, padded_string_size);
-    snprintf(buffer + *offset, padded_string_size, "%s", string);
+    snprintf((char *)buffer + *offset, padded_string_size, "%s", string);
 
     *offset += padded_string_size ? padded_string_size : sizeof(uint32_t);
 }
 
-void write_array(char *buffer, uint32_t *offset, const uint8_t *array, size_t array_size) {
+void write_array(uint8_t *buffer, size_t *offset, const uint8_t *array, size_t array_size) {
     uint32_t padded_array_size = PADDED4(array_size);
 
     write_u32(buffer, offset, array_size);

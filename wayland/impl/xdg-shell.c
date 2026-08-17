@@ -203,7 +203,6 @@ int xdg_toplevel_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
     c_unref(parent);
   }
 
-  c_log_value(xdg_surface->surface, "%p");
   if (xdg_surface->surface)         xdg_surface->surface->role = 0;
   if (xdg_surface->toplevel.title)  free(xdg_surface->toplevel.title);
   if (xdg_surface->toplevel.app_id) free(xdg_surface->toplevel.app_id);

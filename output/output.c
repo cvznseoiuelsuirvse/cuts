@@ -109,6 +109,10 @@ static void page_flip_handler(int fd, unsigned int sequence,
       for (size_t i = 0; i < surface->frames_n; i++) {
         c_wl_connection_callback_done(wl_surface->conn, surface->frames[i]);
       }
+
+      if (surface->frames_n)
+        c_wl_connection_flush(wl_surface->conn);
+
       surface->frames_n = 0;
     }
   }

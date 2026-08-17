@@ -17,6 +17,12 @@
 #define DEFAULT_STR } else {
 #define SWITCH_STR_END } }
 
+#define CURSOR_INSIDE(px, py, area) \
+	(((area)->x + (area)->width + (area)->y + (area)->x == 0) || \
+	((area)->x <= (px) && (px) <= (area)->x + (area)->width &&   \
+	 (area)->y <= (py) && (py) <= (area)->y + (area)->height)) \
+
+
 void print_buffer(char *buffer, size_t buffer_len);
 int set_nonblocking(int fd);
 int starts_with(const char *string, const char *prefix);

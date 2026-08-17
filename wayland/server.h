@@ -5,7 +5,7 @@
 #define DISPATCH_FATAL_ERR  -2
 #define DISPATCH_CLIENT_ERR -3
 
-#define BUFFER_SIZE 4096
+#define BUFFER_SIZE 2048
 #define HEADER_SIZE 8
 #define STRING_SIZE (BUFFER_SIZE - HEADER_SIZE - 4) // 4 (string prefix)
 
@@ -89,8 +89,8 @@ void c_wl_object_free_listener(struct c_wl_object *object);
 struct c_wl_connection *c_wl_connection_init(int client_fd,
                                              struct c_wl_display *display);
 int c_wl_connection_free(struct c_wl_connection * conn);
-int c_wl_connection_send(struct c_wl_connection * conn,
-                         struct c_wl_message * msg, size_t nargs, ...);
+int c_wl_connection_post(struct c_wl_connection * conn, struct c_wl_message * msg, size_t nargs, ...);
+int c_wl_connection_flush(struct c_wl_connection *conn);
 int c_wl_connection_dispatch(struct c_wl_connection * conn);
 void c_wl_connection_callback_done(struct c_wl_connection * conn,
                                    c_wl_object_id id);

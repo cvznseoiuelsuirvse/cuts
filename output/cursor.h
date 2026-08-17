@@ -7,11 +7,6 @@
 #include "seat/input.h"
 #include "output/output.h"
 
-#define CURSOR_INSIDE(px, py, area) \
-	(((area)->x + (area)->width + (area)->y + (area)->x == 0) || \
-	((area)->x <= (px) && (px) <= (area)->x + (area)->width &&   \
-	 (area)->y <= (py) && (py) <= (area)->y + (area)->height)) \
-
 struct c_cursor {
   int drm_fd;
 	uint32_t       width, height;

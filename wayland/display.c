@@ -22,7 +22,7 @@ enum connection_event_notifiers {
 struct __interface_listeners {
   char iface_name[100];
   int destructor;
-  void *handlers;
+  void *listeners;
   void *userdata;
 };
 
@@ -120,15 +120,12 @@ size_t c_wl_interface_get_all(const struct c_wl_interface ***interfaces) {
   return __ninterfaces;
 };
 
-
-void c_wl_display_add_interface_listener(struct c_wl_display *display, const char *iface,
-                               void *listeners, size_t listeners_size,
-                               void *userdata) {
-
+void c_wl_display_add_interface_listener(struct c_wl_display *display,
+                                         const char *iface, void *listeners,
+                                         void *userdata) {
   struct __interface_listeners l;
   snprintf(l.iface_name, sizeof(l.iface_name), "%s", iface);
-  l.handlers = calloc(1, listeners_size);
-  memcpy(l.handlers, listeners, listeners_size);
+  l.listeners = listeners;
   l.userdata = userdata;
       
   c_list_push(display->interface_listeners, &l, sizeof(l));
@@ -142,7 +139,7 @@ void c_wl_display_get_interface_listener(struct c_wl_display *display, const cha
   struct __interface_listeners *l;
   c_list_for_each(display->interface_listeners, l) {
     if (STREQ(l->iface_name, iface)) {
-      *handlers = l->handlers;
+      *handlers = l->listeners;
       *userdata = l->userdata;
       break;
     }
@@ -176,9 +173,17 @@ void connection_event_notify(struct c_wl_display *display, struct c_wl_connectio
 C_EVENT_CALLBACK client_epoll_callback(struct c_event_loop *loop, int fd, void *data) {
   struct c_wl_connection *connection = data;
   struct c_wl_display *display = c_wl_connection_get_display(connection);
+  int ret;
 
-  int ret = c_wl_connection_dispatch(connection);
+  ret = c_wl_connection_dispatch(connection);
+  if (ret) goto out;
 
+  ret = c_wl_connection_flush(connection);
+  if (ret == -1) {
+    ret = DISPATCH_CLIENT_ERR;
+  }
+
+out:
   switch (ret) {
     case DISPATCH_FATAL_ERR:
       connection_event_notify(display, connection, C_WL_DISPLAY_ON_CONNECTION_GONE);
@@ -195,10 +200,10 @@ C_EVENT_CALLBACK client_epoll_callback(struct c_event_loop *loop, int fd, void *
       c_list_remove(&display->connections, connection);
       c_wl_connection_free(connection);
       return C_EVENT_ERROR_FD_GONE;
+
+    default:
+      return C_EVENT_OK;
   }
-
-  return C_EVENT_OK;
-
 }
 
 C_EVENT_CALLBACK server_epoll_callback(struct c_event_loop *loop, int fd, void *data) {
@@ -266,13 +271,8 @@ void c_wl_display_free(struct c_wl_display *display) {
     c_list_destroy(display->connections);
   }
 
-  if (display->interface_listeners) {
-    struct __interface_listeners *l;
-    c_list_for_each(display->interface_listeners, l) {
-      free(l->handlers);
-    }
+  if (display->interface_listeners)
     c_list_destroy(display->interface_listeners);
-  }
 
   unsetenv("WAYLAND_DISPLAY");
   free(display);

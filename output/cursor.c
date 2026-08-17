@@ -11,6 +11,7 @@
 struct __pointer_area {
   uint32_t x, y, width, height;
 }; 
+static struct c_input_event_listener_mouse input_listener_mouse;
 
 static void on_mouse_movement_cb(struct c_input_mouse_event *event, void *userdata) {
   struct c_output_manager *mgr = userdata;
@@ -83,23 +84,22 @@ struct c_cursor *c_cursor_init(struct c_output_manager *mgr,
                                uint32_t height) {
   struct c_cursor *cursor = calloc(1, sizeof(*cursor));
   if (!cursor) {
-    c_log(C_LOG_ERROR, "calloc failed");
+    c_log_errno(C_LOG_ERROR, "failed to allocate c_cursor");
     return NULL;
   }
 
   cursor->width = width;
   cursor->height = height;
 
-  cursor->gbm_bo = gbm_bo_create(mgr->gbm_device, width, height, GBM_FORMAT_ARGB8888, GBM_BO_USE_CURSOR | GBM_BO_USE_WRITE);
+  cursor->gbm_bo =
+      gbm_bo_create(mgr->gbm_device, width, height, GBM_FORMAT_ARGB8888,
+                    GBM_BO_USE_CURSOR | GBM_BO_USE_WRITE);
   if (!cursor->gbm_bo) {
     c_log_errno(C_LOG_ERROR, "gbm_bo_create failed");
     goto error;
   }
 
-  struct c_input_event_listener_mouse input_listener_mouse = {
-    .on_mouse_movement = on_mouse_movement_cb,
-  };
-
+  input_listener_mouse.on_mouse_movement = on_mouse_movement_cb;
   c_input_add_event_listener_mouse(input, &input_listener_mouse, mgr);
 
   return cursor;

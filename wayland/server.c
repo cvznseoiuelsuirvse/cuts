@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 #include <stdarg.h>
 #include <signal.h>
+#include <fcntl.h>
 
 #include "wayland/util.h"
 #include "wayland/display.h"
@@ -16,7 +17,7 @@
 #include "util/malloc.h"
 #include "util/bitmap.h"
 
-#define MAX_CMSG_FDS 1024
+#define MAX_CMSG_FDS 256
 
 static char            __error_msg[STRING_SIZE] = {0};
 static c_wl_int        __error_code = 0;
@@ -31,6 +32,12 @@ struct c_wl_connection {
 	c_bitmap 	*server_id_pool;
   struct c_wl_connection_event_listener *listener;
   void *listener_data;
+
+  uint8_t buffer[BUFFER_SIZE];
+  size_t buffer_size;
+
+  int send_fds[MAX_CMSG_FDS];
+  size_t send_fd_n;
 };
 
 struct message_header {
@@ -41,7 +48,7 @@ struct message_header {
 
 struct message {
   struct message_header header;
-  char *data;
+  uint8_t *data;
 };
 
 struct c_wl_callback {
@@ -49,9 +56,9 @@ struct c_wl_callback {
 	c_wl_object_id target_id;
 };
 
-
-static int connection_read(struct c_wl_connection *conn, char *buffer, size_t buffer_size, 
-                                int req_fds[MAX_CMSG_FDS], size_t *n_req_fds) {
+static int connection_read(struct c_wl_connection *conn, uint8_t *buffer,
+                           size_t buffer_size, int req_fds[MAX_CMSG_FDS],
+                           size_t *n_req_fds) {
   char cmsg[CMSG_SPACE(sizeof(int) * MAX_CMSG_FDS)];
 
   struct iovec e[1];
@@ -86,34 +93,60 @@ void c_wl_connection_callback_done(struct c_wl_connection *conn, c_wl_object_id 
     c_wl_object_del(conn, id);
 }
 
-static int c_wl_connection_write(struct c_wl_connection *conn, char *buffer, size_t buffer_size, int event_fd) {
-  if (event_fd > 0) {
-    struct msghdr m;
-    char cmsg[CMSG_SPACE(sizeof(int))];
+int c_wl_connection_flush(struct c_wl_connection *conn) {
+  int bytes_sent;
+  int send_fds_size = conn->send_fd_n * sizeof(*conn->send_fds);
 
-    memset(cmsg, 0, CMSG_SPACE(sizeof(int)));
+  c_log(C_LOG_DEBUG, "flushing");
+  c_log_value(conn->buffer_size, "%zu");
+  c_log_value(conn->send_fd_n, "%zu");
+
+  if (conn->buffer_size == 0) return 0;
+
+  if (conn->send_fd_n > 0) {
+    struct msghdr m;
+    char cmsg[CMSG_SPACE(send_fds_size)];
+
+    memset(cmsg, 0, CMSG_SPACE(send_fds_size));
     memset(&m, 0, sizeof(struct msghdr));
 
-    struct iovec e = {buffer, buffer_size};
+    struct iovec e = {conn->buffer, conn->buffer_size};
     m.msg_iov = &e;
     m.msg_iovlen = 1;
     m.msg_control = cmsg;
-    m.msg_controllen = CMSG_SPACE(sizeof(int));
+    m.msg_controllen = sizeof(cmsg);
 
     struct cmsghdr *c = CMSG_FIRSTHDR(&m);
     c->cmsg_level = SOL_SOCKET;
     c->cmsg_type = SCM_RIGHTS;
-    c->cmsg_len = CMSG_LEN(sizeof(event_fd));
-    *(int *)CMSG_DATA(c) = event_fd;
+    c->cmsg_len = CMSG_LEN(send_fds_size);
+    memcpy(CMSG_DATA(c), conn->send_fds, send_fds_size);
 
-    return sendmsg(conn->client_fd, &m, MSG_NOSIGNAL);
+    bytes_sent = sendmsg(conn->client_fd, &m, MSG_NOSIGNAL);
+
+  } else {
+    bytes_sent = send(conn->client_fd, conn->buffer, conn->buffer_size, MSG_NOSIGNAL);
   }
 
-  return send(conn->client_fd, buffer, buffer_size, MSG_NOSIGNAL);
+  if (bytes_sent > 0) {
+    for (size_t i = 0; i < conn->send_fd_n; i++)
+      close(conn->send_fds[i]);
+    conn->send_fd_n = 0;
 
+    size_t remaining = conn->buffer_size - bytes_sent;
+    if (remaining) {
+      memmove(conn->buffer, conn->buffer + conn->buffer_size, remaining);
+    }
+    conn->buffer_size = remaining;
+
+  } else {
+    c_log_errno(C_LOG_ERROR, "failed to flush messages");
+  }
+
+  return bytes_sent;
 }
 
-int c_wl_connection_send(struct c_wl_connection *conn, struct c_wl_message *msg, size_t nargs, ...) {
+int c_wl_connection_post(struct c_wl_connection *conn, struct c_wl_message *msg, size_t nargs, ...) {
   va_list args;
   va_start(args, nargs);
 
@@ -123,10 +156,10 @@ int c_wl_connection_send(struct c_wl_connection *conn, struct c_wl_message *msg,
     raise(SIGTERM);
   }
 
-  char buffer[BUFFER_SIZE] = {0};
-  uint32_t offset = 0;
-  write_u32(buffer, &offset, msg->id);
-  write_u16(buffer, &offset, msg->op);
+  uint8_t tmp_buffer[BUFFER_SIZE];
+  size_t offset = 0;
+  write_u32(tmp_buffer, &offset, msg->id);
+  write_u16(tmp_buffer, &offset, msg->op);
   offset += sizeof(uint16_t);
 
   union c_wl_arg wl_args[nargs];
@@ -139,42 +172,42 @@ int c_wl_connection_send(struct c_wl_connection *conn, struct c_wl_message *msg,
     switch (c) {
     case 'i':
       wl_args[i].i = va_arg(args, c_wl_int);
-      write_i32(buffer, &offset, wl_args[i].i);
+      write_i32(tmp_buffer, &offset, wl_args[i].i);
       break;
 
     case 'e':
       wl_args[i].e = va_arg(args, c_wl_enum);
-      write_i32(buffer, &offset, wl_args[i].e);
+      write_i32(tmp_buffer, &offset, wl_args[i].e);
       break;
 
     case 'f':
       wl_args[i].f = va_arg(args, c_wl_fixed);
-      write_i32(buffer, &offset, wl_args[i].f);
+      write_i32(tmp_buffer, &offset, wl_args[i].f);
       break;
 
     case 'u':
       wl_args[i].u = va_arg(args, c_wl_uint);
-      write_u32(buffer, &offset, wl_args[i].u);
+      write_u32(tmp_buffer, &offset, wl_args[i].u);
       break;
 
     case 'o':
       wl_args[i].o = va_arg(args, c_wl_object_id);
-      write_u32(buffer, &offset, wl_args[i].o);
+      write_u32(tmp_buffer, &offset, wl_args[i].o);
       break;
 
     case 'n':
       wl_args[i].n = va_arg(args, c_wl_new_id);
-      write_u32(buffer, &offset, wl_args[i].n);
+      write_u32(tmp_buffer, &offset, wl_args[i].n);
       break;
 
     case 's':
       snprintf(wl_args[i].s, sizeof(wl_args[i].s), "%s", va_arg(args, c_wl_string));
-      write_string(buffer, &offset, wl_args[i].s);
+      write_string(tmp_buffer, &offset, wl_args[i].s);
       break;
 
     case 'a':
       arr = va_arg(args, c_wl_array*);
-      write_array(buffer, &offset, arr->data, arr->size);
+      write_array(tmp_buffer, &offset, arr->data, arr->size);
       wl_args[i].a = arr;
       break;
 
@@ -185,11 +218,22 @@ int c_wl_connection_send(struct c_wl_connection *conn, struct c_wl_message *msg,
     }
   }
 
-  *(uint16_t *)(buffer + 6) = offset;
+  *(uint16_t *)(tmp_buffer + 6) = offset;
+
+  if (conn->buffer_size + offset >= sizeof(conn->buffer)) {
+    c_log(C_LOG_INFO, "not enough space in the connection buffer. flusing connection");
+    c_wl_connection_flush(conn);
+  } else if (conn->send_fd_n + 1 >= sizeof(conn->send_fds)) {
+    c_log(C_LOG_INFO, "not enough space for new FDs to send. flusing connection");
+    c_wl_connection_flush(conn);
+  }
+
+  memcpy(conn->buffer + conn->buffer_size, tmp_buffer, offset);
+  conn->buffer_size += offset;
+  if (event_fd)
+    conn->send_fds[conn->send_fd_n++] = event_fd;
 
   c_log_wl_event(conn, object, msg->event_name, wl_args, nargs, msg->signature);
-  c_wl_connection_write(conn, buffer, offset, event_fd);
-
   return 0;
 }
 
@@ -228,7 +272,7 @@ out:
   return status;
 }
 
-static int dispatch(struct c_wl_connection *conn, struct message_header *header, char *data, int **req_fds) {
+static int dispatch(struct c_wl_connection *conn, struct message_header *header, uint8_t *data, int **req_fds) {
 
   struct c_wl_object *object = c_wl_object_get(conn, header->object_id);
   if (!object) c_wl_error_set_and_return(header->object_id, WL_DISPLAY_ERROR_INVALID_OBJECT, "object not registered");
@@ -245,7 +289,8 @@ static int dispatch(struct c_wl_connection *conn, struct message_header *header,
   c_wl_array arr = {0};
   args[0].o = header->object_id;
 
-  uint32_t offset = HEADER_SIZE;
+  size_t offset = HEADER_SIZE;
+
   for (size_t i = 1; i <= request.nargs; i++) {
     uint8_t c = request.signature[i-1];
     assert(c != 'a');
@@ -293,7 +338,6 @@ static int dispatch(struct c_wl_connection *conn, struct message_header *header,
     }
   }
 
-
   c_log_wl_request(conn, object, &request, args);
 
   if (!request.impl) {
@@ -309,7 +353,7 @@ static int dispatch(struct c_wl_connection *conn, struct message_header *header,
 
 int c_wl_connection_dispatch(struct c_wl_connection *conn) {
   int ret;
-  char buffer[BUFFER_SIZE];
+  uint8_t buffer[BUFFER_SIZE];
 
   int req_fds[MAX_CMSG_FDS];
   size_t n_req_fds = 0;
@@ -327,10 +371,15 @@ int c_wl_connection_dispatch(struct c_wl_connection *conn) {
   c_wl_object_id sync_requests[16] = {0};
 
   while (buffer_offset < received) {
-    if ((received - buffer_offset) < HEADER_SIZE)
-      return -1;
-    if (msg_count > LENGTH(msgs))
-      return -1;
+    if ((received - buffer_offset) < HEADER_SIZE) {
+      c_log(C_LOG_ERROR, "message at %d is too small");
+      return DISPATCH_CLIENT_ERR;
+    }
+
+    if (msg_count > LENGTH(msgs)) {
+      c_log(C_LOG_ERROR, "too many messages received");
+      return DISPATCH_CLIENT_ERR;
+    }
 
 
     struct message *msg = &msgs[msg_count];
@@ -338,10 +387,9 @@ int c_wl_connection_dispatch(struct c_wl_connection *conn) {
     memcpy(header, buffer + buffer_offset, HEADER_SIZE);
     msg->data = buffer+buffer_offset;
 
-    uint32_t message_offset = HEADER_SIZE;
+    size_t message_offset = HEADER_SIZE;
 
     if (header->object_id == 1 && header->op == 0) {
-      c_log(C_LOG_DEBUG, "new sync");
       c_wl_object_id wl_callback_id = read_u32(buffer + buffer_offset, &message_offset);
 
       if (c_wl_object_get(conn, wl_callback_id))
@@ -374,7 +422,6 @@ iter_end:
       goto out;
   }
 
-  c_log_value(n_sync_requests, "%d");
   for (size_t i = 0; i < n_sync_requests; i++)
     c_wl_connection_callback_done(conn, sync_requests[i]);
 
@@ -468,7 +515,6 @@ struct c_map *c_wl_connection_get_objects(struct c_wl_connection *conn) {
 
 int c_wl_connection_free(struct c_wl_connection *conn) {
   for (int i = conn->objects->size - 1; i >= 0; i--) {
-  // for (size_t i = 0; i < conn->objects->size; i++) {
     struct c_map_pair *mp = conn->objects->pairs[i];
 
     while (mp) {

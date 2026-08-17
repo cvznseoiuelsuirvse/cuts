@@ -29,6 +29,8 @@ enum zwp_linux_dmabuf_feedback_v1_tranche_flags_enum {
   ZWP_LINUX_DMABUF_FEEDBACK_V1_TRANCHE_FLAGS_SCANOUT = 1,
 };
 
+#define C_ZWP_LINUX_DMABUF_V1_FORMAT_DEPRECATED_SINCE 4
+
  /* This event advertises one buffer format that the server supports.
         All the supported formats are advertised once when the client
         binds to this interface. A roundtrip after binding guarantees
@@ -41,6 +43,10 @@ enum zwp_linux_dmabuf_feedback_v1_tranche_flags_enum {
         sent by compositors. Instead, use get_default_feedback or
         get_surface_feedback. */
 C_WL_EVENT zwp_linux_dmabuf_v1_format(struct c_wl_connection *conn, c_wl_object_id zwp_linux_dmabuf_v1, c_wl_uint format);
+
+#define C_ZWP_LINUX_DMABUF_V1_MODIFIER_SINCE 3
+
+#define C_ZWP_LINUX_DMABUF_V1_MODIFIER_DEPRECATED_SINCE 4
 
  /* This event advertises the formats that the server supports, along with
         the modifiers supported for each format. All the supported modifiers
@@ -80,6 +86,8 @@ C_WL_REQUEST zwp_linux_dmabuf_v1_destroy(struct c_wl_connection *conn, c_wl_args
    */
 C_WL_REQUEST zwp_linux_dmabuf_v1_create_params(struct c_wl_connection *conn, c_wl_args args);
 
+#define C_ZWP_LINUX_DMABUF_V1_GET_DEFAULT_FEEDBACK_SINCE 4
+
    /* This request creates a new wp_linux_dmabuf_feedback object not bound
         to a particular surface. This object will deliver feedback about dmabuf
         parameters to use if the client doesn't support per-surface feedback
@@ -88,6 +96,8 @@ C_WL_REQUEST zwp_linux_dmabuf_v1_create_params(struct c_wl_connection *conn, c_w
     @[1] id: c_wl_new_id [[zwp_linux_dmabuf_feedback_v1]]
    */
 C_WL_REQUEST zwp_linux_dmabuf_v1_get_default_feedback(struct c_wl_connection *conn, c_wl_args args);
+
+#define C_ZWP_LINUX_DMABUF_V1_GET_SURFACE_FEEDBACK_SINCE 4
 
    /* This request creates a new wp_linux_dmabuf_feedback object for the
         specified wl_surface. This object will deliver feedback about dmabuf
@@ -223,6 +233,8 @@ C_WL_REQUEST zwp_linux_buffer_params_v1_add(struct c_wl_connection *conn, c_wl_a
     @[4] flags: enum zwp_linux_buffer_params_v1_flags_enum
    */
 C_WL_REQUEST zwp_linux_buffer_params_v1_create(struct c_wl_connection *conn, c_wl_args args);
+
+#define C_ZWP_LINUX_BUFFER_PARAMS_V1_CREATE_IMMED_SINCE 2
 
    /* This asks for immediate creation of a wl_buffer by importing the
         added dmabufs.
