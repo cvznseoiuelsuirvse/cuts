@@ -5,7 +5,7 @@
 #include <xkbcommon/xkbcommon.h>
 #include <linux/input-event-codes.h>
 
-struct monitor {
+struct monitor_config {
   const char *name;
   double scale;
   uint32_t x, y;

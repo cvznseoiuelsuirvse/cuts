@@ -77,8 +77,6 @@ static struct c_wl_surface *surface_hit_test(struct c_wl_surface *surface,
 
 static void surface_pointer_focus(struct c_wl_connection *connection,
                                   struct c_wl_surface *surface, double mx, double my) {
-  c_log(C_LOG_DEBUG, "pointer focusing %p at %f %f", surface, mx, my);
-
   int wl_pointer_serial = c_wl_serial();
 
   struct c_wl_object *o = NULL;
@@ -94,8 +92,6 @@ static void surface_pointer_focus(struct c_wl_connection *connection,
 }
 
 static void surface_pointer_unfocus(struct c_wl_connection *connection, struct c_wl_surface *surface) {
-  c_log(C_LOG_DEBUG, "pointer unfocusing %p", surface);
-
   int wl_pointer_serial = c_wl_serial();
 
   struct c_wl_object *o = NULL;
@@ -109,8 +105,6 @@ static void surface_pointer_unfocus(struct c_wl_connection *connection, struct c
 
 static void surface_focus(struct c_wl_connection *connection,
                           struct c_wl_surface *surface, double mx, double my) {
-  c_log(C_LOG_DEBUG, "focusing %p at %f %f", surface, mx, my);
-
   int wl_keyboard_serial = c_wl_serial();
   int wl_keyboard_modifiers_serial = c_wl_serial();
 
@@ -127,8 +121,6 @@ static void surface_focus(struct c_wl_connection *connection,
 }
 
 static void surface_unfocus(struct c_wl_connection *connection, struct c_wl_surface *surface) {
-  c_log(C_LOG_DEBUG, "unfocusing %p", surface);
-
   int wl_keyboard_serial = c_wl_serial();
 
   struct c_wl_object *o = NULL;

@@ -97,10 +97,6 @@ int c_wl_connection_flush(struct c_wl_connection *conn) {
   int bytes_sent;
   int send_fds_size = conn->send_fd_n * sizeof(*conn->send_fds);
 
-  c_log(C_LOG_DEBUG, "flushing");
-  c_log_value(conn->buffer_size, "%zu");
-  c_log_value(conn->send_fd_n, "%zu");
-
   if (conn->buffer_size == 0) return 0;
 
   if (conn->send_fd_n > 0) {

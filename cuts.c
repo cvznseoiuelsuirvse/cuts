@@ -30,10 +30,10 @@
 #define MIN_WINDOW_SIZE 2
 #define MAX_STDIN_CHARS 128
 
-#define LAYOUT(output)                                                         \
+#define LAYOUT(mon)                                                            \
   {                                                                            \
     cuts.layout.func();                                                        \
-    output_damage(output);                                                     \
+    output_damage(mon->output);                                                \
   }
 
 #define clients_for_each_in_tag(client) \
@@ -99,7 +99,6 @@ struct bar {
   } glyph;
 
   uint32_t h_padding, v_padding;
-
   uint32_t width, height;
 
   enum bar_position  pos;
@@ -108,10 +107,16 @@ struct bar {
   size_t block_n;
 };
 
+struct monitor {
+  struct c_output *output;
+  struct monitor_config *cfg;
+};
+
 struct client {
   uint32_t tag;
   uint64_t z;
-  struct c_output *output;
+
+  struct monitor *mon;
   struct c_window *window;
 
   // top, right, bottom, left
@@ -140,7 +145,9 @@ struct {
 
   c_list *clients;
   struct client *focused_client;
-  struct c_output *focused_output;
+
+  c_list *monitors;
+  struct monitor *focused_mon;
 
   uint32_t focused_tag;
   int focused_client_idx;
@@ -195,7 +202,7 @@ void client_border_sync(struct client *client);
 void client_border_set_visibility(struct client *client, int is_visible);
 void client_border_raise(struct client *client);
 void client_raise(struct client *client);
-void client_set_fullscreen(struct client *client, struct c_output *output);
+void client_set_fullscreen(struct client *client, struct monitor *mon);
 void client_unset_fullscreen(struct client *client);
 void client_set_visibility(struct client *client, int is_visible);
 void client_toggle_floating(struct client *client);
@@ -240,7 +247,7 @@ void window_move_to_workspace(bind_args *args);
 void window_resize(int done, bind_args *args);
 
 int count_tiled();
-void calc_tile_layout(struct c_output *output, struct tile_layout *layout);
+void calc_tile_layout(struct monitor *mon, struct tile_layout *layout);
 void zoom();
 void tile();
 
@@ -502,7 +509,7 @@ struct client *client_new(struct c_wl_connection *connection) {
   }
 
   client->tag = cuts.focused_tag;
-  client->output = cuts.focused_output;
+  client->mon = cuts.focused_mon;
   client_border_create(client);
   return client;
 }
@@ -702,8 +709,9 @@ void client_raise(struct client *client) {
   client->z = ++cuts.next_z;
 }
 
-void client_set_fullscreen(struct client *client, struct c_output *output) {
+void client_set_fullscreen(struct client *client, struct monitor *mon) {
   struct c_window *window = client->window;
+  struct c_output *output = mon->output;
 
   window->width = output->current_mode->width;
   window->height = output->current_mode->height;
@@ -715,7 +723,7 @@ void client_set_fullscreen(struct client *client, struct c_output *output) {
   cuts.fullscreen |= client->tag;
   client_raise(client);
   client_border_set_visibility(client, 0);
-  LAYOUT(output);
+  LAYOUT(mon);
 }
 
 void client_unset_fullscreen(struct client *client) {
@@ -724,7 +732,7 @@ void client_unset_fullscreen(struct client *client) {
   cuts.fullscreen &= ~client->tag;
   client_border_set_visibility(client, 1);
 
-  LAYOUT(client->output);
+  LAYOUT(client->mon);
 }
 
 void client_set_visibility(struct client *client, int is_visible) {
@@ -789,7 +797,9 @@ void on_keyboard_key(struct c_input_keyboard_event *event, void *userdata) {
 static void *on_wl_output_bind(struct c_wl_connection *conn,
                                struct c_wl_object *wl_output, void *userdata) {
 
-  struct c_output *output = userdata;
+  struct monitor *monitor = userdata;
+  struct c_output *output = monitor->output;
+
   struct c_wl_output *_output = c_malloc(sizeof(*_output));
   _output->id = wl_output->id;
   _output->output = output;
@@ -799,10 +809,22 @@ static void *on_wl_output_bind(struct c_wl_connection *conn,
   if (wl_output->version >= C_WL_OUTPUT_NAME_SINCE)
     wl_output_name(conn, wl_output->id, output->name);
 
-  wl_output_scale(conn, wl_output->id, 1);
+  char model[5];
+  snprintf(model, sizeof(model), "%04X", output->model);
+
+  if (wl_output->version >= C_WL_OUTPUT_SCALE_SINCE)
+    wl_output_scale(conn, wl_output->id, monitor->cfg ? (c_wl_int)monitor->cfg->scale : 1);
+
   wl_output_geometry(conn, wl_output->id, 0, 0, output->mm_width,
-                     output->mm_height, output->subpixel - 1, "unknown",
-                     "unknown", WL_OUTPUT_TRANSFORM_NORMAL);
+                     output->mm_height, output->subpixel - 1, output->make,
+                     model, WL_OUTPUT_TRANSFORM_NORMAL);
+
+  if (wl_output->version >= C_WL_OUTPUT_DESCRIPTION_SINCE) {
+    char desc[64];
+    snprintf(desc, sizeof(desc), "%s %s %04X %d", output->manufacturer_name,
+             output->make, output->model, output->serial);
+    wl_output_description(conn, wl_output->id, desc);
+  }
 
   struct c_output_mode *mode;
   c_list_for_each(output->modes, mode) {
@@ -863,7 +885,7 @@ void assign_output_to_surface(struct c_wl_object *wl_surface) {
 
   c_wl_objects_for_each(wl_surface->conn, o) {
     if (STREQ(o->iface->name, "wl_output") &&
-        (output = o->data)->output == cuts.focused_output) {
+        (output = o->data)->output == cuts.focused_mon->output) {
       c_ref(output);
       surface->output = output;
       break;
@@ -942,7 +964,7 @@ int on_window_new(struct c_wl_connection *conn, c_wl_args args, void *userdata) 
   };
 
   xdg_toplevel_wm_capabilities(conn, surface->toplevel.id, &arr);
-  LAYOUT(client->output);
+  LAYOUT(client->mon);
 
   client_change_focus(client, pointer_x, pointer_y);
   return 0;
@@ -961,11 +983,8 @@ int on_set_title(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
 
 int on_window_unfullscreen(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
   struct client *client = client_from_connection(conn);
-  struct c_output *output = client->output;
-
   client_unset_fullscreen(client);
-
-  LAYOUT(output);
+  LAYOUT(client->mon);
   return 0;
 }
 
@@ -980,13 +999,16 @@ int on_window_fullscreen(struct c_wl_connection *conn, c_wl_args args, void *use
 
   struct c_wl_object *wl_output = c_wl_object_get(conn, args[1].o);
 
-  struct c_output *output;
-  if (wl_output)
-    output = ((struct c_wl_output *)wl_output->data)->output;
-  else
-    output = client->output;
+  struct monitor *mon;
+  if (wl_output) {
+    struct c_output *output = ((struct c_wl_output *)wl_output->data)->output;
+    c_list_for_each(cuts.monitors, mon)
+      if (mon->output == output) break;
+  } else {
+    mon = client->mon;
+  }
 
-  client_set_fullscreen(client, output);
+  client_set_fullscreen(client, mon);
   return 0;
 }
 
@@ -1000,11 +1022,11 @@ int on_window_close(struct c_wl_connection *conn, c_wl_args args, void *userdata
     struct c_window *window = client->window;
     if (window->surface == surface) {
       int is_visible = client->tag & cuts.focused_tag;
-      struct c_output *output = client->output;
+      struct monitor *mon = client->mon;
 
       client_close(client);
       if (is_visible) {
-        LAYOUT(output)
+        LAYOUT(mon)
       }
       break;
     }
@@ -1019,11 +1041,11 @@ void on_connection_gone(struct c_wl_connection *conn, void *userdata) {
     struct c_window *window = client->window;
     if (window->conn == conn) {
       int is_visible = client->tag & cuts.focused_tag;
-      struct c_output *output = client->output;
+      struct monitor *mon = client->mon;
 
       client_close(client);
       if (is_visible) {
-        LAYOUT(output)
+        LAYOUT(mon)
       }
       break;
     }
@@ -1110,12 +1132,12 @@ void window_kill(bind_args *args) {
 
 void set_layout(bind_args *args) {
   cuts.layout = *(struct layout *)args->p;
-  struct c_output *output;
 
   bar_set_layout(&cuts.layout);
 
-  c_list_for_each(cuts.mgr->outputs, output)
-    LAYOUT(output);
+  struct monitor *mon;
+  c_list_for_each(cuts.monitors, mon)
+    LAYOUT(mon);
 }
 
 void toggle_fullscreen(bind_args *args) {
@@ -1125,7 +1147,7 @@ void toggle_fullscreen(bind_args *args) {
   if (is_window_fullscreen(client->window))
     client_unset_fullscreen(client);
   else
-    client_set_fullscreen(client, client->output);
+    client_set_fullscreen(client, client->mon);
 }
 
 void move_focus(bind_args *args) {
@@ -1151,7 +1173,7 @@ void switch_tag(bind_args *args) {
   c_list_for_each(cuts.clients, c)
     client_set_visibility(c, c->tag & cuts.focused_tag);
 
-  LAYOUT(cuts.focused_output);
+  LAYOUT(cuts.focused_mon);
 
   struct client *prev = tag_select_client(-1);
 
@@ -1173,25 +1195,25 @@ void toggle_floating(bind_args *args) {
   client_raise(cuts.focused_client);
   client_toggle_floating(cuts.focused_client);
 
-  LAYOUT(cuts.focused_client->output);
+  LAYOUT(cuts.focused_client->mon);
 }
 
 void change_mfact(bind_args *args) {
   mfact += args->d;
   mfact = CLAMP(mfact, 0.05f, 0.95f);
   
-  struct c_output *output;
-  c_list_for_each(cuts.mgr->outputs, output)
-    LAYOUT(output);
+  struct monitor *mon;
+  c_list_for_each(cuts.monitors, mon)
+    LAYOUT(mon);
 }
 
 void change_nmaster(bind_args *args) {
   nmaster += args->i;
   nmaster = CLAMP(nmaster, 1, 10);
   
-  struct c_output *output;
-  c_list_for_each(cuts.mgr->outputs, output)
-    LAYOUT(output);
+  struct monitor *mon;
+  c_list_for_each(cuts.monitors, mon)
+    LAYOUT(mon);
 }
 
 void window_move(int done, bind_args *args) {
@@ -1217,7 +1239,7 @@ void window_move(int done, bind_args *args) {
 
   cuts.pointer.is_dragging = !done;
 
-  LAYOUT(focused->output);
+  LAYOUT(focused->mon);
 }
 
 void window_move_to_workspace(bind_args *args) {
@@ -1232,7 +1254,7 @@ void window_move_to_workspace(bind_args *args) {
     client_change_focus(next, pointer_x, pointer_y);
 
 
-  LAYOUT(cuts.focused_client->output);
+  LAYOUT(cuts.focused_client->mon);
 }
 
 void window_resize(int done, bind_args *args) {
@@ -1260,7 +1282,7 @@ void window_resize(int done, bind_args *args) {
 
   cuts.pointer.is_dragging = !done;
 
-  LAYOUT(focused->output);
+  LAYOUT(focused->mon);
 }
 
 int count_tiled() {
@@ -1273,8 +1295,8 @@ int count_tiled() {
   return i;
 }
 
-void calc_tile_layout(struct c_output *output, struct tile_layout *layout) {
-  struct c_output_mode *mode = cuts.focused_output->current_mode;
+void calc_tile_layout(struct monitor *mon, struct tile_layout *layout) {
+  struct c_output_mode *mode = cuts.focused_mon->output->current_mode;
 
   layout->width = mode->width - gap * 2;
   layout->height = mode->height - gap * 2;
@@ -1308,7 +1330,7 @@ void calc_tile_layout(struct c_output *output, struct tile_layout *layout) {
 
 void zoom() {
   struct tile_layout layout;
-  calc_tile_layout(cuts.focused_output, &layout);
+  calc_tile_layout(cuts.focused_mon, &layout);
 
   if (cuts.clients->size == 0) return;
 
@@ -1342,7 +1364,7 @@ fullscreen:
 void tile() {
   // FIXME: map tags to outputs and get output from current tag or something
   struct tile_layout layout;
-  calc_tile_layout(cuts.focused_output, &layout);
+  calc_tile_layout(cuts.focused_mon, &layout);
 
   if (cuts.clients->size == 0) return;
 
@@ -1691,7 +1713,8 @@ C_EVENT_CALLBACK stdin_text(struct c_event_loop *loop, int fd, void *userdata) {
 
   struct bar *bar = &cuts.bar;
   struct bar_block *block = &cuts.bar.blocks[tags + 2];
-  struct c_output *output = cuts.focused_output;
+
+  struct c_output *output = cuts.focused_mon->output;
   struct c_output_mode *mode = output->current_mode;
   
   if (is_bar_horizontal(bar)) {
@@ -1729,6 +1752,9 @@ void cleanup(int err) {
     c_list_destroy(cuts.clients);
     cuts.clients = NULL;
   }
+
+  if (cuts.monitors)
+    c_list_destroy(cuts.monitors);
 
   if (cuts.display) {
     c_wl_display_free(cuts.display);
@@ -1796,6 +1822,7 @@ int main() {
   cuts.scene = scene;
 
   cuts.clients = c_list_new();
+  cuts.monitors = c_list_new();
   cuts.layout = layouts[0];
 
   struct c_output *output;
@@ -1804,24 +1831,29 @@ int main() {
 
     c_log(C_LOG_INFO, "Monitor %s:", output->name);
 
+    struct monitor mon = {output, NULL};
+    struct monitor *mon_cpy;
+
     struct c_output_mode *preferred = NULL;
     struct c_output_mode *mode;
     c_list_for_each(output->modes, mode) {
-      c_log(C_LOG_INFO, "   %s%dx%d@%.3fHz", mode->preferred ? "*" : " ",
-            mode->width, mode->height, mode->refresh_rate);
+      c_log(C_LOG_INFO, "   %s%dx%d@%.3fHz", mode->preferred ? "*" : " ", mode->width, mode->height, mode->refresh_rate);
+
       if (mode->preferred)
         preferred = mode;
 
       for (size_t i = 0; i < LENGTH(monitors); i++) {
-        struct monitor m = monitors[i];
-        if (STREQ(m.name, output->name) && m.width == mode->width &&
-            m.height == mode->height &&
-            m.refresh_rate == (uint32_t)mode->refresh_rate) {
+        struct monitor_config cfg = monitors[i];
+
+        if (STREQ(cfg.name, output->name) && cfg.width == mode->width &&
+            cfg.height == mode->height &&
+            cfg.refresh_rate == (uint32_t)mode->refresh_rate) {
 
           set_background(mode->width, mode->height, output->x, output->y);
           bar_create(mode);
 
           c_output_set_mode(mgr, output, mode);
+          mon.cfg = &cfg;
           goto mode_iter_end;
         }
       }
@@ -1834,10 +1866,12 @@ int main() {
     c_output_set_mode(mgr, output, preferred);
 
 mode_iter_end:
-    c_wl_interface_support("wl_output", on_wl_output_bind, output);
+    mon_cpy = c_list_push(cuts.monitors, &mon, sizeof(mon));
 
-    if (!cuts.focused_output)
-      cuts.focused_output = output;
+    c_wl_interface_support("wl_output", on_wl_output_bind, mon_cpy);
+
+    if (!cuts.focused_mon)
+      cuts.focused_mon = mon_cpy;
   }
 
   if (c_input_init_xkb_state(session->input, &xkb_rules) < 0) goto out;
@@ -1921,6 +1955,9 @@ mode_iter_end:
     .set_mode = on_decorations_set_mode,
   };
   zxdg_toplevel_decoration_v1_add_listener(display, &decor_listeners, NULL);
+
+  c_wl_interface_support("zxdg_decoration_manager_v1", NULL, NULL);
+  c_wl_interface_support("wl_data_device_manager", NULL, NULL);
 
   c_event_loop_add(loop, STDIN_FILENO, stdin_text, NULL);
 

@@ -33,7 +33,13 @@ struct c_output_drm_object {
 };
 
 struct c_output {
-	char name[64], make[64], model[64];
+	char name[16];
+	char manufacturer_name[13];
+
+  char make[4];
+  uint16_t model;
+  uint32_t serial;
+
 	uint32_t mm_width, mm_height;
 	int subpixel;
 

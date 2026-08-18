@@ -23,7 +23,7 @@
 	 (area)->y <= (py) && (py) <= (area)->y + (area)->height)) \
 
 
-void print_buffer(char *buffer, size_t buffer_len);
+void print_buffer(char *buffer, size_t buffer_len, FILE *stream);
 int set_nonblocking(int fd);
 int starts_with(const char *string, const char *prefix);
 uint32_t hash_string(char *string);

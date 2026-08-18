@@ -15,6 +15,78 @@
 #include "util/log.h"
 #include "util/helpers.h"
 
+static void get_output_make_model(int drm_fd, struct c_output *output) {
+  struct c_output_drm_object *obj = &output->connector;
+
+  uint32_t blob_id;
+  drmModePropertyRes *prop_res = NULL;
+
+  for (size_t i = 0; i < obj->props->count_props; i++) {
+    if (STREQ(obj->props_info[i]->name, "EDID")) {
+      prop_res = obj->props_info[i];
+      blob_id = obj->props->prop_values[i];
+      break;
+    }
+  }
+
+  if (!prop_res) {
+    c_log(C_LOG_INFO, "no EDID found in output %s", output->name);
+    return;
+  }
+
+
+  uint32_t prop_type = drmModeGetPropertyType(prop_res);
+
+  if (prop_type == DRM_MODE_PROP_BLOB) {
+    drmModePropertyBlobRes *blob = drmModeGetPropertyBlob(drm_fd, blob_id);
+
+    if (blob && blob->data) {
+      print_buffer(blob->data, blob->length, stderr);
+      fprintf(stderr, "\n");
+
+      uint16_t manufacturer_bytes =  *(uint8_t *)(blob->data + 8) << 8 | *(uint8_t *)(blob->data + 9);
+      output->model =  *(uint16_t *)(blob->data + 10);
+      output->serial =  *(uint32_t *)(blob->data + 12);
+
+      output->make[0] = ((manufacturer_bytes & 0x7C00) >> 10) + 64;
+      output->make[1] = ((manufacturer_bytes & 0x3E0) >> 5) + 64;
+      output->make[2] = (manufacturer_bytes & 0x1F) + 64;
+      output->make[3] = 0;
+
+      for (size_t i = 0; i < 3; i++) {
+        char *b = blob->data + 72 + (i * 18);
+        if (*(uint32_t *)b == 0xfc000000 || *(uint32_t *)b == 0xfe000000) {
+          size_t j;
+          for (j = 0; j < 14; ++j) {
+            if (*(uint8_t *)(b + 4 + j) == 0xA) break;
+          }
+          memcpy(output->manufacturer_name, b + 5, j - 1);
+          break;
+        }
+      }
+    } else {
+      c_log(C_LOG_INFO, "EDID blob is empty");
+    }
+
+    drmModeFreePropertyBlob(blob);
+  }
+}
+
+static int set_object_property_value(drmModeAtomicReq *req,
+                              struct c_output_drm_object *obj, const char *name,
+                              uint64_t value) {
+  uint32_t prop_id = 0;
+
+  for (size_t i = 0; i < obj->props->count_props; i++) {
+    if (STREQ(obj->props_info[i]->name, name)) {
+      prop_id = obj->props_info[i]->prop_id;
+      break;
+    }
+  }
+
+  return drmModeAtomicAddProperty(req, obj->id, prop_id, value);
+}
+
 static c_list *get_modes(int fd, drmModeConnectorPtr connector) {
   c_list *modes = c_list_new();
 
@@ -222,6 +294,7 @@ c_list *c_drm_get_outputs(int drm_fd) {
 
     if (get_output_drm_objects(drm_fd, &output, connector, resources, &taken_crtcs)) goto iter_end_error;
 
+
     output.orig_crtc = drmModeGetCrtc(drm_fd, output.crtc.id);
 
     output.mm_width = connector->mmWidth;
@@ -232,6 +305,8 @@ c_list *c_drm_get_outputs(int drm_fd) {
     snprintf(output.name, sizeof(output.name), "%s-%d",
              drm_connector_str(connector->connector_type),
              connector->connector_type_id);
+
+    get_output_make_model(drm_fd, &output);
 
     output.timeline = c_drm_sync_object_init(drm_fd);
     if (!output.timeline) {
@@ -256,21 +331,6 @@ out:
   if (!taken_crtcs && outputs)
     c_list_destroy(outputs);
   return outputs;
-}
-
-static int set_object_property_value(drmModeAtomicReq *req,
-                              struct c_output_drm_object *obj, const char *name,
-                              uint64_t value) {
-  uint32_t prop_id = 0;
-
-  for (size_t i = 0; i < obj->props->count_props; i++) {
-    if (!strcmp(obj->props_info[i]->name, name)) {
-      prop_id = obj->props_info[i]->prop_id;
-      break;
-    }
-  }
-
-  return drmModeAtomicAddProperty(req, obj->id, prop_id, value);
 }
 
 int c_drm_atomic_commit(int drm_fd, struct c_output *output,

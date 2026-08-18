@@ -1,23 +1,18 @@
 #include <stdio.h>
 #include <stdint.h>
-#include <sys/types.h>
-#include <stdlib.h>
-#include <assert.h>
 #include <string.h>
-#include <drm/drm_fourcc.h>
 #include <fcntl.h>
 
-void print_buffer(char *buffer, size_t buffer_len) {
+void print_buffer(char *buffer, size_t buffer_len, FILE *stream) {
   for (size_t i = 0; i < buffer_len; i++) {
     uint8_t c = buffer[i];
     if (32 <= c && c <= 126) {
-      printf("%c", c);
+      fprintf(stream, "%c", c);
     } else {
-      printf("%02x", c);
+      fprintf(stream, "%02x", c);
     }
-    if (i < buffer_len - 1) printf(" ");
+    if (i < buffer_len - 1) fprintf(stream, " ");
   }
-  printf("\n");
 }
 
 int set_nonblocking(int fd) {

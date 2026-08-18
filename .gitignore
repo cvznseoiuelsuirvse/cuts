@@ -3,5 +3,5 @@
 build/
 .clangd
 *.sh
-*.log
+*.log*
 config.h
