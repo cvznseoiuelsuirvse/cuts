@@ -1,13 +1,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "wayland/types.h"
 #include "wayland/proto/xdg-shell.h"
+#include "wayland/impl/xdg-shell.h"
 #include "wayland/proto/wayland.h"
+#include "wayland/impl/wayland.h"
+
+#include "wayland/types.h"
 #include "wayland/util.h"
 
 #include "util/malloc.h"
-#include "util/log.h"
 
 int xdg_wm_base_get_xdg_surface(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_wl_object *self = c_wl_self(conn, args);
@@ -26,7 +28,6 @@ int xdg_wm_base_get_xdg_surface(struct c_wl_connection *conn, union c_wl_arg *ar
   if (!xdg_surface) 
     c_wl_error_set_and_return(args[0].o, WL_DISPLAY_ERROR_NO_MEMORY, "failed to calloc c_xdg_surface");
 
-  xdg_surface->id = xdg_surface_id;
 
   xdg_surface->surface = wl_surface;
   c_ref(wl_surface);
@@ -34,7 +35,9 @@ int xdg_wm_base_get_xdg_surface(struct c_wl_connection *conn, union c_wl_arg *ar
   wl_surface->xdg_surface = xdg_surface;
   c_ref(xdg_surface);
 
-  c_wl_object_add(conn, xdg_surface_id, self->version, c_wl_interface_get("xdg_surface"), xdg_surface);
+  xdg_surface->obj =
+      c_wl_object_add(conn, xdg_surface_id, self->version,
+                      c_wl_interface_get("xdg_surface"), xdg_surface);
 
   return 0;
 }
@@ -104,10 +107,11 @@ int xdg_surface_get_toplevel(struct c_wl_connection *conn, union c_wl_arg *args)
 
   struct c_xdg_surface *xdg_surface = self->data;
   xdg_surface->surface->role = C_WL_SURFACE_ROLE_XDG_TOPLEVEL;
-  xdg_surface->toplevel.id = xdg_toplevel_id;
   c_ref(xdg_surface);
 
-  c_wl_object_add(conn, xdg_toplevel_id, self->version, c_wl_interface_get("xdg_toplevel"), xdg_surface);
+  xdg_surface->toplevel.obj =
+      c_wl_object_add(conn, xdg_toplevel_id, self->version,
+                      c_wl_interface_get("xdg_toplevel"), xdg_surface);
 
   return 0;
 }
@@ -222,10 +226,8 @@ int xdg_wm_base_create_positioner(struct c_wl_connection *conn, union c_wl_arg *
     c_wl_error_set_and_return(args[0].o, WL_DISPLAY_ERROR_NO_MEMORY, "failed to calloc c_xdg_positioner");
     return -1;
   }
-  p->id = args[1].n;
 
-  c_wl_object_add(conn, args[1].n, self->version, c_wl_interface_get("xdg_positioner"), p);
-
+  p->obj = c_wl_object_add(conn, args[1].n, self->version, c_wl_interface_get("xdg_positioner"), p);
   return 0;
 }
 
@@ -271,15 +273,12 @@ int xdg_positioner_set_anchor(struct c_wl_connection *conn, union c_wl_arg *args
 }
 
 
-int xdg_positioner_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
-  c_wl_object_del(conn, args[0].o);
-  return 0;
-}
+int xdg_positioner_destroy(struct c_wl_connection *conn, union c_wl_arg *args) { C_WL_DESTRUCTOR(conn, args); }
 
 
 int xdg_surface_get_popup(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_wl_object *self = c_wl_self(conn, args);
-  c_wl_object_id xdg_popup_id = args[1].n;
+  c_wl_new_id xdg_popup_id = args[1].n;
 
   struct c_wl_object *popup;
   struct c_wl_object *parent_surface;
@@ -315,8 +314,31 @@ int xdg_surface_get_popup(struct c_wl_connection *conn, union c_wl_arg *args) {
                       xdg_surface->popup.y, xdg_positioner->width,
                       xdg_positioner->height);
 
-  xdg_surface_configure(conn, xdg_surface->id, c_wl_serial());
+  xdg_surface_configure(conn, xdg_surface->obj->id, c_wl_serial());
 
+  return 0;
+}
+
+int xdg_popup_reposition(struct c_wl_connection *conn, c_wl_args args) {
+  struct c_wl_object *self = c_wl_self(conn, args);
+  struct c_xdg_surface *xdg_surface = self->data;
+
+  struct c_wl_object *positioner;
+  C_WL_CHECK_IF_REGISTERED(args[1].o, positioner);
+  struct c_xdg_positioner *xdg_positioner = positioner->data;
+
+  c_wl_uint token = args[2].u;
+
+  memcpy(&xdg_surface->popup, xdg_positioner, sizeof(*xdg_positioner));
+  calc_popup_coords(xdg_surface, &xdg_surface->popup.x, &xdg_surface->popup.y);
+
+  xdg_popup_repositioned(conn, self->id, token);
+
+  xdg_popup_configure(conn, self->id, xdg_surface->popup.x,
+                      xdg_surface->popup.y, xdg_positioner->width,
+                      xdg_positioner->height);
+
+  xdg_surface_configure(conn, xdg_surface->obj->id, c_wl_serial());
   return 0;
 }
 

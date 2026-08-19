@@ -271,7 +271,10 @@ out:
 static int dispatch(struct c_wl_connection *conn, struct message_header *header, uint8_t *data, int **req_fds) {
 
   struct c_wl_object *object = c_wl_object_get(conn, header->object_id);
-  if (!object) c_wl_error_set_and_return(header->object_id, WL_DISPLAY_ERROR_INVALID_OBJECT, "object not registered");
+  if (!object)
+    c_wl_error_set_and_return(header->object_id,
+                              WL_DISPLAY_ERROR_INVALID_OBJECT,
+                              "object %d is not registered", header->object_id);
 
   const struct c_wl_interface *iface = object->iface;
   if (header->op > iface->n_requests)

@@ -17,6 +17,7 @@
 #include "render/framebuffer.h"
 
 #include "wayland/proto/wayland.h"
+#include "wayland/impl/wayland.h"
 #include "wayland/proto/linux-dmabuf-v1.h"
 
 #include "util/log.h"

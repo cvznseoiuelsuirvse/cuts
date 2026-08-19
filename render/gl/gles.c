@@ -23,16 +23,18 @@
 #define VERT_POS_TOP_RIGHT(vp)    vp.tr_x, -(vp.tr_y)
 #define VERT_POS_BOTTOM_RIGHT(vp) vp.br_x, -(vp.br_y)
 
-#define VERT_TOP_LEFT(vp, uv0, uv1)     VERT_POS_TOP_LEFT(vp),     uv0[0], uv0[1]
-#define VERT_BOTTOM_LEFT(vp, uv0, uv1)  VERT_POS_BOTTOM_LEFT(vp),  uv0[0], uv1[1]
-#define VERT_BOTTOM_RIGHT(vp, uv0, uv1) VERT_POS_BOTTOM_RIGHT(vp), uv1[0], uv1[1]
-#define VERT_TOP_RIGHT(vp, uv0, uv1)    VERT_POS_TOP_RIGHT(vp),    uv1[0], uv0[1]
+#define VERT_TOP_LEFT(vp)     VERT_POS_TOP_LEFT(vp),     0.0f, 0.0f
+#define VERT_BOTTOM_LEFT(vp)  VERT_POS_BOTTOM_LEFT(vp),  0.0f, 1.0f
+#define VERT_BOTTOM_RIGHT(vp) VERT_POS_BOTTOM_RIGHT(vp), 1.0f, 1.0f
+#define VERT_TOP_RIGHT(vp)    VERT_POS_TOP_RIGHT(vp),    1.0f, 0.0f
 
-#define VERTS(vp, uv0, uv1)                                                    \
+#define VERTS(vp)                                                          \
   {                                                                            \
-      VERT_TOP_LEFT(vp, uv0, uv1), VERT_BOTTOM_LEFT(vp, uv0, uv1),  VERT_BOTTOM_RIGHT(vp, uv0, uv1),         \
-      VERT_TOP_LEFT(vp, uv0, uv1), VERT_BOTTOM_RIGHT(vp, uv0, uv1), VERT_TOP_RIGHT(vp, uv0, uv1),            \
+      VERT_TOP_LEFT(vp),     VERT_BOTTOM_LEFT(vp),                     \
+      VERT_BOTTOM_RIGHT(vp), VERT_TOP_LEFT(vp),                        \
+      VERT_BOTTOM_RIGHT(vp), VERT_TOP_RIGHT(vp),                       \
   }
+
 
 #define get_location(prog, name)                                               \
   GLint name##_loc = glGetUniformLocation(prog, #name);
@@ -275,7 +277,7 @@ void c_gles_add_solid(struct c_gles *gl, struct c_output *output, struct c_rende
 	struct vert_pos vp = {0};
 	create_verts(quad->width, quad->height, quad->x, quad->y, &vp, mode->width, mode->height);
 
-  float verts[] = VERTS(vp, quad->uv0, quad->uv1);
+  float verts[] = VERTS(vp);
   glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
 
   get_location(gl_program, color);
@@ -305,11 +307,18 @@ void c_gles_add_texture(struct c_gles *gl, struct c_output *output,
 	struct vert_pos vp = {0};
 	create_verts(quad->width, quad->height, quad->x, quad->y, &vp, mode->width, mode->height);
 
-  float verts[] = VERTS(vp, quad->uv0, quad->uv1);
+  float verts[] = VERTS(vp);
   glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
 
   get_location(gl_program, tex);
   glUniform1i(tex_loc, 0);
+
+  get_location(gl_program, uv_offset);
+  glUniform2f(uv_offset_loc, quad->uv_offset[0], quad->uv_offset[1]);
+
+  get_location(gl_program, uv_scale);
+  glUniform2f(uv_scale_loc, quad->uv_scale[0], quad->uv_scale[1]);
+
 
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 

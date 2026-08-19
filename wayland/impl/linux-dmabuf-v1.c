@@ -3,6 +3,7 @@
 #include <unistd.h>
 
 #include "wayland/proto/wayland.h"
+#include "wayland/impl/wayland.h"
 #include "wayland/proto/linux-dmabuf-v1.h"
 #include "wayland/server.h"
 
@@ -12,7 +13,7 @@
 #include "util/malloc.h"
 
 
-int zwp_linux_dmabuf_v1_get_surface_feedback(struct c_wl_connection *conn, union c_wl_arg *args) {
+int zwp_linux_dmabuf_v1_get_surface_feedback(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
 
   c_wl_new_id zwp_linux_buffer_feedback_v1_id = args[1].n;
@@ -24,7 +25,7 @@ int zwp_linux_dmabuf_v1_get_surface_feedback(struct c_wl_connection *conn, union
 }
 
 
-int zwp_linux_dmabuf_v1_get_default_feedback(struct c_wl_connection *conn, union c_wl_arg *args) {
+int zwp_linux_dmabuf_v1_get_default_feedback(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
 
   c_wl_new_id zwp_linux_buffer_feedback_v1_id = args[1].n;
@@ -35,7 +36,7 @@ int zwp_linux_dmabuf_v1_get_default_feedback(struct c_wl_connection *conn, union
   return 0;
 }
 
-int zwp_linux_dmabuf_v1_create_params(struct c_wl_connection *conn, union c_wl_arg *args) {
+int zwp_linux_dmabuf_v1_create_params(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
 
   c_wl_new_id zwp_linux_buffer_params_v1_id = args[1].n;
@@ -54,17 +55,11 @@ int zwp_linux_dmabuf_v1_create_params(struct c_wl_connection *conn, union c_wl_a
   return 0;
 }
 
-int zwp_linux_dmabuf_v1_destroy(struct c_wl_connection *conn, c_wl_args args) {
-  c_wl_object_del(conn, args[0].o);
-  return 0;
-}
+int zwp_linux_dmabuf_v1_destroy(struct c_wl_connection *conn, c_wl_args args) { C_WL_DESTRUCTOR(conn, args); }
 
-int zwp_linux_dmabuf_feedback_v1_destroy(struct c_wl_connection *conn, c_wl_args args) {
-  c_wl_object_del(conn, args[0].o);
-  return 0;
-}
+int zwp_linux_dmabuf_feedback_v1_destroy(struct c_wl_connection *conn, c_wl_args args) { C_WL_DESTRUCTOR(conn, args); }
 
-int zwp_linux_buffer_params_v1_add(struct c_wl_connection *conn, union c_wl_arg *args) {
+int zwp_linux_buffer_params_v1_add(struct c_wl_connection *conn, c_wl_args args) {
   c_wl_object_id zwp_linux_buffer_params_v1_id = args[0].o;
   struct c_dmabuf *dma = c_wl_object_get(conn, zwp_linux_buffer_params_v1_id)->data;
 
@@ -95,7 +90,7 @@ int zwp_linux_buffer_params_v1_add(struct c_wl_connection *conn, union c_wl_arg 
   return 0;
 }
 
-int zwp_linux_buffer_params_v1_create_immed(struct c_wl_connection *conn, union c_wl_arg *args) {
+int zwp_linux_buffer_params_v1_create_immed(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
   struct c_dmabuf *dma = self->data;
 
@@ -115,7 +110,6 @@ int zwp_linux_buffer_params_v1_create_immed(struct c_wl_connection *conn, union 
   if (!buffer)
         c_wl_error_set_and_return(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed");
 
-  buffer->id = wl_buffer_id;
   buffer->scale = 1;
 
   dma->drm_format = format;
@@ -125,13 +119,8 @@ int zwp_linux_buffer_params_v1_create_immed(struct c_wl_connection *conn, union 
   buffer->dma = dma;
   c_ref(dma);
 
-  c_wl_object_add(conn, wl_buffer_id, self->version, c_wl_interface_get("wl_buffer"), buffer);
+  buffer->obj = c_wl_object_add(conn, wl_buffer_id, self->version, c_wl_interface_get("wl_buffer"), buffer);
   return 0;
 }
 
-int zwp_linux_buffer_params_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
-  c_wl_new_id zwp_linux_buffer_params_v1_id = args[0].n;
-  c_wl_object_del(conn, zwp_linux_buffer_params_v1_id);
-  return 0;
-}
-
+int zwp_linux_buffer_params_v1_destroy(struct c_wl_connection *conn, c_wl_args args) { C_WL_DESTRUCTOR(conn, args); }

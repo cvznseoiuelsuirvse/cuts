@@ -28,12 +28,18 @@
 
 #define c_wl_error_set_and_return(object_id, code, msg, ...) \
   do { \
-  _c_wl_error_set(object_id, code, msg __VA_OPT__(,) __VA_ARGS__); \
+  _c_wl_error_set(object_id, code, "%s#%d: " msg, __func__, object_id __VA_OPT__(,) __VA_ARGS__); \
   return DISPATCH_PROTO_ERR; \
   } while (0); \
 
 #define c_wl_self(conn, args) c_wl_object_get(conn, args[0].o)
- 
+
+#define C_WL_DESTRUCTOR(conn, args)                                                 \
+  {                                                                            \
+    c_wl_object_del(conn, args[0].o);                                          \
+    return 0;                                                                  \
+  }
+
 struct c_wl_display;
 struct c_wl_object {
 	c_wl_object_id id;

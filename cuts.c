@@ -10,6 +10,11 @@
 #include "wayland/proto/wayland.h"
 #include "wayland/proto/xdg-shell.h"
 #include "wayland/proto/xdg-decoration-unstable-v1.h"
+#include "wayland/proto/viewporter.h"
+
+#include "wayland/impl/wayland.h"
+#include "wayland/impl/xdg-shell.h"
+#include "wayland/impl/viewporter.h"
 
 #include "compositor/window.h"
 #include "compositor/scene.h"
@@ -68,8 +73,8 @@
       i++;                                                                     \
   }
 
-#define is_bar_horizontal(bar) (bar)->pos & (BAR_TOP | BAR_BOTTOM)
-#define is_bar_vertical(bar) (bar)->pos & (BAR_RIGHT | BAR_LEFT)
+#define is_bar_horizontal(bar) ((bar)->cfg->pos == BAR_TOP) || ((bar)->cfg->pos == BAR_BOTTOM)
+#define is_bar_vertical(bar) ((bar)->cfg->pos == BAR_RIGHT) || ((bar)->cfg->pos == BAR_LEFT)
 #define is_window_fullscreen(window) (window->state & C_WINDOW_FULLSCREEN)
 #define is_window_floating(window) (window->state & C_WINDOW_FLOAT)
 
@@ -90,8 +95,12 @@ struct bar_block {
 };
 
 struct bar {
-  FT_Library library;
-  FT_Face face;
+  const struct bar_config *cfg;
+
+  struct {
+    FT_Library library;
+    FT_Face face;
+  } ft;
 
   struct {
     uint32_t spacing;
@@ -100,8 +109,6 @@ struct bar {
 
   uint32_t h_padding, v_padding;
   uint32_t width, height;
-
-  enum bar_position  pos;
 
   struct bar_block blocks[12];
   size_t block_n;
@@ -316,8 +323,8 @@ void collect_window_tree(struct c_window *window, struct c_wl_surface *surface,
     .type = C_RENDERER_BUFFER,
     .buffer = surface->active->dma ? (void *)surface->active->dma : (void *)surface->active->shm,
     .buffer_type = surface->active->dma ? C_BUFFER_DMA : C_BUFFER_RAW,
-    .uv0 = {0.0f, 0.0f},
-    .uv1 = {1.0f, 1.0f},
+    .uv_offset = {0.0f, 0.0f},
+    .uv_scale = {1.0f, 1.0f},
   };
 
   double base_x, base_y;
@@ -338,20 +345,48 @@ void collect_window_tree(struct c_window *window, struct c_wl_surface *surface,
     base_y = y;
   }
 
-  double w_x = 0, w_y = 0;
-  uint32_t w_w = buf_width, w_h = buf_height;
+  int surf_w = buf_width, surf_h = buf_height;
+  double surf_x = 0, surf_y = 0;
+  if (surface->viewport) {
+    struct c_wp_viewport *vp = surface->viewport;
+    if ((vp->src.x + vp->src.width > buf_width) ||
+        (vp->src.y + vp->src.height > buf_height)) {
+      wl_display_error(window->conn, 1, surface->viewport->obj->id,
+                       WP_VIEWPORT_ERROR_OUT_OF_BUFFER,
+                       "specified source viewport exceeds associated wl_surface's buffer");
+      return;
+    }
 
-  if (surface->xdg_surface && surface->xdg_surface->width > 0) {
-    w_x = surface->xdg_surface->x;
-    w_y = surface->xdg_surface->y;
-    w_w = surface->xdg_surface->width;
-    w_h = surface->xdg_surface->height;
+    // if (vp->dst.width > 0)
+    //   surf_w = vp->dst.width;
+    if (vp->src.width > 0)
+      surf_w = vp->src.width;
 
-    q.uv0[0] = (float)w_x / buf_width;
-    q.uv0[1] = (float)w_y / buf_height;
-    q.uv1[0] = (float)(w_x + w_w) / buf_width;
-    q.uv1[1] = (float)(w_y + w_h) / buf_height;
+    // if (vp->dst.height > 0)
+    //   surf_h = vp->dst.height;
+    if (vp->src.height > 0)
+      surf_h = vp->src.height;
+
+    surf_x = vp->src.x > 0 ? vp->src.x : 0;
+    surf_y = vp->src.y > 0 ? vp->src.y : 0;
   }
+  //
+  if (surface->xdg_surface && surface->xdg_surface->width > 0) {
+    struct c_xdg_surface *xs = surface->xdg_surface;
+    surf_x = MAX(surf_x, xs->x);
+    surf_y = MAX(surf_y, xs->y);
+    surf_w = MIN(surf_w, xs->width);
+    surf_h = MIN(surf_h, xs->height);
+
+  }
+
+  q.width = surf_w;
+  q.height = surf_h;
+
+  q.uv_offset[0] = surf_x / buf_width;
+  q.uv_offset[1] = surf_y / buf_height;
+  q.uv_scale[0] = (double)surf_w / buf_width;
+  q.uv_scale[1] = (double)surf_h / buf_height;
 
   // c_log(C_LOG_DEBUG, "%*s surface#%d (%d) %p %dx%d x=%f y=%f", depth, " ",
   //       surface->id, q.buffer_type, surface, q.width, q.height, q.x, q.y);
@@ -376,10 +411,10 @@ void collect_window_tree(struct c_window *window, struct c_wl_surface *surface,
           .width = buf_width,
           .height = buf_height,
 
-          .x = base_x + sub_s->x - w_x,
-          .y = base_y + sub_s->y - w_y,
+          .x = base_x + sub_s->x - surf_x,
+          .y = base_y + sub_s->y - surf_y,
 
-          .uv1 = {1.0f, 1.0f},
+          .uv_scale = {1.0f, 1.0f},
       };
 
       // c_log(C_LOG_DEBUG, "%*s SUB-surface#%d (%d) %p %dx%d x=%f y=%f",
@@ -411,7 +446,7 @@ void collect_window_tree(struct c_window *window, struct c_wl_surface *surface,
         .x = base_x + xdg_s->x + xdg_s->popup.x,
         .y = base_y + xdg_s->y + xdg_s->popup.y,
 
-        .uv1 = {1.0f, 1.0f},
+        .uv_scale = {1.0f, 1.0f},
       };
 
       // c_log(C_LOG_DEBUG, "%*s XDG-surface#%d (%d) %p %dx%d x=%f y=%f", depth,
@@ -524,7 +559,7 @@ void client_free(struct client *client) {
 void client_unfocus(struct client *client) {
   struct c_window *window = client->window;
   c_window_unfocus(window);
-  client_border_set_color(cuts.focused_client, border_default);
+  client_border_set_color(cuts.focused_client, border_inactive);
   cuts.focused_client = NULL;
 }
 
@@ -534,7 +569,7 @@ void client_focus(struct client *client, double hotspot_x, double hotspot_y) {
   if (*window->title)
     bar_set_title(*window->title);
 
-  client_border_set_color(client, border_focus);
+  client_border_set_color(client, border_active);
 
   struct c_wl_object *o;
   struct c_wl_connection *conn = window->conn;
@@ -794,14 +829,18 @@ void on_keyboard_key(struct c_input_keyboard_event *event, void *userdata) {
                         event->mods_locked, event->group, event->changed);
 }
 
-static void *on_wl_output_bind(struct c_wl_connection *conn,
-                               struct c_wl_object *wl_output, void *userdata) {
+int on_wl_output_release(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
+  struct c_wl_output *output = c_wl_self(conn, args)->data;
+  c_unref(output);
+  return 0;
+}
 
+void *on_wl_output_bind(struct c_wl_connection *conn, struct c_wl_object *wl_output, void *userdata) {
   struct monitor *monitor = userdata;
   struct c_output *output = monitor->output;
 
   struct c_wl_output *_output = c_malloc(sizeof(*_output));
-  _output->id = wl_output->id;
+  _output->obj = wl_output;
   _output->output = output;
 
   wl_output->data = _output;
@@ -955,6 +994,11 @@ int on_window_new(struct c_wl_connection *conn, c_wl_args args, void *userdata) 
   client->window = c_window_new(cuts.scene, conn, surface);
   c_scene_node_set_collect(client->window->node, scene_collect_window);
 
+  client->window->xdg_states = (1 << XDG_TOPLEVEL_STATE_TILED_TOP)       |
+                               (1 << XDG_TOPLEVEL_STATE_TILED_RIGHT)     |
+                               (1 << XDG_TOPLEVEL_STATE_TILED_BOTTOM)    |
+                               (1 << XDG_TOPLEVEL_STATE_TILED_LEFT)      ;
+
   c_list_insert(&cuts.clients, 0, client, 0);
 
   c_wl_enum wm_caps[1] = {XDG_TOPLEVEL_WM_CAPABILITIES_FULLSCREEN};
@@ -963,7 +1007,7 @@ int on_window_new(struct c_wl_connection *conn, c_wl_args args, void *userdata) 
     .data = wm_caps,
   };
 
-  xdg_toplevel_wm_capabilities(conn, surface->toplevel.id, &arr);
+  xdg_toplevel_wm_capabilities(conn, surface->toplevel.obj->id, &arr);
   LAYOUT(client->mon);
 
   client_change_focus(client, pointer_x, pointer_y);
@@ -1069,7 +1113,7 @@ int on_data_receive(struct c_wl_connection *conn, c_wl_args args, void *userdata
 
   for (size_t i = 0; i < data_source->mimes; i++) {
     if (STREQ(data_source->mimetypes[i], mimetype)) {
-      wl_data_source_send(cuts.clipboard.owner, cuts.clipboard.data_source->id, mimetype, wfd);
+      wl_data_source_send(cuts.clipboard.owner, cuts.clipboard.data_source->obj->id, mimetype, wfd);
       return 0;
     }
   }
@@ -1081,7 +1125,7 @@ int on_decorations_set_mode(struct c_wl_connection *conn, c_wl_args args, void *
   struct c_wl_object *self = c_wl_self(conn, args);
   struct c_xdg_surface *surface = self->data;
   zxdg_toplevel_decoration_v1_configure(conn, self->id, ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
-  xdg_surface_configure(conn, surface->id, c_wl_serial());
+  xdg_surface_configure(conn, surface->obj->id, c_wl_serial());
   return 0;
 }
 
@@ -1093,7 +1137,7 @@ int on_set_selection(struct c_wl_connection *conn, c_wl_args args, void *userdat
   if (cuts.clipboard.data_source == data_source) return 0;
 
   if (cuts.clipboard.owner)
-    wl_data_source_cancelled(cuts.clipboard.owner, cuts.clipboard.data_source->id);
+    wl_data_source_cancelled(cuts.clipboard.owner, cuts.clipboard.data_source->obj->id);
 
   cuts.clipboard.owner = conn;
   cuts.clipboard.data_source = data_source;
@@ -1175,7 +1219,7 @@ void switch_tag(bind_args *args) {
 
   LAYOUT(cuts.focused_mon);
 
-  struct client *prev = tag_select_client(-1);
+  struct client *prev = tag_select_client(0);
 
   if (prev) {
     client_change_focus(prev, pointer_x, pointer_y);
@@ -1297,26 +1341,27 @@ int count_tiled() {
 
 void calc_tile_layout(struct monitor *mon, struct tile_layout *layout) {
   struct c_output_mode *mode = cuts.focused_mon->output->current_mode;
+  struct bar *bar = &cuts.bar;
 
   layout->width = mode->width - gap * 2;
   layout->height = mode->height - gap * 2;
 
   layout->y = layout->x = gap;
 
-  if (cuts.bar.pos == BAR_TOP) {
+  if (bar->cfg->pos == BAR_TOP) {
     layout->height -= cuts.bar.height;
     layout->y += cuts.bar.height;
   }
 
-  if (cuts.bar.pos == BAR_BOTTOM) {
+  if (bar->cfg->pos == BAR_BOTTOM) {
     layout->height -= cuts.bar.height;
   }
 
-  if (cuts.bar.pos == BAR_RIGHT) {
+  if (bar->cfg->pos == BAR_RIGHT) {
     layout->width -= cuts.bar.width;
   }
 
-  if (cuts.bar.pos == BAR_LEFT) {
+  if (bar->cfg->pos == BAR_LEFT) {
     layout->width -= cuts.bar.width;
     layout->x += cuts.bar.width;
   }
@@ -1432,15 +1477,17 @@ void bar_destroy() {
     free(block.text.buffer);
   }
 
-  if (bar->face) FT_Done_Face(bar->face);
-  if (bar->library) FT_Done_FreeType(bar->library);
+  if (bar->ft.face) FT_Done_Face(bar->ft.face);
+  if (bar->ft.library) FT_Done_FreeType(bar->ft.library);
 }
 
 void bar_set_title(const char *title) {
   struct bar_block *block;
-  block = &cuts.bar.blocks[tags + 1];
+  struct bar *bar = &cuts.bar;
 
-  bar_block_write_text(&cuts.bar, block, title, font_color_default);
+  block = &cuts.bar.blocks[tags + 1];
+   
+  bar_block_write_text(&cuts.bar, block, title, bar->cfg->title.font_color);
   bar_block_update(block);
 }
 
@@ -1453,11 +1500,15 @@ void bar_clear_title() {
 
 void bar_set_layout(struct layout *layout) {
   struct bar_block *block = &cuts.bar.blocks[tags];
-  bar_block_write_text(&cuts.bar, block, layout->repr, font_color_dimmed);
+  struct bar *bar = &cuts.bar;
+
+  bar_block_write_text(&cuts.bar, block, layout->repr, bar->cfg->layout.font_color);
   bar_block_update(block);
 }
 
 void bar_switch_tag(uint32_t current, uint32_t next) {
+  struct bar *bar = &cuts.bar;
+
   char label[16];
   struct bar_block *block;
   int tag_i;
@@ -1465,19 +1516,19 @@ void bar_switch_tag(uint32_t current, uint32_t next) {
   bit_index(current, tag_i);
   block = &cuts.bar.blocks[tag_i];
 
-  set_color(block->rect.color, background_color);
+  set_color(block->rect.color, bar->cfg->tag.background_inactive);
   snprintf(label, sizeof(label), "%s", tag_lables[tag_i]);
 
-  bar_block_write_text(&cuts.bar, block, label, font_color_dimmed);
+  bar_block_write_text(&cuts.bar, block, label, bar->cfg->tag.font_inactive);
   bar_block_update(block);
 
   bit_index(next, tag_i);
   block = &cuts.bar.blocks[tag_i];
 
-  set_color(block->rect.color, border_default);
+  set_color(block->rect.color, bar->cfg->tag.background_active);
   snprintf(label, sizeof(label), "%s", tag_lables[tag_i]);
 
-  bar_block_write_text(&cuts.bar, block, label, font_color_default);
+  bar_block_write_text(&cuts.bar, block, label, bar->cfg->tag.font_active);
   bar_block_update(block);
 }
 
@@ -1512,15 +1563,15 @@ void bar_block_clear_text(struct bar *bar, struct bar_block *block) {
 }
 
 void bar_block_write_text(struct bar *bar, struct bar_block *block, const char *text, const uint32_t color[4]) {
-  FT_Face face = bar->face;
-  FT_GlyphSlot slot = bar->face->glyph;
+  FT_Face face = bar->ft.face;
+  FT_GlyphSlot slot = bar->ft.face->glyph;
 
   bar_block_clear_text(bar, block);
 
   uint8_t *buffer = block->text.buffer;
   uint32_t width = block->text.width;
 
-  int ascent = bar->face->size->metrics.ascender >> 6;
+  int ascent = bar->ft.face->size->metrics.ascender >> 6;
   uint32_t baseline = ascent;
 
   uint32_t pos_x = 0;
@@ -1570,10 +1621,10 @@ void bar_create(struct c_output_mode *mode) {
   struct bar *bar = &cuts.bar;
   FT_Error error = 0;
 
-  bar->pos = bar_pos;
+  bar->cfg = &bar_cfg;
   bar->block_n = tags + 3; // tags + layout indicator + title + stdin
 
-  if ((error = FT_Init_FreeType(&bar->library))) {
+  if ((error = FT_Init_FreeType(&bar->ft.library))) {
     c_log(C_LOG_ERROR, "failed to initialize freetype: %s", FT_Error_String(error));
     quit(NULL);
   }
@@ -1582,30 +1633,30 @@ void bar_create(struct c_output_mode *mode) {
   const char *default_font = "/usr/share/fonts/Adwaita/AdwaitaMono-Regular.ttf";
 
   int font_status = 0;
-  if ((font_status = get_fontpath(font_name, font, 512)) != 0)
-    c_log(C_LOG_WARNING, "couldn't find '%s' font. falling back to '%s'", font_name, default_font);
+  if ((font_status = get_fontpath(bar->cfg->font.name, font, 512)) != 0)
+    c_log(C_LOG_WARNING, "couldn't find '%s' font. falling back to '%s'", bar->cfg->font.name, default_font);
 
-  if ((error = FT_New_Face(cuts.bar.library, font_status == 0 ? font : default_font, 0, &bar->face))) {
+  if ((error = FT_New_Face(bar->ft.library, font_status == 0 ? font : default_font, 0, &bar->ft.face))) {
     c_log(C_LOG_ERROR, "failed to create new face: %s", FT_Error_String(error));
     goto ft_error;
   }
 
-  if ((error = FT_Set_Pixel_Sizes(bar->face, 0, font_size))) {
+  if ((error = FT_Set_Pixel_Sizes(bar->ft.face, 0, bar->cfg->font.size))) {
     c_log(C_LOG_ERROR, "failed to set pixel sizes: %s" , FT_Error_String(error));
     goto ft_error;
   }
 
-  FT_UInt glyph_index = FT_Get_Char_Index(bar->face, 'a');
-  FT_Load_Glyph(bar->face, glyph_index, FT_LOAD_DEFAULT);
-  FT_Render_Glyph(bar->face->glyph, FT_RENDER_MODE_NORMAL);
+  FT_UInt glyph_index = FT_Get_Char_Index(bar->ft.face, 'a');
+  FT_Load_Glyph(bar->ft.face, glyph_index, FT_LOAD_DEFAULT);
+  FT_Render_Glyph(bar->ft.face->glyph, FT_RENDER_MODE_NORMAL);
 
 
   bar->glyph.spacing = 1;
 
-  int ascent  = bar->face->size->metrics.ascender  >> 6;
-  int descent = -(bar->face->size->metrics.descender >> 6);
+  int ascent  = bar->ft.face->size->metrics.ascender  >> 6;
+  int descent = -(bar->ft.face->size->metrics.descender >> 6);
   bar->glyph.height = ascent + descent;
-  bar->glyph.width = (bar->face->glyph->advance.x) >> 6;
+  bar->glyph.width = (bar->ft.face->glyph->advance.x) >> 6;
 
   uint32_t pad       = bar->glyph.height / 4;
   uint32_t thickness = bar->glyph.height + 2 * pad;
@@ -1628,11 +1679,11 @@ void bar_create(struct c_output_mode *mode) {
     struct c_scene_rect *rect = &block->rect;
 
     if (is_bar_vertical(bar)) {
-      rect->x = bar->pos == BAR_RIGHT ? mode->width - bar->width : 0;
+      rect->x = bar->cfg->pos == BAR_RIGHT ? mode->width - bar->width : 0;
       rect->y = pen;
     } else if (is_bar_horizontal(bar)) {
       rect->x = pen;
-      rect->y = bar->pos == BAR_TOP ? 0 : mode->height - bar->height;
+      rect->y = bar->cfg->pos == BAR_TOP ? 0 : mode->height - bar->height;
     }
 
     rect->height = bar->height;
@@ -1647,10 +1698,10 @@ void bar_create(struct c_output_mode *mode) {
       else
         rect->height = text_rect_width(utf8_len(label), bar);;
 
-      set_color(rect->color, (!i ? border_default : background_color)); 
+      set_color(rect->color, (!i ? bar->cfg->tag.background_active : bar->cfg->tag.background_inactive)); 
       bar_block_init(bar, block);
 
-      bar_block_write_text(bar, block, label, (!i ? font_color_default : font_color_dimmed));
+      bar_block_write_text(bar, block, label, (!i ? bar->cfg->tag.font_active : bar->cfg->tag.font_inactive));
 
     } else if (i == tags) { // layout indicator
       if (is_bar_horizontal(bar))
@@ -1658,12 +1709,12 @@ void bar_create(struct c_output_mode *mode) {
       else
         rect->height = text_rect_height(strlen(cuts.layout.repr), bar);
 
-      set_color(rect->color, background_color);
+      set_color(rect->color, bar->cfg->layout.background_color);
       bar_block_init(bar, block);
-      bar_block_write_text(bar, block, cuts.layout.repr, font_color_dimmed);
+      bar_block_write_text(bar, block, cuts.layout.repr, bar->cfg->layout.font_color);
 
     } else if (i == tags + 1) { // title
-      set_color(rect->color, border_default);
+      set_color(rect->color, bar->cfg->title.background_color);
       if (is_bar_horizontal(bar))
         rect->width = mode->width - pen;
       else
@@ -1682,9 +1733,9 @@ void bar_create(struct c_output_mode *mode) {
         rect->y = pen - text_rect_height(strlen(label), bar);
       }
 
-      set_color(rect->color, background_color);
+      set_color(rect->color, bar->cfg->text.background_color);
       bar_block_init(bar, block);
-      bar_block_write_text(bar, block, label, font_color_dimmed);
+      bar_block_write_text(bar, block, label, bar->cfg->text.font_color);
     }
 
     pen += is_bar_horizontal(bar) ? rect->width : rect->height;
@@ -1730,7 +1781,7 @@ C_EVENT_CALLBACK stdin_text(struct c_event_loop *loop, int fd, void *userdata) {
 
   }
 
-  bar_block_write_text(bar, block, buffer, font_color_dimmed);
+  bar_block_write_text(bar, block, buffer, bar->cfg->text.font_color);
   bar_block_update(block);
   c_output_damage(cuts.mgr, output);
 
@@ -1836,24 +1887,26 @@ int main() {
 
     struct c_output_mode *preferred = NULL;
     struct c_output_mode *mode;
-    c_list_for_each(output->modes, mode) {
-      c_log(C_LOG_INFO, "   %s%dx%d@%.3fHz", mode->preferred ? "*" : " ", mode->width, mode->height, mode->refresh_rate);
 
+    c_list_for_each(output->modes, mode) {
       if (mode->preferred)
         preferred = mode;
 
-      for (size_t i = 0; i < LENGTH(monitors); i++) {
-        struct monitor_config cfg = monitors[i];
+      c_log(C_LOG_INFO, "   %s%dx%d@%.3fHz", mode->preferred ? "*" : " ",
+            mode->width, mode->height, mode->refresh_rate);
 
-        if (STREQ(cfg.name, output->name) && cfg.width == mode->width &&
-            cfg.height == mode->height &&
-            cfg.refresh_rate == (uint32_t)mode->refresh_rate) {
+      for (size_t i = 0; i < LENGTH(monitors); i++) {
+        struct monitor_config *cfg = &monitors[i];
+
+        if (STREQ(cfg->name, output->name) && cfg->width == mode->width &&
+            cfg->height == mode->height &&
+            cfg->refresh_rate == (uint32_t)mode->refresh_rate) {
 
           set_background(mode->width, mode->height, output->x, output->y);
           bar_create(mode);
 
           c_output_set_mode(mgr, output, mode);
-          mon.cfg = &cfg;
+          mon.cfg = cfg;
           goto mode_iter_end;
         }
       }

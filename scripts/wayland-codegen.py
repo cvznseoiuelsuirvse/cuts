@@ -50,6 +50,14 @@ class Request:
     since: int
     deprecated_since: int
 
+@dataclass
+class Enum:
+    name: str
+    repr: str
+    since: int
+    deprecated_since: int
+
+
 def parse_event(interface_name: str, event: ET.Element, event_n: int, file_type: Literal["h", "c"]) -> Event:
     s = """"""
 
@@ -224,28 +232,46 @@ def parse_requests(interface: ET.Element, requests: list[ET.Element], file_type:
 
     return s
 
-def parse_enum(interface_name: str, enum: ET.Element) -> str:
+def parse_enum(interface_name: str, enum: ET.Element) -> Enum:
     s = """"""
 
     desc = next((c for c in enum if c.tag == "description"), None)
     if desc is not None and desc.text:
         s += f" /* {desc.text.strip()} */\n"
 
-    basenane = f"{interface_name}_{enum.get('name')}"
-    s += f"enum {basenane}_enum {{\n"
+    name = enum.get('name')
+    basename = f"{interface_name}_{name}"
+    since = int(enum.get("since", 0))
+    deprecated_since = int(enum.get("deprecated-since", 0))
+
+    s += f"enum {basename}_enum {{\n"
     for child in enum:
         if child.tag == "entry":
             entry_name = child.get('name')
             assert(entry_name)
-            s += f"  {basenane.upper()}_{entry_name.upper()} = {child.get('value')},\n"
+
+            c_since = int(child.get("since", 0))
+            if c_since:
+                s+=f"#define C_{interface_name.upper()}_{entry_name.upper()}_SINCE {c_since}\n"
+
+            c_deprecated_since = int(child.get("deprecated-since", 0))
+            if c_deprecated_since:
+                s+=f"#define C_{interface_name.upper()}_{entry_name.upper()}_DEPRECATED_SINCE {c_deprecated_since}\n"
+
+            s += f"  {basename.upper()}_{entry_name.upper()} = {child.get('value')},\n"
 
     s += "};\n"
-    return s
+    return Enum(name, s, since, deprecated_since)
 
 def parse_enums(interface_name: str, enums: list[ET.Element]) -> str:
     s = """"""
-    for enum in enums:
-        s+=parse_enum(interface_name, enum)+'\n'
+    for e in enums:
+        enum = parse_enum(interface_name, e)
+        if enum.since:
+            s+=f"#define C_{interface_name.upper()}_{enum.name.upper()}_SINCE {enum.since}\n"
+        if enum.deprecated_since:
+            s+=f"#define C_{interface_name.upper()}_{enum.name.upper()}_DEPRECATED_SINCE {enum.deprecated_since}\n"
+        s+= enum.repr+'\n'
     return s
 
 

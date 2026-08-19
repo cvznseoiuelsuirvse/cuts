@@ -16,9 +16,9 @@ int zxdg_decoration_manager_v1_get_toplevel_decoration(struct c_wl_connection *c
   return 0;
 }
 
-int zxdg_decoration_manager_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
-  c_wl_object_del(conn, args[0].o);
-  return 0;
+int zxdg_decoration_manager_v1_destroy(struct c_wl_connection *conn,
+                                       union c_wl_arg *args) {
+  C_WL_DESTRUCTOR(conn, args);
 }
 
 int zxdg_toplevel_decoration_v1_set_mode(struct c_wl_connection *conn, union c_wl_arg *args) {
@@ -31,8 +31,7 @@ int zxdg_toplevel_decoration_v1_set_mode(struct c_wl_connection *conn, union c_w
   return 0;
 }
 
-int zxdg_toplevel_decoration_v1_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
-  c_wl_object_del(conn, args[0].o);
-  return 0;
+int zxdg_toplevel_decoration_v1_destroy(struct c_wl_connection *conn,
+                                        union c_wl_arg *args) {
+  C_WL_DESTRUCTOR(conn, args);
 }
-

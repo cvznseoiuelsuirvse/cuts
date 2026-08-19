@@ -6,6 +6,11 @@
 #include <sys/stat.h>
 
 #include "wayland/proto/wayland.h"
+
+#include "wayland/impl/wayland.h"
+#include "wayland/impl/xdg-shell.h"
+#include "wayland/impl/viewporter.h"
+
 #include "wayland/display.h"
 #include "output/drm/util.h"
 
@@ -132,11 +137,10 @@ int wl_shm_create_pool(struct c_wl_connection *conn, c_wl_args args) {
     c_wl_error_set_and_return(wl_shm_id, error_code, "failed to mmap");
   }
 
-  pool->id = wl_shm_pool_id;
   pool->ptr = buffer;
   pool->size = buffer_size;
 
-  c_wl_object_add(conn, wl_shm_pool_id, wl_shm->version, c_wl_interface_get("wl_shm_pool"), pool);
+  pool->obj = c_wl_object_add(conn, wl_shm_pool_id, wl_shm->version, c_wl_interface_get("wl_shm_pool"), pool);
   return 0;
 }
 
@@ -171,7 +175,6 @@ int wl_shm_pool_create_buffer(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_buffer *buffer = c_malloc(sizeof(*buffer));
   struct c_rawbuf *buf = c_malloc(sizeof(*buf));
 
-  buffer->id = wl_buffer_id;
   buffer->scale = 1;
 
   buffer->pool = pool;
@@ -187,7 +190,7 @@ int wl_shm_pool_create_buffer(struct c_wl_connection *conn, c_wl_args args) {
   buffer->shm = buf;
 
   const struct c_wl_interface *iface = c_wl_interface_get("wl_buffer");
-  c_wl_object_add(conn, wl_buffer_id, iface->version, iface, buffer);
+  buffer->obj = c_wl_object_add(conn, wl_buffer_id, iface->version, iface, buffer);
 
   return 0;
 }
@@ -198,7 +201,7 @@ int wl_buffer_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
 
   free_buffer(wl_buffer);
 
-  wl_buffer->id = 0;
+  wl_buffer->obj = NULL;
   c_wl_object_del(conn, self->id);
   return 0;
 }
@@ -253,7 +256,7 @@ int wl_surface_set_buffer_scale(struct c_wl_connection *conn, c_wl_args args) {
 int wl_compositor_create_region(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
 
-  c_wl_object_id wl_region_id = args[1].o;
+  c_wl_new_id wl_region_id = args[1].n;
   struct c_wl_object *wl_region;
   C_WL_CHECK_IF_NOT_REGISTERED(wl_region_id, wl_region);
 
@@ -312,13 +315,13 @@ int wl_surface_damage_buffer(struct c_wl_connection *conn, c_wl_args args) {
 int wl_surface_frame(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
 
-  c_wl_new_id wl_callback_id = args[1].o;
+  c_wl_new_id wl_callback_id = args[1].n;
   struct c_wl_object *wl_callback;
   C_WL_CHECK_IF_NOT_REGISTERED(wl_callback_id, wl_callback);
 
   struct c_wl_surface *surface = self->data;
   if (surface->frames_n == LENGTH(surface->frames)) {
-    c_wl_error_set_and_return(surface->id, WL_DISPLAY_ERROR_IMPLEMENTATION,
+    c_wl_error_set_and_return(surface->obj->id, WL_DISPLAY_ERROR_IMPLEMENTATION,
                               "too many frames per surface, only 8 allowed");
   }
 
@@ -367,6 +370,14 @@ int wl_surface_destroy(struct c_wl_connection *conn, c_wl_args args) {
 
     c_list_destroy(wl_surface->sub.children);
     wl_surface->sub.children = NULL;
+  }
+
+
+  if (wl_surface->viewport) {
+    wl_surface->viewport->surface = NULL;
+    c_unref(wl_surface->viewport);
+    wl_surface->viewport = NULL;
+    c_unref(wl_surface);
   }
 
   c_wl_object_del(conn, self->id);
@@ -455,8 +466,8 @@ int wl_surface_commit(struct c_wl_connection *conn, c_wl_args args) {
 
   if (wl_surface->pending != wl_surface->active) {
     if (wl_surface->active) {
-      if (wl_surface->active->id)
-        wl_buffer_release(conn, wl_surface->active->id);
+      if (wl_surface->active->obj)
+        wl_buffer_release(conn, wl_surface->active->obj->id);
 
       free_buffer(wl_surface->active);
       c_unref(wl_surface->active);
@@ -477,7 +488,7 @@ int wl_surface_commit(struct c_wl_connection *conn, c_wl_args args) {
 int wl_compositor_create_surface(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
 
-  c_wl_object_id wl_surface_id = args[1].o;
+  c_wl_new_id wl_surface_id = args[1].n;
   struct c_wl_object *wl_surface;
   C_WL_CHECK_IF_NOT_REGISTERED(wl_surface_id, wl_surface);
 
@@ -487,8 +498,9 @@ int wl_compositor_create_surface(struct c_wl_connection *conn, c_wl_args args) {
     c_wl_error_set_and_return(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed");
   }
 
-  c_wl_surface->id = wl_surface_id;
-  c_wl_object_add(conn, wl_surface_id, self->version, c_wl_interface_get("wl_surface"), c_wl_surface);
+  c_wl_surface->obj =
+      c_wl_object_add(conn, wl_surface_id, self->version,
+                      c_wl_interface_get("wl_surface"), c_wl_surface);
 
   return 0;
 }
@@ -527,7 +539,6 @@ int wl_subcompositor_get_subsurface(struct c_wl_connection *conn, c_wl_args args
                               "child surface already holds a role");
   }
 
-  subsurface->id = wl_subsurface_id;
 
   subsurface->parent = surface_parent;
   c_ref(surface_parent);
@@ -551,7 +562,7 @@ int wl_subcompositor_get_subsurface(struct c_wl_connection *conn, c_wl_args args
   c_list_push(surface_parent->sub.children, subsurface, 0);
   c_ref(subsurface);
 
-  c_wl_object_add(conn, wl_subsurface_id, self->version, c_wl_interface_get("wl_subsurface"), subsurface);
+  subsurface->obj = c_wl_object_add(conn, wl_subsurface_id, self->version, c_wl_interface_get("wl_subsurface"), subsurface);
 
   return 0;
 }
@@ -629,10 +640,12 @@ int wl_subsurface_place_below(struct c_wl_connection *conn, c_wl_args args) {
   return 0;
 };
 
+int wl_seat_release(struct c_wl_connection *conn, c_wl_args args) { C_WL_DESTRUCTOR(conn, args); }
+
 int wl_seat_get_pointer(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_wl_object *self = c_wl_self(conn, args);
 
-  c_wl_object_id wl_pointer_id = args[1].o;
+  c_wl_new_id wl_pointer_id = args[1].n;
   struct c_wl_object *wl_pointer;
   C_WL_CHECK_IF_NOT_REGISTERED(wl_pointer_id, wl_pointer);
 
@@ -645,15 +658,12 @@ int wl_pointer_set_cursor(struct c_wl_connection *conn, c_wl_args args) {
   return 0;
 }
 
-int wl_pointer_release(struct c_wl_connection *conn, c_wl_args args) {
-  c_wl_object_del(conn, args[0].o);
-  return 0;
-}
+int wl_pointer_release(struct c_wl_connection *conn, c_wl_args args) { C_WL_DESTRUCTOR(conn, args); }
 
 int wl_seat_get_keyboard(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_wl_object *self = c_wl_self(conn, args);
 
-  c_wl_object_id wl_keyboard_id = args[1].o;
+  c_wl_new_id wl_keyboard_id = args[1].n;
   struct c_wl_object *wl_keyboard;
   C_WL_CHECK_IF_NOT_REGISTERED(wl_keyboard_id, wl_keyboard);
 
@@ -663,15 +673,12 @@ int wl_seat_get_keyboard(struct c_wl_connection *conn, union c_wl_arg *args) {
 
 }
 
-int wl_keyboard_release(struct c_wl_connection *conn, c_wl_args args) {
-  c_wl_object_del(conn, args[0].o);
-  return 0;
-}
+int wl_keyboard_release(struct c_wl_connection *conn, c_wl_args args) { C_WL_DESTRUCTOR(conn, args); }
 
 int wl_data_device_manager_get_data_device(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
 
-  c_wl_object_id wl_data_device_id = args[1].o;
+  c_wl_new_id wl_data_device_id = args[1].n;
   struct c_wl_object *wl_data_device;
   C_WL_CHECK_IF_NOT_REGISTERED(wl_data_device_id, wl_data_device);
 
@@ -682,9 +689,7 @@ int wl_data_device_manager_get_data_device(struct c_wl_connection *conn, c_wl_ar
   if (!data_device)
     c_wl_error_set_and_return(self->id, WL_DISPLAY_ERROR_NO_MEMORY, "failed to allocate a new data device");
 
-  data_device->id = wl_data_device_id;
-
-  c_wl_object_add(conn, wl_data_device_id, self->version, c_wl_interface_get("wl_data_device"), data_device);
+  data_device->obj = c_wl_object_add(conn, wl_data_device_id, self->version, c_wl_interface_get("wl_data_device"), data_device);
   return 0;
 }
 
@@ -716,18 +721,19 @@ int wl_data_device_release(struct c_wl_connection *conn, c_wl_args args) {
 
 int wl_data_device_manager_create_data_source(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
-  c_wl_object_id wl_data_source_id = args[1].o;
+
+  c_wl_new_id wl_data_source_id = args[1].n;
+  struct c_wl_object *wl_data_source;
+  C_WL_CHECK_IF_NOT_REGISTERED(wl_data_source_id, wl_data_source);
 
   struct c_wl_data_source *data_source = c_malloc(sizeof(*data_source));
   if (!data_source)
     c_wl_error_set_and_return(self->id, WL_DISPLAY_ERROR_NO_MEMORY, "failed to allocate a new data source");
 
-  data_source->id = wl_data_source_id;
+  data_source->obj =
+      c_wl_object_add(conn, wl_data_source_id, self->version,
+                      c_wl_interface_get("wl_data_source"), data_source);
 
-  struct c_wl_object *wl_data_source;
-  C_WL_CHECK_IF_NOT_REGISTERED(wl_data_source_id, wl_data_source);
-
-  c_wl_object_add(conn, wl_data_source_id, self->version, c_wl_interface_get("wl_data_source"), data_source);
   return 0;
 }
 
@@ -744,10 +750,7 @@ int wl_data_source_offer(struct c_wl_connection *conn, c_wl_args args) {
 int wl_data_offer_receive(struct c_wl_connection *conn, c_wl_args args) { return 0; }
 int wl_data_offer_accept(struct c_wl_connection *conn, c_wl_args args) { return 0; }
 
-int wl_data_offer_destroy(struct c_wl_connection *conn, c_wl_args args) { 
-  c_wl_object_del(conn, args[0].o);
-  return 0;
-}
+int wl_data_offer_destroy(struct c_wl_connection *conn, c_wl_args args) { C_WL_DESTRUCTOR(conn, args); }
 
 int wl_data_source_destroy(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
@@ -761,3 +764,5 @@ int wl_data_source_destroy(struct c_wl_connection *conn, c_wl_args args) {
   c_wl_object_del(conn, args[0].o);
   return 0;
 }
+
+int wl_output_release(struct c_wl_connection *conn, c_wl_args args) { C_WL_DESTRUCTOR(conn, args); }

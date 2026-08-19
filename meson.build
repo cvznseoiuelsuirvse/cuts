@@ -6,6 +6,7 @@ project('cuts', 'c',
   ],
 )
 
+cc = meson.get_compiler('c')
 
 c_args = [
   '-Wno-unused-parameter',
@@ -26,6 +27,7 @@ subdir('output')
 fs = import('fs')
 
 freetype_dep = dependency('freetype2')
+math_dep = cc.find_library('m')
 sources = [
   'cuts.c',
   'fontenum.c',
@@ -40,6 +42,7 @@ executable('cuts',
   sources,
   c_args: c_args,
   dependencies: [
+    math_dep,
     freetype_dep,
     output_dep,
     seat_dep,

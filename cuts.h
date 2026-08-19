@@ -13,11 +13,47 @@ struct monitor_config {
   uint32_t refresh_rate;
 };
 
+
 enum bar_position {
-  BAR_TOP    = 1 << 0,
-  BAR_BOTTOM = 1 << 1,
-  BAR_RIGHT  = 1 << 2,
-  BAR_LEFT   = 1 << 3,
+  BAR_TOP    ,
+  BAR_BOTTOM ,
+  BAR_RIGHT  ,
+  BAR_LEFT   ,
+};
+
+struct bar_config {
+  struct {
+    int size;
+    const char *name;
+  } font;
+
+  struct {
+    uint32_t font_active[4];
+    uint32_t font_inactive[4];
+    uint32_t font_urgent[4];
+
+    uint32_t background_active[4];
+    uint32_t background_inactive[4];
+    uint32_t background_urgent[4];
+  } tag;
+
+  struct {
+    uint32_t font_color[4];
+    uint32_t background_color[4];
+  } layout;
+
+  struct {
+    uint32_t font_color[4];
+    uint32_t background_color[4];
+  } title;
+
+  struct {
+    uint32_t font_color[4];
+    uint32_t background_color[4];
+  } text;
+
+  enum bar_position pos;
+
 };
 
 typedef union {

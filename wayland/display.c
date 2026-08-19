@@ -254,7 +254,6 @@ struct c_wl_display *c_wl_display_init(struct c_event_loop *loop) {
   c_wl_interface_support("wl_compositor", NULL, NULL);
   c_wl_interface_support("wl_subcompositor", NULL, NULL);
   c_wl_interface_support("xdg_wm_base", NULL, NULL);
-  c_wl_interface_support("xdg_wm_base", NULL, NULL);
   c_wl_interface_support("wp_viewporter", NULL, NULL);
 
   return display;

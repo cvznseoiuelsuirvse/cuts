@@ -22,6 +22,7 @@ struct c_window {
   char **app_id;
 
   enum c_window_states state;
+  uint32_t xdg_states;
 
   struct c_scene_node *node;
 
@@ -36,8 +37,8 @@ struct c_window *c_window_new(struct c_scene *scene,
                               struct c_wl_connection *connection,
                               struct c_xdg_surface *surface);
 
-void c_window_activate(struct c_window *window);
-void c_window_deactivate(struct c_window *window);
+int c_window_activate(struct c_window *window);
+int c_window_deactivate(struct c_window *window);
 void c_window_focus(struct c_window *window, double hotspot_x,
                     double hotspot_y);
 void c_window_unfocus(struct c_window *window);

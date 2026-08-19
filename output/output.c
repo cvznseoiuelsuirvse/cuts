@@ -4,6 +4,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+#include "wayland/impl/wayland.h"
+
 #include "output/output.h"
 #include "output/cursor.h"
 #include "output/drm/drm.h"

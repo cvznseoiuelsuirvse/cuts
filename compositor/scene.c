@@ -59,8 +59,8 @@ static void create_buffer_quad(struct c_scene_buffer *buffer, struct c_renderer_
   quad->width = buffer->width;
   quad->height = buffer->height;
 
-  quad->uv1[0] = 1.0f;
-  quad->uv1[1] = 1.0f;
+  quad->uv_scale[0] = 1.0f;
+  quad->uv_scale[1] = 1.0f;
 }
 
 static void create_rect_quad(struct c_scene_rect *rect, struct c_renderer_quad *quad) {

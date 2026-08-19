@@ -63,8 +63,8 @@ struct c_renderer_quad {
 	double  x, y;
 	int32_t width, height;
 
-	float uv0[2];
-	float uv1[2];
+	double uv_offset[2];
+	double uv_scale[2];
 };
 
 #endif

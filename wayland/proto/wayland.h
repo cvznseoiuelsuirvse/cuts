@@ -179,6 +179,7 @@ enum wl_data_device_error_enum {
   WL_DATA_DEVICE_ERROR_USED_SOURCE = 1,
 };
 
+#define C_WL_DATA_DEVICE_MANAGER_DND_ACTION_SINCE 3
  /* This is a bitmask of the available/preferred actions in a
 	drag-and-drop operation.
 
@@ -304,6 +305,7 @@ enum wl_pointer_axis_source_enum {
   WL_POINTER_AXIS_SOURCE_WHEEL = 0,
   WL_POINTER_AXIS_SOURCE_FINGER = 1,
   WL_POINTER_AXIS_SOURCE_CONTINUOUS = 2,
+#define C_WL_POINTER_WHEEL_TILT_SINCE 6
   WL_POINTER_AXIS_SOURCE_WHEEL_TILT = 3,
 };
 
@@ -333,6 +335,7 @@ enum wl_keyboard_keymap_format_enum {
 enum wl_keyboard_key_state_enum {
   WL_KEYBOARD_KEY_STATE_RELEASED = 0,
   WL_KEYBOARD_KEY_STATE_PRESSED = 1,
+#define C_WL_KEYBOARD_REPEATED_SINCE 10
   WL_KEYBOARD_KEY_STATE_REPEATED = 2,
 };
 

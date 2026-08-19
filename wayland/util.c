@@ -3,8 +3,8 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include "wayland/types.h"
 #include "wayland/proto/xdg-shell.h"
+#include "wayland/impl/xdg-shell.h"
 #include "wayland/util.h"
 
 #define PADDED4(n) ((n + 3) & ~3)

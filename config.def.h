@@ -1,11 +1,7 @@
 #include "cuts.h"
 #include "seat/input.h"
 
-#ifdef USE_LOGO_KEY
 #define LEADER C_KEYBOARD_MOD_LOGO
-#else
-#define LEADER C_KEYBOARD_MOD_ALT
-#endif
 
 #define TAG(n, shift_key)                                                      \
   {LEADER, XKB_KEY_##n, switch_tag, {.u = 1 << (n - 1)}}, {                    \
@@ -28,30 +24,65 @@
 static const uint32_t tags = 5;
 static const char *tag_lables[] = {"1", "2", "3", "4", "5"};
 
-static uint32_t gap = 15;
-static const uint32_t background_color[4] = COLOR_TO_BYTES(0x2D2D34FF);
+static uint32_t gap = 5;
+static uint32_t border_width = 1;
 
-static uint32_t border_width              = 3;
-static const uint32_t border_focus[4]     = COLOR_TO_BYTES(0xCEB1BEFF);
-static const uint32_t border_default[4]   = COLOR_TO_BYTES(0xB97375FF);
+#define BACKGROUND1    0x000000ff
+#define BACKGROUND2    0x1a1a1aff
+#define BACKGROUND3    0x2f2f2fff
+#define BACKGROUND4    0xffffffff
+#define BORDER_FOCUS   0x888888ff
+#define BORDER_UNFOCUS 0x333333ff
+#define BORDER_URGENT  0xffffffff
+#define FONT_FOCUS     0xffffffff
+#define FONT_UNFOCUS   0x777777ff
+#define FONT_URGENT    0x000000ff
 
-// bar
-static const int font_size = 14;
-static const char *font_name = "Noto Sans Mono Medium";
-static const uint32_t font_color_dimmed[4]  = COLOR_TO_BYTES(0xB97375FF);
-static const uint32_t font_color_default[4] = COLOR_TO_BYTES(0xFFFFFFFF);
-static const enum bar_position bar_pos = BAR_TOP;
+static const struct bar_config bar_cfg = {
+  .font = {15, "SF Mono Regular"},
+  .pos = BAR_TOP,
 
-static float mfact      = 0.5f;
-static uint32_t nmaster = 2;
+  .tag = {
+      .font_active         = COLOR_TO_BYTES(FONT_FOCUS),
+      .font_inactive       = COLOR_TO_BYTES(FONT_UNFOCUS),
+      .font_urgent         = COLOR_TO_BYTES(FONT_URGENT),
+      .background_active   = COLOR_TO_BYTES(BACKGROUND3),
+      .background_inactive = COLOR_TO_BYTES(BACKGROUND2),
+      .background_urgent   = COLOR_TO_BYTES(BACKGROUND4),
+  },
+
+  .layout = {
+      .font_color          = COLOR_TO_BYTES(FONT_FOCUS),
+      .background_color    = COLOR_TO_BYTES(BACKGROUND2),
+  },
+
+  .title = {
+      .font_color          = COLOR_TO_BYTES(FONT_FOCUS),
+      .background_color    = COLOR_TO_BYTES(BACKGROUND1),
+  },
+
+  .text = {
+      .font_color          = COLOR_TO_BYTES(FONT_UNFOCUS),
+      .background_color    = COLOR_TO_BYTES(BACKGROUND2),
+  },
+
+};
+
+static const uint32_t background_color[4] = COLOR_TO_BYTES(BACKGROUND1);
+static const uint32_t border_active[4]    = COLOR_TO_BYTES(BORDER_FOCUS);
+static const uint32_t border_inactive[4]  = COLOR_TO_BYTES(BORDER_UNFOCUS);
+static const uint32_t border_urgent[4]    = COLOR_TO_BYTES(BORDER_URGENT);
+
+static float    mfact   = 0.5f;
+static uint32_t nmaster = 1;
 
 // libinput
 static enum libinput_config_accel_profile accel_profile = LIBINPUT_CONFIG_ACCEL_PROFILE_FLAT;
-static const uint32_t keyboard_repeat_rate =  50;
+static const uint32_t keyboard_repeat_rate  = 50;
 static const uint32_t keyboard_repeat_delay = 300;
 
 static struct xkb_rule_names xkb_rules = {
-    .layout = "us,ru",
+    .layout = "us",
     .options = "grp:toggle,caps:escape",
 };
 
@@ -62,23 +93,22 @@ static struct layout layouts[] = {
 	{zoom, "\\/"},
 };
 
-
 static struct key_bind keys[] = {
-	{LEADER,                        XKB_KEY_q,                        quit, 			       {}},
-	{LEADER,                        XKB_KEY_Return, 	                spawn, 	           {.s = "alacritty"}},
-	{LEADER,                        XKB_KEY_x, 	  	                  window_kill,	     {}},
-	{LEADER,                        XKB_KEY_j, 	  	                  move_focus,        {.i = 1}},
-	{LEADER,                        XKB_KEY_k, 	  	                  move_focus,        {.i = -1}},
-  {LEADER | C_KEYBOARD_MOD_SHIFT, XKB_KEY_F,                        toggle_floating,   {}},
-  {LEADER,                        XKB_KEY_f,                        toggle_fullscreen, {}},
-  {LEADER | C_KEYBOARD_MOD_SHIFT, XKB_KEY_I,                        change_mfact,      {.d = -0.05f}},
-  {LEADER | C_KEYBOARD_MOD_SHIFT, XKB_KEY_O,                        change_mfact,      {.d = 0.05f}},
+	{LEADER,                        XKB_KEY_q,      quit, 			       {}},
+	{LEADER,                        XKB_KEY_Return, spawn, 	           {.s = "alacritty"}},
+	{LEADER,                        XKB_KEY_x, 	  	window_kill,	     {}},
+	{LEADER,                        XKB_KEY_j, 	  	move_focus,        {.i = 1}},
+	{LEADER,                        XKB_KEY_k, 	  	move_focus,        {.i = -1}},
+  {LEADER | C_KEYBOARD_MOD_SHIFT, XKB_KEY_F,      toggle_floating,   {}},
+  {LEADER,                        XKB_KEY_f,      toggle_fullscreen, {}},
+  {LEADER | C_KEYBOARD_MOD_SHIFT, XKB_KEY_I,      change_mfact,      {.d = -0.05f}},
+  {LEADER | C_KEYBOARD_MOD_SHIFT, XKB_KEY_O,      change_mfact,      {.d = 0.05f}},
 
-  {LEADER,                        XKB_KEY_o,                        change_nmaster,    {.i = -1}},
-  {LEADER,                        XKB_KEY_i,                        change_nmaster,    {.i = 1}},
+  {LEADER,                        XKB_KEY_o,      change_nmaster,    {.i = -1}},
+  {LEADER,                        XKB_KEY_i,      change_nmaster,    {.i = 1}},
 
-  {LEADER | C_KEYBOARD_MOD_SHIFT, XKB_KEY_Z,                        set_layout,        {.p = &layouts[1]}},
-  {LEADER,                        XKB_KEY_z,                        set_layout,        {.p = &layouts[0]}},
+  {LEADER | C_KEYBOARD_MOD_SHIFT, XKB_KEY_M,      set_layout,        {.p = &layouts[1]}},
+  {LEADER,                        XKB_KEY_m,      set_layout,        {.p = &layouts[0]}},
 
   TAG(1, XKB_KEY_exclam),
   TAG(2, XKB_KEY_at),
@@ -88,6 +118,6 @@ static struct key_bind keys[] = {
 };
 
 static struct mouse_bind mouse[] = {
-	{LEADER, 0, BTN_LEFT, MOUSE_DRAG(window_move), {}},
+	{LEADER, 0, BTN_LEFT,  MOUSE_DRAG(window_move),   {}},
 	{LEADER, 0, BTN_RIGHT, MOUSE_DRAG(window_resize), {}},
 };
