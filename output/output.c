@@ -2,12 +2,13 @@
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #include <unistd.h>
+#include <time.h>
 #include <fcntl.h>
 
+#include "wayland/proto/presentation-time.h"
 #include "wayland/impl/wayland.h"
 
 #include "output/output.h"
-#include "output/cursor.h"
 #include "output/drm/drm.h"
 #include "output/drm/syncobj.h"
 
@@ -99,6 +100,7 @@ static void page_flip_handler(int fd, unsigned int sequence,
                               unsigned int crtc_id, void *userdata) {
 
   struct c_output *output = userdata;
+  c_log_value(sequence, "%d");
 
   output->swapchain.front ^= 1;
   output->waiting_for_flip = 0;
@@ -112,6 +114,24 @@ static void page_flip_handler(int fd, unsigned int sequence,
         c_wl_connection_callback_done(wl_surface->conn, surface->frames[i]);
       }
 
+      if (!surface->output) goto frames;
+
+      for (size_t i = 0; i< surface->feedbacks_n; i++) {
+        wp_presentation_feedback_sync_output(wl_surface->conn, surface->feedbacks[i], surface->output->obj->id);
+        wp_presentation_feedback_presented(
+            wl_surface->conn, surface->feedbacks[i], 0,
+            tv_sec & 0xFFFFFFFF, tv_usec * 1000,
+            1000000000LL / output->current_mode->refresh_rate, 0,
+            sequence,
+            WP_PRESENTATION_FEEDBACK_KIND_HW_CLOCK |
+                WP_PRESENTATION_FEEDBACK_KIND_HW_COMPLETION |
+                WP_PRESENTATION_FEEDBACK_KIND_VSYNC);
+        c_wl_object_del(wl_surface->conn, surface->feedbacks[i]);
+      }
+
+      surface->feedbacks_n = 0;
+
+frames:
       if (surface->frames_n)
         c_wl_connection_flush(wl_surface->conn);
 
@@ -158,7 +178,10 @@ static int schedule_pageflip(struct c_output_manager *mgr, struct c_output *outp
       ret = -1;
     }
 
-    if (fence_fd > -1) close(fence_fd);
+    if (fence_fd > -1) {
+      close(fence_fd);
+    }
+
     output->waiting_for_flip = 1;
   }
 
@@ -176,6 +199,11 @@ C_EVENT_CALLBACK drm_callback(struct c_event_loop *loop, int fd, void *userdata)
     if (schedule_pageflip(mgr, output)) return C_EVENT_ERROR_FATAL;
 
   return C_EVENT_OK;
+}
+
+void *on_wp_presentation_bind(struct c_wl_connection *conn, struct c_wl_object *self, void *userdata) {
+  wp_presentation_clock_id(conn, self->id, CLOCK_MONOTONIC);
+  return NULL;
 }
 
 int c_output_damage(struct c_output_manager *mgr, struct c_output *output) {
@@ -207,7 +235,6 @@ void c_output_manager_free(struct c_output_manager *mgr) {
   if (mgr->outputs) {
     struct c_output *output;
     c_list_for_each(mgr->outputs, output) {
-      c_cursor_free(output->cursor);
       c_list_destroy(output->active_surfaces);
       destroy_swapchain(output);
       c_drm_free_output(mgr->drm_fd, output);
@@ -265,13 +292,12 @@ struct c_output_manager *c_output_manager_init(struct c_session *session,
 
   struct c_output *output;
   c_list_for_each(mgr->outputs, output) {
-    output->cursor = c_cursor_init(mgr, session->input, w, h);
     output->active_surfaces = c_list_new();
   }
 
-  mgr->cursor_output = c_list_get(mgr->outputs, 0);
-
   c_event_loop_add(loop, drm_fd, drm_callback, mgr);
+
+  c_wl_interface_support("wp_presentation", on_wp_presentation_bind, NULL);
 
   return mgr;
 

@@ -25,10 +25,10 @@ struct c_seat *c_seat_open(struct c_seat_listener *listener, void *listener_data
   if (backend_type) {
     if (STREQ(backend_type, "seatd")) {
       seat->impl = &libseat_impl;
-    } else if (STREQ("cuts", backend_type)) {
+    } else if (STREQ("diazepam", backend_type)) {
       seat->impl = &diazepam_impl;
     } else {
-      c_log(C_LOG_WARNING, "invalid CUTS_SEAT_BACKEND value '%s', expected 'cuts' or 'seatd'. defaulting to 'seatd'", backend_type);
+      c_log(C_LOG_WARNING, "invalid CUTS_SEAT_BACKEND value '%s', expected 'diazepam' or 'seatd'. defaulting to 'seatd'", backend_type);
       seat->impl = &libseat_impl;
     }
     c_log(C_LOG_INFO, "using '%s' seat backend", backend_type);

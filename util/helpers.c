@@ -43,3 +43,15 @@ uint32_t hash_string(char *string) {
   return hash;
 }
 
+uint32_t swap_32(uint32_t value) {
+  return ((value & 0xFF000000) >> 24) | ((value & 0x00FF0000) >> 8) |
+         ((value & 0x0000FF00) << 8) | ((value & 0x000000FF) << 24);
+}
+uint16_t swap_16(uint32_t value) {
+  return ((value & 0xFF00) >> 8) | ((value & 0x00FF) << 8);
+}
+
+int read_at(void *ptr, size_t size, size_t n, size_t offset, FILE *f) {
+  if (fseek(f, offset, SEEK_SET)) return 0;
+  return fread(ptr, size, n, f);
+}

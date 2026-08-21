@@ -52,21 +52,21 @@ static int import_dmabuf(struct c_renderer *render, struct c_dmabuf *dmabuf) {
 		c_log(C_LOG_ERROR, "%s (0x%08"PRIx32") 0x%08"PRIx64" pair not found",
 		      format_name, dmabuf->drm_format, dmabuf->modifier);
 		ret = -1;
-		goto out;
+		goto out_pre_image;
 	}
 
 	if (format->n_planes != dmabuf->n_planes) {
 		c_log(C_LOG_ERROR, "%s (0x%08"PRIx32") requires %d planes, but %d was specified",
 		      format_name, dmabuf->drm_format, format->n_planes, dmabuf->n_planes);
 		ret = -1;
-		goto out;
+		goto out_pre_image;
 	}
 
 	if (dmabuf->width > format->max_width || dmabuf->height > format->max_height) {
 		c_log(C_LOG_ERROR, "buffer is too large. %s (0x%08"PRIx32") max resolution: %ux%u",
 		      format_name, format->drm_format, format->max_width, format->max_height);
 		ret = -1;
-		goto out;
+		goto out_pre_image;
 	}
 
 	dmabuf->image = c_egl_create_image_from_dmabuf(render->egl, dmabuf);
@@ -82,11 +82,11 @@ static int import_dmabuf(struct c_renderer *render, struct c_dmabuf *dmabuf) {
     goto out;
   }
 
-	for (uint32_t i = 0; i < dmabuf->n_planes; i++) {
-		close(dmabuf->planes[i].fd);
-	}
-
 out:
+	for (uint32_t i = 0; i < dmabuf->n_planes; i++) close(dmabuf->planes[i].fd);
+
+out_pre_image:
+
 	free(format_name);
 	return ret;
 }
@@ -286,8 +286,8 @@ static int on_buffer_destroy(struct c_wl_connection *conn, c_wl_args args, void 
   if (buffer->dma && !buffer->shm) {
     struct c_dmabuf *buf = buffer->dma;
     if (c_get_refcount(buf) == 1) {
-      if (buf->image)
-        eglDestroyImage(render->egl->display, buf->image);
+      if (buf->image && render->egl->proc.eglDestroyImageKHR)
+        render->egl->proc.eglDestroyImageKHR(render->egl->display, buf->image);
 
       if (buf->texture) {
         glDeleteTextures(1, &buf->texture->texture);

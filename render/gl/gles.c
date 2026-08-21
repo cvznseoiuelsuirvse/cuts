@@ -319,7 +319,6 @@ void c_gles_add_texture(struct c_gles *gl, struct c_output *output,
   get_location(gl_program, uv_scale);
   glUniform2f(uv_scale_loc, quad->uv_scale[0], quad->uv_scale[1]);
 
-
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 
 }

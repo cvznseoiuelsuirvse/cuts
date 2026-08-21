@@ -28,4 +28,8 @@ int set_nonblocking(int fd);
 int starts_with(const char *string, const char *prefix);
 uint32_t hash_string(char *string);
 
+uint32_t swap_32(uint32_t value);
+uint16_t swap_16(uint32_t value);
+int read_at(void *ptr, size_t size, size_t n, size_t offset, FILE *f);
+
 #endif

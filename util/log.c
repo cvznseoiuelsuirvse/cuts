@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <unistd.h>
+#include <time.h>
 
 #include "util/log.h"
 #include "wayland/display.h"

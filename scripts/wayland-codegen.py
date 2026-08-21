@@ -122,9 +122,6 @@ def parse_events(interface_name: str, events: list[ET.Element], file_type: Liter
             s+=f"#define C_{interface_name.upper()}_{event.name.upper()}_DEPRECATED_SINCE {event.deprecated_since}\n\n"
         s+=event.repr
 
-    if interface_name == "wl_display" and file_type == "c":
-        s+='C_WL_INTERFACE_REGISTER(wl_callback, 1, 0, -1, {})\n'
-
     return s
 
 def parse_request(interface_name: str, request: ET.Element, file_type: Literal["h", "c"]) -> Request:
@@ -193,11 +190,15 @@ def parse_request(interface_name: str, request: ET.Element, file_type: Literal["
 
 def parse_requests(interface: ET.Element, requests: list[ET.Element], file_type: Literal["h", "c"]) -> str:
     s = """"""
-    if not requests:
-        return ""
 
     interface_name = interface.get('name', '')
     interface_version = interface.get('version', 1)
+
+    if not requests and file_type == "c":
+        return f"C_WL_INTERFACE_REGISTER({interface_name}, {interface_version}, 0, -1, {{}})\n"
+    if not requests:
+        return ""
+
     reqs = [parse_request(interface_name, req, file_type) for req in requests]
 
     if file_type == "h":

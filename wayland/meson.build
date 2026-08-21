@@ -27,6 +27,8 @@ wayland_sources = files(
   'impl/linux-dmabuf-v1.c',
   'impl/xdg-decoration-unstable-v1.c',
   'impl/viewporter.c',
+  'impl/cursor-shape-v1.c',
+  'impl/presentation-time.c',
 )
 
 wayland_dep = declare_dependency(

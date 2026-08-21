@@ -27,6 +27,9 @@ static const char *tag_lables[] = {"1", "2", "3", "4", "5"};
 static uint32_t gap = 5;
 static uint32_t border_width = 1;
 
+static const char *cursor_theme   = "default";
+static const uint32_t cursor_size = 32;
+
 #define BACKGROUND1    0x000000ff
 #define BACKGROUND2    0x1a1a1aff
 #define BACKGROUND3    0x2f2f2fff

@@ -54,8 +54,6 @@ struct c_output {
 
 	drmModeCrtcPtr orig_crtc;
 
-	struct c_cursor *cursor;
-
 	int waiting_for_flip;
 	int need_redraw;
 
@@ -82,7 +80,6 @@ struct c_output_manager {
   on_redraw_handler on_redraw;
 
   c_list *outputs;
-  struct c_output *cursor_output;
 };
 
 struct c_output_manager *c_output_manager_init(struct c_session *session, struct c_event_loop *loop, struct c_wl_display *display);

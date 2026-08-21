@@ -8,19 +8,19 @@
 #include FT_FREETYPE_H
 
 #include "wayland/proto/wayland.h"
-#include "wayland/proto/xdg-shell.h"
-#include "wayland/proto/xdg-decoration-unstable-v1.h"
-#include "wayland/proto/viewporter.h"
-
 #include "wayland/impl/wayland.h"
+#include "wayland/proto/xdg-shell.h"
 #include "wayland/impl/xdg-shell.h"
+#include "wayland/proto/viewporter.h"
 #include "wayland/impl/viewporter.h"
+#include "wayland/proto/xdg-decoration-unstable-v1.h"
+#include "wayland/proto/cursor-shape-v1.h"
 
 #include "compositor/window.h"
 #include "compositor/scene.h"
 
 #include "output/output.h"
-#include "output/cursor.h"
+#include "cursor/cursor.h"
 
 #include "seat/session/session.h"
 
@@ -139,8 +139,9 @@ struct {
   struct c_scene *scene;
 
   struct {
-    float x[2];
-    float y[2];
+    struct c_cursor *cur;
+    double x[2];
+    double y[2];
     int coords;
     int is_dragging;
   } pointer;
@@ -191,7 +192,7 @@ static void scene_collect_window(struct c_scene_node *node, c_list *quads);
 void output_damage(struct c_output *output);
 struct c_wl_surface *find_root_surface(struct c_wl_surface *surface);
 void set_background(uint32_t width, uint32_t height, double x, double y);
-void set_cursor(struct c_output *output, int size);
+void cursor_move(struct c_cursor *cur, double x, double y);
 
 struct client *tag_select_client(int direction);
 struct client *client_new(struct c_wl_connection *connection);
@@ -226,7 +227,6 @@ int on_get_pointer(struct c_wl_connection *conn, c_wl_args args, void *userdata)
 void assign_output_to_surface(struct c_wl_object *wl_surface);
 int on_surface_commit(struct c_wl_connection *conn, c_wl_args args, void *userdata);
 int on_surface_destroy(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-int on_surface_frame(struct c_wl_connection *conn, c_wl_args args, void *userdata);
 int on_window_new(struct c_wl_connection *conn, c_wl_args args, void *userdata);
 int on_set_title(struct c_wl_connection *conn, c_wl_args args, void *userdata);
 int on_window_unfullscreen(struct c_wl_connection *conn, c_wl_args args, void *userdata);
@@ -238,6 +238,7 @@ int on_data_source_destroy(struct c_wl_connection *conn, c_wl_args args, void *u
 int on_data_receive(struct c_wl_connection *conn, c_wl_args args, void *userdata);
 int on_decorations_set_mode(struct c_wl_connection *conn, c_wl_args args, void *userdata);
 int on_set_selection(struct c_wl_connection *conn, c_wl_args args, void *userdata);
+int on_set_shape(struct c_wl_connection *conn, c_wl_args args, void *userdata);
 
 void quit(bind_args *args);
 void spawn(bind_args *args);
@@ -357,20 +358,20 @@ void collect_window_tree(struct c_window *window, struct c_wl_surface *surface,
       return;
     }
 
-    // if (vp->dst.width > 0)
-    //   surf_w = vp->dst.width;
+    if (vp->dst.width > 0)
+      surf_w = vp->dst.width;
     if (vp->src.width > 0)
       surf_w = vp->src.width;
 
-    // if (vp->dst.height > 0)
-    //   surf_h = vp->dst.height;
+    if (vp->dst.height > 0)
+      surf_h = vp->dst.height;
     if (vp->src.height > 0)
       surf_h = vp->src.height;
 
     surf_x = vp->src.x > 0 ? vp->src.x : 0;
     surf_y = vp->src.y > 0 ? vp->src.y : 0;
   }
-  //
+    
   if (surface->xdg_surface && surface->xdg_surface->width > 0) {
     struct c_xdg_surface *xs = surface->xdg_surface;
     surf_x = MAX(surf_x, xs->x);
@@ -494,24 +495,11 @@ void set_background(uint32_t width, uint32_t height, double x, double y) {
   c_scene_add_rect(cuts.scene, background);
 }
 
-void set_cursor(struct c_output *output, int size) {
-  struct c_cursor *cursor = output->cursor;
-  uint32_t buffer[cursor->width * cursor->height];
-  memset(buffer, 0, sizeof(buffer));
-  int b = 3;
-
-  for (int y = 0; y < size; y++) {
-    for (int x = 0; x < size; x++) {
-      int dist_x = MIN(x, size - x - 1);
-      int dist_y = MIN(y, size - y - 1);
-      if (dist_x < b || dist_y < b) {
-        buffer[y * cursor->width + x] = 0xffffffff;
-      } else {
-        buffer[y * cursor->width + x] = 0xff000000;
-      }
-    } 
-  }
-  c_cursor_update(cuts.mgr, output, buffer, sizeof(buffer));
+void cursor_move(struct c_cursor *cur, double x, double y) {
+  c_cursor_move(cur, x, y);
+  cuts.pointer.coords ^= 1;
+  pointer_x = x;
+  pointer_y = y;
 }
 
 struct client *tag_select_client(int direction) {
@@ -641,13 +629,11 @@ struct client *client_from_connection(struct c_wl_connection *connection) {
   return NULL;
 }
 
-struct client *client_from_surface(struct c_wl_surface *surface) {
-  struct c_wl_surface *root = find_root_surface(surface);
-
+struct client *client_from_xdg_surface(struct c_xdg_surface *surface) {
   struct client *client;
   c_list_for_each(cuts.clients, client) {
     struct c_window *window = client->window;
-    if (window->surface->surface == root) {
+    if (window->surface == surface) {
       return client;
     }
   }
@@ -782,29 +768,50 @@ void client_toggle_floating(struct client *client) {
 }
 
 void on_mouse_movement(struct c_input_mouse_event *event, void *userdata) {
-  cuts.pointer.coords ^= 1;
-  pointer_x = event->x;
-  pointer_y = event->y;
+  struct c_cursor *cur = cuts.pointer.cur;
+  struct c_output *output = cur->output;
+  struct c_output_mode *mode = output->current_mode;
+
+  uint32_t width = mode->width;
+  uint32_t height = mode->height;
+
+  double new_x, new_y;
+  if (!event->abs) {
+    new_x = event->x + pointer_x;
+    new_y = event->y + pointer_y;
+  } else {
+    new_x = libinput_event_pointer_get_absolute_x_transformed(event->libinput_event, width);
+    new_y = libinput_event_pointer_get_absolute_y_transformed(event->libinput_event, height);
+  }
+
+  new_x = CLAMP(new_x, 0, mode->width);
+  new_y = CLAMP(new_y, 0, mode->height);
+
+  cursor_move(cur, new_x, new_y);
 
   if (cuts.pointer.is_dragging || !cuts.focused_client) return;
-  struct client *focused = NULL;
 
-  uint64_t h_z = 0;
+  double hotx = new_x + cur->frame->hot_x;
+  double hoty = new_y + cur->frame->hot_y;
+
+  struct client *focused = NULL;
+  uint64_t top = 0;
 
   struct client *client;
   clients_for_each_in_tag(client) {
     struct c_window *window = client->window;
-    if (CURSOR_INSIDE(event->x, event->y, window) && client->z >= h_z) {
+    if (CURSOR_INSIDE(hotx, hoty, window) && client->z >= top) {
         focused = client;
-        h_z = client->z;
+        top = client->z;
     }
   }
 
   if (focused == cuts.focused_client) {
-    c_window_pointer_move(focused->window, event->x, event->y);
+    c_window_pointer_move(focused->window, hotx, hoty);
   } else if (focused) {
-    client_change_focus(focused, event->x, event->y);
+    client_change_focus(focused, hotx, hoty);
   }
+
 }
 
 void on_mouse_scroll(struct c_input_mouse_event *event, void *userdata) {
@@ -923,11 +930,10 @@ void assign_output_to_surface(struct c_wl_object *wl_surface) {
   struct c_wl_output *output;
 
   c_wl_objects_for_each(wl_surface->conn, o) {
-    if (STREQ(o->iface->name, "wl_output") &&
-        (output = o->data)->output == cuts.focused_mon->output) {
-      c_ref(output);
+    if (STREQ(o->iface->name, "wl_output") && (output = o->data)->output == cuts.focused_mon->output) {
       surface->output = output;
-      break;
+      c_ref(output);
+      return;
     }
   }
 }
@@ -942,8 +948,12 @@ int on_surface_commit(struct c_wl_connection *conn, c_wl_args args, void *userda
 
   assign_output_to_surface(wl_surface);
 
-  if (surface->output)
+  if (surface->output) {
+    struct c_output *output = surface->output->output;
+    if (surface->frames_n > 0 && c_list_idx(output->active_surfaces, wl_surface) < 0)
+      c_list_push(output->active_surfaces, wl_surface, 0);
     output_damage(surface->output->output);
+  }
 
   return 0;
 }
@@ -964,21 +974,7 @@ int on_surface_destroy(struct c_wl_connection *conn, c_wl_args args, void *userd
   struct c_output *output = surface->output->output;
   c_list_remove(&output->active_surfaces, wl_surface);
   output_damage(output);
-
   c_unref(surface->output);
-  return 0;
-}
-
-int on_surface_frame(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
-  struct c_wl_object *wl_surface = c_wl_self(conn, args);
-  struct c_wl_surface *surface = wl_surface->data;
-  if (!surface->output) return 0;
-
-  struct c_output *output = surface->output->output;
-
-  if (c_list_idx(output->active_surfaces, wl_surface) < 0)
-    c_list_push(output->active_surfaces, wl_surface, 0);
-
   return 0;
 }
 
@@ -1016,11 +1012,10 @@ int on_window_new(struct c_wl_connection *conn, c_wl_args args, void *userdata) 
 
 int on_set_title(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
   struct c_xdg_surface *surface = c_wl_self(conn, args)->data;
-  struct c_window *focused_window = cuts.focused_client->window;
+  struct client *client = client_from_connection(conn);
+  assert(client);
 
-  if (focused_window->surface == surface) {
-    bar_set_title(surface->toplevel.title);
-  }
+  if (client == cuts.focused_client) bar_set_title(surface->toplevel.title);
 
   return 0;
 }
@@ -1114,6 +1109,7 @@ int on_data_receive(struct c_wl_connection *conn, c_wl_args args, void *userdata
   for (size_t i = 0; i < data_source->mimes; i++) {
     if (STREQ(data_source->mimetypes[i], mimetype)) {
       wl_data_source_send(cuts.clipboard.owner, cuts.clipboard.data_source->obj->id, mimetype, wfd);
+      c_wl_connection_flush(cuts.clipboard.owner);
       return 0;
     }
   }
@@ -1152,6 +1148,21 @@ int on_set_selection(struct c_wl_connection *conn, c_wl_args args, void *userdat
   }
   wl_data_device_selection(conn, wl_data_device->id, wl_data_offer->id);
   
+  return 0;
+}
+
+int on_set_shape(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
+  struct client *client = cuts.focused_client;
+  if (!client) return 0;
+
+  enum c_cursor_shape shape = args[2].u;
+  if (conn == client->window->conn) {
+    if (shape > C_CURSOR_ALL_RESIZE) {
+      c_wl_error_set_and_return(args[0].o, WP_CURSOR_SHAPE_DEVICE_V1_ERROR_INVALID_SHAPE, "invalid shape");
+    }
+
+    c_cursor_set_shape(cuts.pointer.cur, shape);
+  }
   return 0;
 }
 
@@ -1281,6 +1292,12 @@ void window_move(int done, bind_args *args) {
   window->x+=dist_x;
   window->y+=dist_y;
 
+  if (!cuts.pointer.is_dragging && !done) {
+    c_cursor_set_shape(cuts.pointer.cur, C_CURSOR_GRAB);
+  } else if (done) {
+    c_cursor_set_shape(cuts.pointer.cur, C_CURSOR_DEFAULT);
+  }
+
   cuts.pointer.is_dragging = !done;
 
   LAYOUT(focused->mon);
@@ -1324,8 +1341,13 @@ void window_resize(int done, bind_args *args) {
 
   c_window_activate(window);
 
-  cuts.pointer.is_dragging = !done;
+  if (!cuts.pointer.is_dragging && !done) {
+    c_cursor_set_shape(cuts.pointer.cur, C_CURSOR_NWSE_RESIZE);
+  } else if (done) {
+    c_cursor_set_shape(cuts.pointer.cur, C_CURSOR_DEFAULT);
+  }
 
+  cuts.pointer.is_dragging = !done;
   LAYOUT(focused->mon);
 }
 
@@ -1796,6 +1818,9 @@ void signal_handler(int signal, void *userdata) {
 void cleanup(int err) {
   cuts.is_quitting = 1;
 
+  if (cuts.pointer.cur)
+    c_cursor_free(cuts.pointer.cur);
+
   if (cuts.clients) {
     struct client *client;
     c_list_for_each(cuts.clients, client)
@@ -1876,10 +1901,22 @@ int main() {
   cuts.monitors = c_list_new();
   cuts.layout = layouts[0];
 
+  struct c_cursor *cur = c_cursor_init(mgr, loop);
+  check_init(cur, ret, out);
+  cuts.pointer.cur = cur;
+
+  if (c_cursor_load(cur, cursor_theme, cursor_size)) {
+    c_log(C_LOG_ERROR, "failed to load cursor");
+    ret = 1;
+    goto out;
+  }
+
+  if (c_cursor_set_shape(cur, C_CURSOR_DEFAULT)) {
+    c_log(C_LOG_ERROR, "failed to set shape");
+  }
+
   struct c_output *output;
   c_list_for_each(mgr->outputs, output) {
-    set_cursor(output, 20);
-
     c_log(C_LOG_INFO, "Monitor %s:", output->name);
 
     struct monitor mon = {output, NULL};
@@ -1923,8 +1960,7 @@ mode_iter_end:
 
     c_wl_interface_support("wl_output", on_wl_output_bind, mon_cpy);
 
-    if (!cuts.focused_mon)
-      cuts.focused_mon = mon_cpy;
+    if (!cuts.focused_mon) cuts.focused_mon = mon_cpy;
   }
 
   if (c_input_init_xkb_state(session->input, &xkb_rules) < 0) goto out;
@@ -1972,7 +2008,6 @@ mode_iter_end:
   struct c_wl_surface_listeners surface_listeners = {
     .commit = on_surface_commit,
     .destroy = on_surface_destroy,
-    .frame = on_surface_frame,
   };
   wl_surface_add_listener(display, &surface_listeners, NULL);
 
@@ -2009,8 +2044,14 @@ mode_iter_end:
   };
   zxdg_toplevel_decoration_v1_add_listener(display, &decor_listeners, NULL);
 
+  struct c_wp_cursor_shape_device_v1_listeners cursor_shape_listeners = {
+    .set_shape = on_set_shape,
+  };
+  wp_cursor_shape_device_v1_add_listener(display, &cursor_shape_listeners, NULL);
+
   c_wl_interface_support("zxdg_decoration_manager_v1", NULL, NULL);
   c_wl_interface_support("wl_data_device_manager", NULL, NULL);
+  c_wl_interface_support("wp_cursor_shape_manager_v1", NULL, NULL);
 
   c_event_loop_add(loop, STDIN_FILENO, stdin_text, NULL);
 

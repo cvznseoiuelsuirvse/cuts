@@ -2,7 +2,6 @@ libdrm_dep = dependency('libdrm')
 
 output_sources = files(
   'output.c',
-  'cursor.c',
   'drm/drm.c',
   'drm/util.c',
   'drm/syncobj.c',

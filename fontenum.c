@@ -58,32 +58,19 @@ struct font_name_record {
 #define to_var16(s, var) uint16_t var = swap_16(s.var)
 #define to_var32(s, var) uint32_t var = swap_32(s.var)
 
-void b_to_string(char *in, char *out, size_t length) {
+static void b_to_string(char *in, char *out, size_t length) {
   memcpy(out, in, length);
   out[length] = 0;
 }
 
-void u16_to_string(char *in, char *out, size_t length) {
+static void u16_to_string(char *in, char *out, size_t length) {
   for (size_t i = *in ? 0 : 1; i < length; i+=2) {
     out[i/2] = in[i];
   }
   out[length/2] = 0;
 }
 
-uint32_t swap_32(uint32_t value) {
-  return ((value & 0xFF000000) >> 24) | ((value & 0x00FF0000) >> 8) |
-         ((value & 0x0000FF00) << 8) | ((value & 0x000000FF) << 24);
-}
-uint16_t swap_16(uint32_t value) {
-  return ((value & 0xFF00) >> 8) | ((value & 0x00FF) << 8);
-}
-
-int read_at(void *ptr, size_t size, size_t n, size_t offset, FILE *f) {
-  if (fseek(f, offset, SEEK_SET)) return 0;
-  return fread(ptr, size, n, f);
-}
-
-const char *name_id_to_string(enum FONT_NAME_RECORD_NAME_ID id) {
+static const char *name_id_to_string(enum FONT_NAME_RECORD_NAME_ID id) {
   switch (id) {
     case FONT_NAME_COPYRIGHT:      return "copyright";
     case FONT_NAME_FONT_FAMILY:    return "font family";
@@ -94,7 +81,7 @@ const char *name_id_to_string(enum FONT_NAME_RECORD_NAME_ID id) {
   }
 }
 
-int read_name_table(FILE *f, size_t table_offset, size_t length, char *name,
+static int read_name_table(FILE *f, size_t table_offset, size_t length, char *name,
                        size_t name_size,
                        enum FONT_NAME_RECORD_NAME_ID name_to_return) {
   struct font_name_table_header header;
@@ -143,7 +130,7 @@ error:
   return 1;
 }
 
-int read_font_name(const char *path, char *fontname, size_t fontname_size) {
+static int read_font_name(const char *path, char *fontname, size_t fontname_size) {
   FILE *f = fopen(path, "rb");
   if (!f) {
     c_log(C_LOG_ERROR, "failed to open %s\n", path);
@@ -187,7 +174,7 @@ out:
   return ret;
 }
 
-int search_dir(const char *fonts_dir, const char *fontname, char *fontpath, size_t size) {
+static int search_dir(const char *fonts_dir, const char *fontname, char *fontpath, size_t size) {
   DIR *dirp = opendir(fonts_dir);
   if (!dirp) {
     c_log_errno(C_LOG_ERROR, "failed to open dir %s", fonts_dir);
@@ -237,16 +224,16 @@ out:
 
 int get_fontpath(const char *font, char *fontpath, size_t size) {
   const char *sys_fonts_dir = "/usr/share/fonts";
-  char user_fonts_dir[512];
+  char local_fonts_dir[512];
 
   const char *homepath = getenv("HOME");
   if (!homepath) {
     c_log(C_LOG_ERROR, "couldn't get 'HOME' env var");
     return 1;
   }
-  snprintf(user_fonts_dir, sizeof(user_fonts_dir), "%s/.local/share/fonts", homepath);
+  snprintf(local_fonts_dir, sizeof(local_fonts_dir), "%s/.local/share/fonts", homepath);
 
-  if (search_dir(user_fonts_dir, font, fontpath, size) == 0) return 0;
+  if (search_dir(local_fonts_dir, font, fontpath, size) == 0) return 0;
   if (search_dir(sys_fonts_dir, font, fontpath, size) == 0) return 0;
 
   return 1;

@@ -520,7 +520,7 @@ int c_wl_connection_free(struct c_wl_connection *conn) {
       struct c_map_pair *next = mp->next;
       struct c_wl_object *object = mp->value;
 
-      c_log(C_LOG_DEBUG, "(%p) destroying %s#%d object. data=%p", conn,
+      c_log(C_LOG_DEBUG, "(%p) destroying %s#%lu object. data=%p", conn,
             object->iface->name, object->id, object->data);
 
       if (object->iface->destructor_request >= 0) {

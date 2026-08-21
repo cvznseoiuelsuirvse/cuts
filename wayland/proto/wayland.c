@@ -13,7 +13,6 @@ C_WL_EVENT wl_display_delete_id(struct c_wl_connection *conn, c_wl_object_id wl_
   struct c_wl_message msg = {wl_display, 1, "u", "delete_id"};
   return c_wl_connection_post(conn, &msg, 1, id);
 }
-C_WL_INTERFACE_REGISTER(wl_callback, 1, 0, -1, {})
 C_WL_INTERFACE_REGISTER(wl_display, 1, 2, -1, 
     {"sync",                   wl_display_sync,               1,  "n"},
     {"get_registry",           wl_display_get_registry,       1,  "n"},
@@ -41,6 +40,7 @@ C_WL_EVENT wl_callback_done(struct c_wl_connection *conn, c_wl_object_id wl_call
   struct c_wl_message msg = {wl_callback, 0, "u", "done"};
   return c_wl_connection_post(conn, &msg, 1, callback_data);
 }
+C_WL_INTERFACE_REGISTER(wl_callback, 1, 0, -1, {})
 
 C_WL_INTERFACE_REGISTER(wl_compositor, 6, 2, -1, 
     {"create_surface",         wl_compositor_create_surface,  1,  "n"},

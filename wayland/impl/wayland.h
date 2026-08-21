@@ -39,8 +39,12 @@ enum c_wl_surface_roles {
 
 struct c_wl_surface {
 	struct c_wl_object *obj;
+
   c_wl_object_id frames[8];
   size_t frames_n;
+
+  c_wl_object_id feedbacks[8];
+  size_t feedbacks_n;
 
 	enum c_wl_surface_roles role;
 	struct {
@@ -88,6 +92,11 @@ struct c_wl_data_source {
 struct c_wl_data_device {
   struct c_wl_object *obj;
   struct c_wl_data_source *data_source;
+};
+
+struct c_wl_pointer {
+  struct c_wl_object *obj;
+  struct c_wl_object *seat;
 };
 
 #endif

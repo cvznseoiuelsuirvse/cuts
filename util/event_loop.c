@@ -44,6 +44,15 @@ int c_event_loop_del(struct c_event_loop *loop, struct c_event_resource *resourc
 }
 
 
+int c_event_loop_del_fd(struct c_event_loop *loop, int fd) {
+  struct c_event_resource *resource;
+  c_list_for_each(loop->resources, resource) {
+    if (resource->fd == fd)
+      return c_event_loop_del(loop, resource);
+  }
+  return -1;
+}
+
 void c_event_loop_free(struct c_event_loop *loop) {
   if (loop->epfd) close(loop->epfd);
   if (loop->resources) c_list_destroy(loop->resources);

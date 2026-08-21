@@ -6,6 +6,7 @@ in vec2 v_uv;
 uniform sampler2D tex;
 uniform vec2 uv_offset;
 uniform vec2 uv_scale;
+uniform vec2 res;
 
 out vec4 fragColor;
 

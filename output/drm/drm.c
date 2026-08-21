@@ -41,9 +41,6 @@ static void get_output_make_model(int drm_fd, struct c_output *output) {
     drmModePropertyBlobRes *blob = drmModeGetPropertyBlob(drm_fd, blob_id);
 
     if (blob && blob->data) {
-      print_buffer(blob->data, blob->length, stderr);
-      fprintf(stderr, "\n");
-
       uint16_t manufacturer_bytes =  *(uint8_t *)(blob->data + 8) << 8 | *(uint8_t *)(blob->data + 9);
       output->model =  *(uint16_t *)(blob->data + 10);
       output->serial =  *(uint32_t *)(blob->data + 12);

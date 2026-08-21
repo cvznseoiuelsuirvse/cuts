@@ -6,6 +6,7 @@
 #include <sys/stat.h>
 
 #include "wayland/proto/wayland.h"
+#include "wayland/proto/presentation-time.h"
 
 #include "wayland/impl/wayland.h"
 #include "wayland/impl/xdg-shell.h"
@@ -320,9 +321,9 @@ int wl_surface_frame(struct c_wl_connection *conn, c_wl_args args) {
   C_WL_CHECK_IF_NOT_REGISTERED(wl_callback_id, wl_callback);
 
   struct c_wl_surface *surface = self->data;
-  if (surface->frames_n == LENGTH(surface->frames)) {
-    c_wl_error_set_and_return(surface->obj->id, WL_DISPLAY_ERROR_IMPLEMENTATION,
-                              "too many frames per surface, only 8 allowed");
+  if (surface->frames_n >= LENGTH(surface->frames)) {
+    c_wl_error_set_and_return(self->id, WL_DISPLAY_ERROR_IMPLEMENTATION,
+                              "too many frames per surface");
   }
 
   surface->frames[surface->frames_n++] = wl_callback_id;
@@ -335,6 +336,10 @@ int wl_surface_frame(struct c_wl_connection *conn, c_wl_args args) {
 int wl_surface_destroy(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
   struct c_wl_surface *wl_surface = self->data;
+
+  for (size_t i = 0; i < wl_surface->feedbacks_n; i++) {
+    wp_presentation_feedback_discarded(conn, wl_surface->feedbacks[i]);
+  }
 
   if (wl_surface->active) {
     free_buffer(wl_surface->active);
@@ -442,8 +447,11 @@ int wl_surface_attach(struct c_wl_connection *conn, c_wl_args args) {
       return 0;
 
     if (wl_surface->pending && wl_surface->pending != wl_surface->active) {
-     free_buffer(wl_surface->pending);
-     c_unref(wl_surface->pending);
+      if (wl_surface->pending->obj)
+        wl_buffer_release(conn, wl_surface->pending->obj->id);
+
+      free_buffer(wl_surface->pending);
+      c_unref(wl_surface->pending);
     }
 
     wl_surface->pending = wl_buffer;
@@ -451,8 +459,8 @@ int wl_surface_attach(struct c_wl_connection *conn, c_wl_args args) {
 
   } else {
     if (wl_surface->pending && wl_surface->pending != wl_surface->active) {
-     free_buffer(wl_surface->pending);
-     c_unref(wl_surface->pending);
+      free_buffer(wl_surface->pending);
+      c_unref(wl_surface->pending);
     }
     wl_surface->pending = NULL;
   }
@@ -649,8 +657,10 @@ int wl_seat_get_pointer(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_wl_object *wl_pointer;
   C_WL_CHECK_IF_NOT_REGISTERED(wl_pointer_id, wl_pointer);
 
-  c_wl_object_add(conn, wl_pointer_id, self->version, c_wl_interface_get("wl_pointer"), NULL);
 
+  struct c_wl_pointer *pointer = c_malloc(sizeof(*pointer));
+  pointer->seat = self;
+  pointer->obj = c_wl_object_add(conn, wl_pointer_id, self->version, c_wl_interface_get("wl_pointer"), pointer);
   return 0;
 }
 
@@ -703,6 +713,9 @@ int wl_data_device_set_selection(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_data_source *data_source = wl_data_source->data;
   struct c_wl_data_device *data_device = self->data;
 
+  if (data_device->data_source)
+    c_unref(data_device->data_source);
+
   data_device->data_source = data_source;
   c_ref(data_source);
 
@@ -715,7 +728,7 @@ int wl_data_device_release(struct c_wl_connection *conn, c_wl_args args) {
 
   if (data_device->data_source) c_unref(data_device->data_source);
 
-  c_wl_object_del(conn, args[0].o);
+  c_wl_object_del(conn, self->id);
   return 0;
 }
 

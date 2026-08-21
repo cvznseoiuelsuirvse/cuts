@@ -23,11 +23,11 @@ subdir('seat')
 subdir('wayland')
 subdir('render')
 subdir('output')
+subdir('cursor')
 
 fs = import('fs')
 
 freetype_dep = dependency('freetype2')
-math_dep = cc.find_library('m')
 sources = [
   'cuts.c',
   'fontenum.c',
@@ -42,7 +42,7 @@ executable('cuts',
   sources,
   c_args: c_args,
   dependencies: [
-    math_dep,
+    cur_dep,
     freetype_dep,
     output_dep,
     seat_dep,

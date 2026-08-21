@@ -9,8 +9,6 @@
 #define HEADER_SIZE 8
 #define STRING_SIZE (BUFFER_SIZE - HEADER_SIZE - 4) // 4 (string prefix)
 
-#include <time.h>
-
 #include "wayland/types.h"
 #include "util/map.h"
 
