@@ -106,6 +106,8 @@ void change_mfact(bind_args *);
 void change_nmaster(bind_args *);
 void set_layout(bind_args *);
 void toggle_fullscreen(bind_args *);
+void change_border(bind_args *args);
+void change_gap(bind_args *args);
 
 // bind drag functions
 void window_move(int, bind_args *);

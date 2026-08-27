@@ -97,21 +97,27 @@ static struct layout layouts[] = {
 };
 
 static struct key_bind keys[] = {
-	{LEADER,                        XKB_KEY_q,      quit, 			       {}},
-	{LEADER,                        XKB_KEY_Return, spawn, 	           {.s = "alacritty"}},
-	{LEADER,                        XKB_KEY_x, 	  	window_kill,	     {}},
-	{LEADER,                        XKB_KEY_j, 	  	move_focus,        {.i = 1}},
-	{LEADER,                        XKB_KEY_k, 	  	move_focus,        {.i = -1}},
-  {LEADER | C_KEYBOARD_MOD_SHIFT, XKB_KEY_F,      toggle_floating,   {}},
-  {LEADER,                        XKB_KEY_f,      toggle_fullscreen, {}},
-  {LEADER | C_KEYBOARD_MOD_SHIFT, XKB_KEY_I,      change_mfact,      {.d = -0.05f}},
-  {LEADER | C_KEYBOARD_MOD_SHIFT, XKB_KEY_O,      change_mfact,      {.d = 0.05f}},
+	{LEADER,                        XKB_KEY_q,          quit, 			       {}},
+	{LEADER,                        XKB_KEY_Return,     spawn, 	           {.s = "alacritty"}},
+	{LEADER,                        XKB_KEY_x, 	  	    window_kill,	     {}},
+	{LEADER,                        XKB_KEY_j, 	  	    move_focus,        {.i = 1}},
+	{LEADER,                        XKB_KEY_k, 	  	    move_focus,        {.i = -1}},
+  {LEADER | C_KEYBOARD_MOD_SHIFT, XKB_KEY_F,          toggle_floating,   {}},
+  {LEADER,                        XKB_KEY_f,          toggle_fullscreen, {}},
+  {LEADER | C_KEYBOARD_MOD_SHIFT, XKB_KEY_I,          change_mfact,      {.d = -0.05f}},
+  {LEADER | C_KEYBOARD_MOD_SHIFT, XKB_KEY_O,          change_mfact,      {.d = 0.05f}},
 
-  {LEADER,                        XKB_KEY_o,      change_nmaster,    {.i = -1}},
-  {LEADER,                        XKB_KEY_i,      change_nmaster,    {.i = 1}},
+  {LEADER,                        XKB_KEY_o,          change_nmaster,    {.i = -1}},
+  {LEADER,                        XKB_KEY_i,          change_nmaster,    {.i = 1}},
 
-  {LEADER | C_KEYBOARD_MOD_SHIFT, XKB_KEY_M,      set_layout,        {.p = &layouts[1]}},
-  {LEADER,                        XKB_KEY_m,      set_layout,        {.p = &layouts[0]}},
+  {LEADER | C_KEYBOARD_MOD_SHIFT, XKB_KEY_M,          set_layout,        {.p = &layouts[1]}},
+  {LEADER,                        XKB_KEY_m,          set_layout,        {.p = &layouts[0]}},
+
+  {LEADER,                        XKB_KEY_minus,      change_gap,        {.i = -10}},
+  {LEADER,                        XKB_KEY_equal,      change_gap,        {.i = 10}},
+
+  {LEADER | C_KEYBOARD_MOD_SHIFT, XKB_KEY_underscore, change_border,     {.i = -2}},
+  {LEADER | C_KEYBOARD_MOD_SHIFT, XKB_KEY_plus,       change_border,     {.i = 2}},
 
   TAG(1, XKB_KEY_exclam),
   TAG(2, XKB_KEY_at),

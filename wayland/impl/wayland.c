@@ -1,9 +1,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
-#include <errno.h>
 #include <assert.h>
 #include <stdlib.h>
-#include <sys/stat.h>
 
 #include "wayland/proto/wayland.h"
 #include "wayland/proto/presentation-time.h"
@@ -238,9 +236,6 @@ int wl_shm_pool_destroy(struct c_wl_connection *conn, c_wl_args args) {
   return 0;
 }
 
-int wl_surface_offset(struct c_wl_connection *conn, c_wl_args args) { return 0; }
-int wl_surface_set_buffer_transform(struct c_wl_connection *conn, c_wl_args args) { return 0; }
-
 int wl_surface_set_buffer_scale(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_surface *surface = c_wl_self(conn, args)->data;
   c_wl_int scale = args[1].i;
@@ -252,7 +247,6 @@ int wl_surface_set_buffer_scale(struct c_wl_connection *conn, c_wl_args args) {
 
   return 0;
 }
-
 
 int wl_compositor_create_region(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
@@ -705,19 +699,57 @@ int wl_data_device_manager_get_data_device(struct c_wl_connection *conn, c_wl_ar
 
 int wl_data_device_set_selection(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
+  struct c_wl_data_device *data_device = self->data;
 
   c_wl_object_id wl_data_source_id = args[1].o;
+  if (!wl_data_source_id && data_device->source) {
+    c_unref(data_device->source);
+    data_device->source = NULL;
+    return 0;
+  }
+
   struct c_wl_object *wl_data_source;
   C_WL_CHECK_IF_REGISTERED(wl_data_source_id, wl_data_source);
 
   struct c_wl_data_source *data_source = wl_data_source->data;
+
+  if (data_device->source)
+    c_unref(data_device->source);
+
+  data_device->source = data_source;
+  c_ref(data_source);
+
+  return 0;
+}
+
+int wl_data_device_start_drag(struct c_wl_connection *conn, c_wl_args args) {
+  struct c_wl_object *self = c_wl_self(conn, args);
   struct c_wl_data_device *data_device = self->data;
 
-  if (data_device->data_source)
-    c_unref(data_device->data_source);
+  c_wl_object_id source_id = args[1].o;
+  struct c_wl_object *wl_data_source;
 
-  data_device->data_source = data_source;
-  c_ref(data_source);
+  c_wl_object_id origin_id = args[2].o;
+  struct c_wl_object *origin_wl_surface;
+
+  c_wl_object_id icon_id   = args[3].o;
+  struct c_wl_object *icon_wl_surface;
+
+  if (source_id) {
+    C_WL_CHECK_IF_REGISTERED(source_id, wl_data_source);
+    data_device->dnd.source = wl_data_source->data;
+    c_ref(data_device->dnd.source);
+  }
+
+  C_WL_CHECK_IF_REGISTERED(origin_id, origin_wl_surface);
+  data_device->dnd.origin = origin_wl_surface->data;
+  c_ref(data_device->dnd.origin);
+
+  if (icon_id) {
+    C_WL_CHECK_IF_REGISTERED(icon_id, icon_wl_surface);
+    data_device->dnd.icon = icon_wl_surface->data;
+    c_ref(data_device->dnd.icon);
+  }
 
   return 0;
 }
@@ -726,7 +758,11 @@ int wl_data_device_release(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
   struct c_wl_data_device *data_device = self->data;
 
-  if (data_device->data_source) c_unref(data_device->data_source);
+  if (data_device->source) c_unref(data_device->source);
+
+  if (data_device->dnd.origin) c_unref(data_device->dnd.origin);
+  if (data_device->dnd.source) c_unref(data_device->dnd.source);
+  if (data_device->dnd.icon)   c_unref(data_device->dnd.icon);
 
   c_wl_object_del(conn, self->id);
   return 0;
@@ -760,19 +796,87 @@ int wl_data_source_offer(struct c_wl_connection *conn, c_wl_args args) {
   return 0;
 }
 
-int wl_data_offer_receive(struct c_wl_connection *conn, c_wl_args args) { return 0; }
-int wl_data_offer_accept(struct c_wl_connection *conn, c_wl_args args) { return 0; }
+int wl_data_source_set_actions(struct c_wl_connection *conn, c_wl_args args) {
+  struct c_wl_object *self = c_wl_self(conn, args);
+  struct c_wl_data_source *data_source = self->data;
 
-int wl_data_offer_destroy(struct c_wl_connection *conn, c_wl_args args) { C_WL_DESTRUCTOR(conn, args); }
+  c_wl_enum dnd_actions = args[1].e;
+  if (dnd_actions > 0b111)
+    c_wl_error_set_and_return(self->id, WL_DATA_SOURCE_ERROR_INVALID_ACTION_MASK, "invalid mask");
+
+  if (data_source->actions)
+    c_wl_error_set_and_return(self->id, WL_DATA_SOURCE_ERROR_INVALID_SOURCE,
+                              "this data source already has assigned actions");
+
+  data_source->actions = dnd_actions;
+  return 0;
+}
+
+int wl_data_offer_accept(struct c_wl_connection *conn, c_wl_args args) {
+  struct c_wl_object *self = c_wl_self(conn, args);
+  struct c_wl_data_offer *data_offer = self->data;
+
+  c_wl_string mimetype = args[2].s;
+  if (data_offer->mimetype)
+    free(data_offer->mimetype);
+
+  if (mimetype)
+    data_offer->mimetype = strdup(mimetype);
+  else
+    data_offer->mimetype = NULL;
+
+  return 0;
+}
+
+int wl_data_offer_destroy(struct c_wl_connection *conn, c_wl_args args) { 
+  struct c_wl_object *self = c_wl_self(conn, args);
+  struct c_wl_data_offer *data_offer = self->data;
+  if (data_offer->device) {
+    c_log_value(data_offer, "%p");
+    c_log_value(data_offer->device->offer, "%p");
+    c_unref(data_offer->device->offer);
+    data_offer->device->offer = NULL;
+    c_unref(data_offer->device);
+  }
+
+  if (data_offer->mimetype)
+    free(data_offer->mimetype);
+
+  C_WL_DESTRUCTOR(conn, args); 
+}
+
+int wl_data_offer_set_actions(struct c_wl_connection *conn, c_wl_args args) {
+  struct c_wl_object *self = c_wl_self(conn, args);
+  struct c_wl_data_offer *data_offer = self->data;
+  
+  c_wl_enum dnd_actions = args[1].e;
+  c_wl_enum preferred_action = args[2].e;
+
+  if (dnd_actions > 0b111)
+    c_wl_error_set_and_return(self->id, WL_DATA_OFFER_ERROR_INVALID_ACTION, "invalid dnd_actions");
+
+
+  if (preferred_action & (preferred_action - 1))
+    c_wl_error_set_and_return(self->id, WL_DATA_OFFER_ERROR_INVALID_ACTION_MASK, "invalid preferred_action");
+
+  assert(data_offer->device);
+  if (!data_offer->device->dnd.origin)
+    c_wl_error_set_and_return(
+        self->id, WL_DATA_OFFER_ERROR_INVALID_ACTION,
+        "this data offer isn't associated with drag-and-drop");
+
+  data_offer->actions = dnd_actions;
+  data_offer->preferred = preferred_action;
+
+  return 0;
+}
 
 int wl_data_source_destroy(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
   struct c_wl_data_source *data_source = self->data;
 
-  for (size_t i = 0; i < data_source->mimes; i++) {
-    const char *mime = data_source->mimetypes[i];
-    free((char *)mime);
-  }
+  for (size_t i = 0; i < data_source->mimes; i++)
+    free((char *)data_source->mimetypes[i]);
 
   c_wl_object_del(conn, args[0].o);
   return 0;

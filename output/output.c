@@ -100,7 +100,6 @@ static void page_flip_handler(int fd, unsigned int sequence,
                               unsigned int crtc_id, void *userdata) {
 
   struct c_output *output = userdata;
-  c_log_value(sequence, "%d");
 
   output->swapchain.front ^= 1;
   output->waiting_for_flip = 0;

@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <unistd.h>
-#include <time.h>
 
 #include "util/log.h"
 #include "wayland/display.h"
@@ -117,7 +116,10 @@ void c_log_wl_request(struct c_wl_connection *conn, struct c_wl_object *object, 
         break;
 
       case 's': 
-        _printf("\"%s\"", args[i].s);
+        if (*args[i].s)
+          _printf("\"%s\"", args[i].s);
+        else
+          _printf("NULL");
         break;
 
       case 'e': 
@@ -204,12 +206,6 @@ void c_log_wl_event(struct c_wl_connection *conn, struct c_wl_object *object, co
 void c_log_setup(struct c_log_config *cfg) {
   __log_mask |= cfg->level_mask;
   __color = cfg->color;
-}
-
-static int64_t now_ms() {
-  struct timespec ts;
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-  return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
 int c_since_start_ms() {

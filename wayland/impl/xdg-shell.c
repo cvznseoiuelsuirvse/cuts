@@ -157,12 +157,6 @@ int xdg_toplevel_set_max_size(struct c_wl_connection *conn, union c_wl_arg *args
   return 0;
 }
 
-// these 4 are up to the wm
-int xdg_toplevel_set_fullscreen(struct c_wl_connection *conn, c_wl_args args)   { return 0; };
-int xdg_toplevel_unset_fullscreen(struct c_wl_connection *conn, c_wl_args args) { return 0; };
-int xdg_toplevel_set_maximized(struct c_wl_connection *conn, c_wl_args args)    { return 0; };
-int xdg_toplevel_set_minimized(struct c_wl_connection *conn, c_wl_args args)    { return 0; };
-
 int xdg_toplevel_set_parent(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_wl_object *self = c_wl_self(conn, args);
 

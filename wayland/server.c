@@ -19,6 +19,10 @@
 
 #define MAX_CMSG_FDS 256
 
+#define USER_HANDLER_D         1 << 0
+#define USER_HANDLER           1 << 1
+#define IMPLEMENTATION_HANDLER 1 << 2
+
 static char            __error_msg[STRING_SIZE] = {0};
 static c_wl_int        __error_code = 0;
 static c_wl_object_id  __error_object_id = 0;
@@ -235,7 +239,7 @@ int c_wl_connection_post(struct c_wl_connection *conn, struct c_wl_message *msg,
 
 static int handle_request(struct c_wl_connection *conn,
                           struct c_wl_object *object, c_wl_args args,
-                          uint16_t op) {
+                          uint16_t op, int *handlers_called) {
   struct c_wl_request request = object->iface->requests[op];
   int destructor = object->iface->destructor_request;
   void *userdata = object->listeners.userdata;
@@ -249,20 +253,20 @@ static int handle_request(struct c_wl_connection *conn,
 
   if (handler && destructor == op) {
     status = handler(conn, args, userdata);
+    *handlers_called |= USER_HANDLER_D;
     if (status) goto out;
-  } else {
-    status |= 1;
   }
 
   if (request.impl) {
     status = request.impl(conn, args);
+    *handlers_called |= IMPLEMENTATION_HANDLER;
     if (status) goto out;
-  } else {
-    status |= 1 << 1;
   }
 
-  if (handler && destructor != op)
+  if (handler && destructor != op) {
     status = handler(conn, args, userdata);
+    *handlers_called |= USER_HANDLER;
+  }
 
 out:
   return status;
@@ -339,12 +343,14 @@ static int dispatch(struct c_wl_connection *conn, struct message_header *header,
 
   c_log_wl_request(conn, object, &request, args);
 
-  if (!request.impl) {
+
+  int handlers_called;
+  int status = handle_request(conn, object, args, header->op, &handlers_called);
+  if (!handlers_called) {
     c_log(C_LOG_ERROR, "%s.%s method not implemented", iface->name, request.name);
     return DISPATCH_FATAL_ERR;
   }
 
-  int status = handle_request(conn, object, args, header->op);
   if (arr.data) free(arr.data);
   return status;
 
@@ -450,7 +456,7 @@ struct c_wl_object *c_wl_object_add(struct c_wl_connection *conn, c_wl_new_id id
   if (0 < id && id < 0xFF000000) {
     c_bitmap_set(conn->client_id_pool, id - 1);
 
-  } else if (id == 0) {
+  } else if (id == C_WL_OBJECT_NEW_SERVER_ID) {
     c_wl_object_id free_id = c_bitmap_get_free(conn->server_id_pool);
     c_bitmap_set(conn->server_id_pool, free_id);
     id = free_id + 0xFF000000;
@@ -525,12 +531,10 @@ int c_wl_connection_free(struct c_wl_connection *conn) {
 
       if (object->iface->destructor_request >= 0) {
         c_wl_arg arg = {.o = object->id};
-        if (handle_request(conn, object, &arg,
-                           object->iface->destructor_request) == 3) {
-        // returns 3 if no handlers and no implementation for destructor
-        // 3 == ((1 << 1) & 1)
-          goto unref;
-        }
+        int handlers_called;
+        handle_request(conn, object, &arg, object->iface->destructor_request, &handlers_called);
+        if (!((USER_HANDLER_D | IMPLEMENTATION_HANDLER) & handlers_called)) goto unref;
+
         goto iter_end;
       }
 

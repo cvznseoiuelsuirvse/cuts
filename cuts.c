@@ -1,8 +1,5 @@
 #include <signal.h>
-#include <stdlib.h>
 #include <assert.h>
-#include <sys/time.h>
-#include <unistd.h>
 #include <fcntl.h>
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -147,9 +144,20 @@ struct {
   } pointer;
 
   struct {
-    struct c_wl_connection *owner;
+    struct c_wl_connection  *src;
+    struct c_wl_connection  *dst;
     struct c_wl_data_source *data_source;
-  } clipboard;
+    struct c_wl_data_device *data_device;
+  } cb;
+
+  struct {
+    struct c_wl_connection  *src;
+    struct c_wl_connection  *dst;
+    struct c_wl_data_source *data_source;
+    struct c_wl_data_device *data_device;
+    enum wl_data_device_manager_dnd_action_enum negotiated_actions;
+  } dnd;
+
 
   c_list *clients;
   struct client *focused_client;
@@ -193,6 +201,8 @@ void output_damage(struct c_output *output);
 struct c_wl_surface *find_root_surface(struct c_wl_surface *surface);
 void set_background(uint32_t width, uint32_t height, double x, double y);
 void cursor_move(struct c_cursor *cur, double x, double y);
+int count_tiled();
+void calc_tile_layout(struct monitor *mon, struct tile_layout *layout);
 
 struct client *tag_select_client(int direction);
 struct client *client_new(struct c_wl_connection *connection);
@@ -235,8 +245,11 @@ int on_window_fullscreen(struct c_wl_connection *conn, c_wl_args args, void *use
 int on_window_close(struct c_wl_connection *conn, c_wl_args args, void *userdata);
 void on_connection_gone(struct c_wl_connection *conn, void *userdata);
 int on_data_source_destroy(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-int on_data_receive(struct c_wl_connection *conn, c_wl_args args, void *userdata);
+int on_data_offer_receive(struct c_wl_connection *conn, c_wl_args args, void *userdata);
+int on_data_offer_set_actions(struct c_wl_connection *conn, c_wl_args args, void *userdata);
+int on_data_offer_accept(struct c_wl_connection *conn, c_wl_args args, void *userdata);
 int on_decorations_set_mode(struct c_wl_connection *conn, c_wl_args args, void *userdata);
+int on_start_drag(struct c_wl_connection *conn, c_wl_args args, void *userdata);
 int on_set_selection(struct c_wl_connection *conn, c_wl_args args, void *userdata);
 int on_set_shape(struct c_wl_connection *conn, c_wl_args args, void *userdata);
 
@@ -253,9 +266,9 @@ void change_nmaster(bind_args *args);
 void window_move(int done, bind_args *args);
 void window_move_to_workspace(bind_args *args);
 void window_resize(int done, bind_args *args);
+void change_border(bind_args *args);
+void change_gap(bind_args *args);
 
-int count_tiled();
-void calc_tile_layout(struct monitor *mon, struct tile_layout *layout);
 void zoom();
 void tile();
 
@@ -502,6 +515,50 @@ void cursor_move(struct c_cursor *cur, double x, double y) {
   pointer_y = y;
 }
 
+int count_tiled() {
+  struct client *client;
+  int i = 0;
+  clients_for_each_in_tag(client) {
+    struct c_window *window = client->window;
+    if (!(window->state & (C_WINDOW_FLOAT | C_WINDOW_FULLSCREEN))) i++;
+  }
+  return i;
+}
+
+void calc_tile_layout(struct monitor *mon, struct tile_layout *layout) {
+  struct c_output_mode *mode = cuts.focused_mon->output->current_mode;
+  struct bar *bar = &cuts.bar;
+
+  layout->width = mode->width - gap * 2;
+  layout->height = mode->height - gap * 2;
+
+  layout->y = layout->x = gap;
+
+  if (bar->cfg->pos == BAR_TOP) {
+    layout->height -= cuts.bar.height;
+    layout->y += cuts.bar.height;
+  }
+
+  if (bar->cfg->pos == BAR_BOTTOM) {
+    layout->height -= cuts.bar.height;
+  }
+
+  if (bar->cfg->pos == BAR_RIGHT) {
+    layout->width -= cuts.bar.width;
+  }
+
+  if (bar->cfg->pos == BAR_LEFT) {
+    layout->width -= cuts.bar.width;
+    layout->x += cuts.bar.width;
+  }
+
+  layout->master.x = layout->x;
+  layout->master.width = layout->width * mfact - (uint32_t)(gap / 2);
+
+  layout->stack.x = layout->master.x + layout->master.width + gap;
+  layout->stack.width = layout->width - layout->master.width - gap;
+}
+
 struct client *tag_select_client(int direction) {
   uint32_t clients = 0;
 
@@ -546,6 +603,15 @@ void client_free(struct client *client) {
 
 void client_unfocus(struct client *client) {
   struct c_window *window = client->window;
+  struct c_wl_object *o;
+  struct c_wl_connection *conn = window->conn;
+
+  c_wl_objects_for_each(conn, o) {
+    if (STREQ(o->iface->name, "wl_data_device")) {
+      wl_data_device_leave(conn, o->id);
+    }
+  }
+
   c_window_unfocus(window);
   client_border_set_color(cuts.focused_client, border_inactive);
   cuts.focused_client = NULL;
@@ -564,24 +630,40 @@ void client_focus(struct client *client, double hotspot_x, double hotspot_y) {
 
   c_wl_objects_for_each(conn, o) {
     if (STREQ(o->iface->name, "wl_data_device")) {
-      struct c_wl_data_source *data_source = cuts.clipboard.data_source;
-      if (!data_source) {
+      if (!cuts.cb.src) {
         wl_data_device_selection(conn, o->id, 0);
-      } else {
-        struct c_wl_object *wl_data_offer =
-            c_wl_object_add(conn, 0, o->version,
-                            c_wl_interface_get("wl_data_offer"), NULL);
+        goto out;
 
-        wl_data_device_data_offer(conn, o->id, wl_data_offer->id);
-        for (size_t i = 0; i < data_source->mimes; i++) {
-          wl_data_offer_offer(conn, wl_data_offer->id, data_source->mimetypes[i]);
-        }
+      }
+      struct c_wl_data_offer *data_offer = c_malloc(sizeof(*data_offer));
+      struct c_wl_data_source *data_source = cuts.cb.data_source;
 
-        wl_data_device_selection(conn, o->id, wl_data_offer->id);
+      data_offer->obj =
+          c_wl_object_add(conn, C_WL_OBJECT_NEW_SERVER_ID, o->version,
+                          c_wl_interface_get("wl_data_offer"), data_offer);
+
+      wl_data_device_data_offer(conn, o->id, data_offer->obj->id);
+      for (size_t i = 0; i < cuts.cb.data_source->mimes; i++)
+        wl_data_offer_offer(conn, data_offer->obj->id, data_source->mimetypes[i]);
+
+      if (cuts.cb.src) {
+        wl_data_device_selection(conn, o->id, data_offer->obj->id);
+        cuts.cb.dst = conn;
+
+      } else if (cuts.dnd.src) {
+        cuts.dnd.dst = conn;
+        double lx, ly;
+        struct c_wl_surface *target = c_window_surface_at(window, pointer_x, pointer_y, &lx, &ly);
+        wl_data_device_enter(conn, o->id, c_wl_serial(), target->obj->id,
+                             C_WL_FIXED_FROM_DOUBLE(lx),
+                             C_WL_FIXED_FROM_DOUBLE(ly), data_offer->obj->id);
+        wl_data_offer_source_actions(conn, data_offer->obj->id, data_source->actions);
+
       }
     }
   }
 
+out:
   c_window_focus(window, hotspot_x, hotspot_y);
   cuts.focused_client = client;
 
@@ -808,6 +890,20 @@ void on_mouse_movement(struct c_input_mouse_event *event, void *userdata) {
 
   if (focused == cuts.focused_client) {
     c_window_pointer_move(focused->window, hotx, hoty);
+
+    if (cuts.dnd.src) {
+      struct c_wl_object *o;
+      c_wl_objects_for_each(focused->window->conn, o) {
+        if (STREQ(o->iface->name, "wl_data_device")) {
+          double lx, ly;
+          c_window_surface_at(focused->window, pointer_x, pointer_y, &lx, &ly);
+          wl_data_device_motion(focused->window->conn, o->id, now_ms(),
+                                C_WL_FIXED_FROM_DOUBLE(lx),
+                                C_WL_FIXED_FROM_DOUBLE(ly));
+        }
+      }
+    }
+
   } else if (focused) {
     client_change_focus(focused, hotx, hoty);
   }
@@ -824,8 +920,22 @@ void on_mouse_scroll(struct c_input_mouse_event *event, void *userdata) {
 }
 
 void on_mouse_button(struct c_input_mouse_event *event, void *userdata) {
-  if (!cuts.focused_client) return;
-  c_window_pointer_button(cuts.focused_client->window, event->button, event->is_pressed);
+  if (cuts.dnd.src && !event->is_pressed) {
+    struct client *client = cuts.focused_client;
+    struct c_window *window = client->window;
+
+    struct c_wl_object *o;
+    c_wl_objects_for_each(window->conn, o) {
+      if (STREQ(o->iface->name, "wl_data_device")) {
+        wl_data_device_drop(cuts.dnd.dst, o->id);
+      }
+    }
+
+    wl_data_source_dnd_drop_performed(cuts.dnd.src, cuts.dnd.data_source->obj->id);
+  }
+
+  if (cuts.focused_client)
+    c_window_pointer_button(cuts.focused_client->window, event->button, event->is_pressed);
 }
 
 void on_keyboard_key(struct c_input_keyboard_event *event, void *userdata) {
@@ -1093,27 +1203,65 @@ void on_connection_gone(struct c_wl_connection *conn, void *userdata) {
 
 int on_data_source_destroy(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
   struct c_wl_data_source *data_source = c_wl_self(conn, args)->data;
-  if (data_source == cuts.clipboard.data_source)
-    memset(&cuts.clipboard, 0, sizeof(cuts.clipboard));
+
+  if (cuts.cb.src == conn && cuts.cb.data_source == data_source)
+    cuts.cb.data_source = NULL;
+  else if (cuts.dnd.src == conn && cuts.dnd.data_source == data_source)
+    cuts.dnd.data_source = NULL;
 
   return 0;
 }
 
-int on_data_receive(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
+int on_data_offer_receive(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
+  struct c_wl_data_source *data_source;
+  struct c_wl_connection  *src;
+
+  if (cuts.cb.dst == conn) {
+    data_source = cuts.cb.data_source;
+    src = cuts.cb.src;
+  } else {
+    data_source = cuts.dnd.data_source;
+    src = cuts.dnd.src;
+  }
+
+  if (!data_source) return 0;
+
   c_wl_string mimetype = args[1].s;
   c_wl_fd wfd = args[2].F;
 
-  struct c_wl_data_source *data_source = cuts.clipboard.data_source;
-  if (!data_source) return 0;
-
   for (size_t i = 0; i < data_source->mimes; i++) {
     if (STREQ(data_source->mimetypes[i], mimetype)) {
-      wl_data_source_send(cuts.clipboard.owner, cuts.clipboard.data_source->obj->id, mimetype, wfd);
-      c_wl_connection_flush(cuts.clipboard.owner);
+      wl_data_source_send(src, data_source->obj->id, mimetype, wfd);
+      c_wl_connection_flush(src);
       return 0;
     }
   }
 
+  return 0;
+}
+
+int on_data_offer_set_actions(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
+  struct c_wl_object *self = c_wl_self(conn, args);
+  struct c_wl_data_offer *data_offer = self->data;
+  struct c_wl_data_source *source = cuts.dnd.data_source;
+
+  enum wl_data_device_manager_dnd_action_enum available = data_offer->actions & source->actions;
+  enum wl_data_device_manager_dnd_action_enum selected = available & data_offer->preferred;
+
+  if (selected != cuts.dnd.negotiated_actions) {
+    wl_data_source_action(cuts.dnd.src, source->obj->id, selected);
+    wl_data_offer_action(conn, self->id, selected);
+    cuts.dnd.negotiated_actions = selected;
+  }
+
+  return 0;
+}
+
+int on_data_offer_accept(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
+  struct c_wl_object *self = c_wl_self(conn, args);
+  struct c_wl_data_offer *offer = self->data;
+
+  wl_data_source_target(cuts.dnd.src, cuts.dnd.data_source->obj->id, offer->mimetype);
   return 0;
 }
 
@@ -1125,29 +1273,73 @@ int on_decorations_set_mode(struct c_wl_connection *conn, c_wl_args args, void *
   return 0;
 }
 
+int on_start_drag(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
+  struct c_wl_object *wl_data_device = c_wl_self(conn, args);
+  struct c_wl_data_device *data_device = wl_data_device->data;
+  struct c_wl_data_source *data_source = data_device->dnd.source;
+
+  cuts.dnd.src = conn;
+  cuts.dnd.data_source = data_source;
+  cuts.dnd.data_device = data_device;
+  
+  c_log_value(data_source, "%p");
+  c_log_value(data_device, "%p");
+
+  struct c_wl_data_offer *data_offer = c_malloc(sizeof(*data_offer));
+  data_offer->obj =
+      c_wl_object_add(conn, C_WL_OBJECT_NEW_SERVER_ID, wl_data_device->version,
+                      c_wl_interface_get("wl_data_offer"), data_offer);
+
+  data_device->offer = data_offer;
+  c_ref(data_offer);
+  data_offer->device = data_device;
+  c_ref(data_device);
+
+  wl_data_device_data_offer(conn, wl_data_device->id, data_offer->obj->id);
+  for (size_t i = 0; i < data_source->mimes; i++)
+    wl_data_offer_offer(conn, data_offer->obj->id, data_source->mimetypes[i]);
+
+  wl_data_offer_source_actions(conn, data_offer->obj->id, data_source->actions);
+
+  double lx, ly;
+  struct c_wl_surface *target = c_window_surface_at(cuts.focused_client->window, pointer_x, pointer_y, &lx, &ly);
+  wl_data_device_enter(conn, wl_data_device->id, c_wl_serial(), target->obj->id,
+                       C_WL_FIXED_FROM_DOUBLE(lx), C_WL_FIXED_FROM_DOUBLE(ly),
+                       data_offer->obj->id);
+  cuts.dnd.dst = conn;
+  return 0;
+}
+
 int on_set_selection(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
   struct c_wl_object *wl_data_device = c_wl_self(conn, args);
   struct c_wl_data_device *data_device = wl_data_device->data;
-  struct c_wl_data_source *data_source = data_device->data_source;
+  struct c_wl_data_source *data_source = data_device->source;
 
-  if (cuts.clipboard.data_source == data_source) return 0;
+  if (cuts.cb.data_source == data_source) return 0;
 
-  if (cuts.clipboard.owner)
-    wl_data_source_cancelled(cuts.clipboard.owner, cuts.clipboard.data_source->obj->id);
+  if (cuts.cb.src)
+    wl_data_source_cancelled(cuts.cb.src, cuts.cb.data_source->obj->id);
 
-  cuts.clipboard.owner = conn;
-  cuts.clipboard.data_source = data_source;
+  cuts.cb.src = conn;
+  cuts.cb.data_source = data_source;
+  cuts.cb.data_device = data_device;
   
-  struct c_wl_object *wl_data_offer =
-      c_wl_object_add(conn, 0, wl_data_device->version,
-                      c_wl_interface_get("wl_data_offer"), NULL);
+  struct c_wl_data_offer *data_offer = c_malloc(sizeof(*data_offer));
+  data_offer->obj =
+      c_wl_object_add(conn, C_WL_OBJECT_NEW_SERVER_ID, wl_data_device->version,
+                      c_wl_interface_get("wl_data_offer"), data_offer);
 
-  wl_data_device_data_offer(conn, wl_data_device->id, wl_data_offer->id);
-  for (size_t i = 0; i < data_source->mimes; i++) {
-    wl_data_offer_offer(conn, wl_data_offer->id, data_source->mimetypes[i]);
-  }
-  wl_data_device_selection(conn, wl_data_device->id, wl_data_offer->id);
-  
+  data_device->offer = data_offer;
+  c_ref(data_offer);
+  data_offer->device = data_device;
+  c_ref(data_device);
+
+  wl_data_device_data_offer(conn, wl_data_device->id, data_offer->obj->id);
+  for (size_t i = 0; i < data_source->mimes; i++)
+    wl_data_offer_offer(conn, data_offer->obj->id, data_source->mimetypes[i]);
+  wl_data_device_selection(conn, wl_data_device->id, data_offer->obj->id);
+
+  cuts.cb.dst = conn;
   return 0;
 }
 
@@ -1351,48 +1543,20 @@ void window_resize(int done, bind_args *args) {
   LAYOUT(focused->mon);
 }
 
-int count_tiled() {
-  struct client *client;
-  int i = 0;
-  clients_for_each_in_tag(client) {
-    struct c_window *window = client->window;
-    if (!(window->state & (C_WINDOW_FLOAT | C_WINDOW_FULLSCREEN))) i++;
-  }
-  return i;
+void change_border(bind_args *args) {
+  border_width = CLAMP(border_width + args->i, 0, 50);
+
+  struct monitor *mon;
+  c_list_for_each(cuts.monitors, mon)
+    LAYOUT(mon);
 }
 
-void calc_tile_layout(struct monitor *mon, struct tile_layout *layout) {
-  struct c_output_mode *mode = cuts.focused_mon->output->current_mode;
-  struct bar *bar = &cuts.bar;
+void change_gap(bind_args *args) {
+  gap = CLAMP(gap + args->i, 0, 150);
 
-  layout->width = mode->width - gap * 2;
-  layout->height = mode->height - gap * 2;
-
-  layout->y = layout->x = gap;
-
-  if (bar->cfg->pos == BAR_TOP) {
-    layout->height -= cuts.bar.height;
-    layout->y += cuts.bar.height;
-  }
-
-  if (bar->cfg->pos == BAR_BOTTOM) {
-    layout->height -= cuts.bar.height;
-  }
-
-  if (bar->cfg->pos == BAR_RIGHT) {
-    layout->width -= cuts.bar.width;
-  }
-
-  if (bar->cfg->pos == BAR_LEFT) {
-    layout->width -= cuts.bar.width;
-    layout->x += cuts.bar.width;
-  }
-
-  layout->master.x = layout->x;
-  layout->master.width = layout->width * mfact - gap;
-
-  layout->stack.x = layout->master.x + layout->master.width + gap;
-  layout->stack.width = layout->width - layout->master.width - gap;
+  struct monitor *mon;
+  c_list_for_each(cuts.monitors, mon)
+    LAYOUT(mon);
 }
 
 void zoom() {
@@ -1481,11 +1645,10 @@ floating:
     client_border_sync(client);
 
 fullscreen:
-    if (cuts.focused_client == client) {
+    if (cuts.focused_client == client)
       c_window_activate(window);
-    } else {
+    else
       c_window_deactivate(window);
-    }
 
     c_scene_node_update(client->window->node);
 
@@ -1863,6 +2026,7 @@ void cleanup(int err) {
 int main() {
   int ret = 0;
   cuts.focused_tag = 1 << 0;
+  cuts.dnd.negotiated_actions = 0xff;
 
   c_signal_handler_add(SIGTERM, signal_handler, NULL);
   c_signal_handler_add(SIGINT, signal_handler, NULL);
@@ -1977,12 +2141,12 @@ mode_iter_end:
   };
   c_input_add_event_listener_keyboard(session->input, &listener_keyboard, NULL);
 
-  for(size_t i = 0; i < LENGTH(keys); i++) {
+  for (size_t i = 0; i < LENGTH(keys); i++) {
     struct key_bind *b = &keys[i];
     c_input_add_combo_handler(session->input, b->modmask, b->keysym, 0, (void (*)(void *))b->handler, &b->args);
   }
 
-  for(size_t i = 0; i < LENGTH(mouse); i++) {
+  for (size_t i = 0; i < LENGTH(mouse); i++) {
     struct mouse_bind *b = &mouse[i];
     if (b->drag)
       c_input_add_drag_combo_handler(
@@ -2026,6 +2190,7 @@ mode_iter_end:
 
   struct c_wl_data_device_listeners data_device_listeners = {
     .set_selection = on_set_selection,
+    .start_drag = on_start_drag,
   };
   wl_data_device_add_listener(display, &data_device_listeners, NULL);
 
@@ -2035,7 +2200,8 @@ mode_iter_end:
   wl_data_source_add_listener(display, &data_source_listeners, NULL);
 
   struct c_wl_data_offer_listeners data_offer_listeners = {
-    .receive = on_data_receive,
+    .receive = on_data_offer_receive,
+    .set_actions = on_data_offer_set_actions,
   };
   wl_data_offer_add_listener(display, &data_offer_listeners, NULL);
 

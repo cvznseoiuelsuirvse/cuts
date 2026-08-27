@@ -1,6 +1,9 @@
 #ifndef CUTS_WAYLAND_SERVER_H
 #define CUTS_WAYLAND_SERVER_H
 
+#include "wayland/types.h"
+#include "util/map.h"
+
 #define DISPATCH_PROTO_ERR  -1
 #define DISPATCH_FATAL_ERR  -2
 #define DISPATCH_CLIENT_ERR -3
@@ -9,8 +12,7 @@
 #define HEADER_SIZE 8
 #define STRING_SIZE (BUFFER_SIZE - HEADER_SIZE - 4) // 4 (string prefix)
 
-#include "wayland/types.h"
-#include "util/map.h"
+#define C_WL_OBJECT_NEW_SERVER_ID 0
 
 #define C_WL_CHECK_IF_REGISTERED(id, object) \
   (object) = c_wl_object_get(conn, (id)); \

@@ -5,7 +5,7 @@
 #include <xkbcommon/xkbcommon.h>
 
 #include "wayland/proto/wayland.h"
-#include "output/output.h"
+#include "wayland/impl/wayland.h"
 
 enum c_window_states {
 	C_WINDOW_FLOAT        = 1 << 1,
@@ -58,6 +58,6 @@ void c_window_keyboard_key(struct c_window *window, int32_t key, int pressed,
                            xkb_mod_mask_t mods_locked, xkb_layout_index_t group,
                            int send_mods);
 
-void c_window_move_to_output(struct c_window *window, struct c_output *output);
+struct c_wl_surface *c_window_surface_at(struct c_window *window, double x, double y, double *lx, double *ly);
 
 #endif

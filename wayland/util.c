@@ -109,8 +109,12 @@ uint16_t read_u16(uint8_t *buffer, size_t *offset) {
 void read_string(uint8_t *buffer, size_t *offset, char *out, size_t out_size) {
   uint32_t string_size = read_u32(buffer, offset);
   assert(string_size < out_size);
-  memcpy(out, buffer + *offset, string_size);
-  *offset += PADDED4(string_size);
+  if (!string_size) {
+    out = NULL;
+  } else {
+    memcpy(out, buffer + *offset, string_size);
+    *offset += PADDED4(string_size);
+  }
 }
 
 void *read_array(uint8_t *buffer, size_t *offset, size_t size) {

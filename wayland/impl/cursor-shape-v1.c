@@ -22,6 +22,4 @@ int wp_cursor_shape_manager_v1_get_pointer(struct c_wl_connection *conn, c_wl_ar
 }
 
 int wp_cursor_shape_manager_v1_destroy(struct c_wl_connection *conn, c_wl_args args) { C_WL_DESTRUCTOR(conn, args); }
-
-int wp_cursor_shape_device_v1_set_shape(struct c_wl_connection *conn, c_wl_args args) { return 0; }
 int wp_cursor_shape_device_v1_destroy(struct c_wl_connection *conn, c_wl_args args) { C_WL_DESTRUCTOR(conn, args); }

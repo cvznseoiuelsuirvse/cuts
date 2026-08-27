@@ -11,8 +11,6 @@
 #include "util/log.h"
 #include "util/helpers.h"
 
-#define shape_flag(shape) (1 << (shape))
-
 struct c_input_event_listener_mouse mouse_event_listener;
 
 extern struct c_cursor_impl hw_impl;
@@ -80,7 +78,7 @@ get_shapes:
   while ((d = readdir(dir))) {
     for (int i = 0; i < C_CURSOR_ALL_RESIZE; i++) {
       if (STREQ(d->d_name, str_cursor_shape(i)))
-        shapes |= shape_flag(i);
+        shapes |= ENUM_FLAG(i);
     }
   }
 
@@ -158,7 +156,7 @@ int c_cursor_load(struct c_cursor *cur, const char *theme, size_t size) {
 
   c_log(C_LOG_INFO, "cursor: %s. size: %d", cur->theme, cur->size);
   for (int i = 0; i < C_CURSOR_ALL_RESIZE; i++) {
-    if (cur->shapes & shape_flag(i))
+    if (cur->shapes & ENUM_FLAG(i))
       c_log(C_LOG_INFO, "  shape %s", str_cursor_shape(i));
   }
 
@@ -207,7 +205,7 @@ C_EVENT_CALLBACK on_frame_swap(struct c_event_loop *loop, int fd, void *userdata
 
 
 int c_cursor_set_shape(struct c_cursor *cur, enum c_cursor_shape shape) {
-  if (!(shape_flag(shape) & cur->shapes)) return 0;
+  if (!(ENUM_FLAG(shape) & cur->shapes)) return 0;
 
   cur->shape = shape;
 

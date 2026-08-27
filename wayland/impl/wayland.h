@@ -2,6 +2,7 @@
 #define CUTS_WAYLAND_IMPL_WAYLAND_H
 
 #include "wayland/types.h"
+#include "wayland/proto/wayland.h"
 #include "util/list.h"
 
 struct c_wl_region {
@@ -80,18 +81,41 @@ struct c_wl_subsurface {
   struct c_wl_surface *parent;
 };
 
+struct c_wl_data_offer {
+  struct c_wl_object *obj;
+
+  char *mimetype;
+
+  enum wl_data_device_manager_dnd_action_enum actions;
+  enum wl_data_device_manager_dnd_action_enum preferred;
+
+  struct c_wl_data_device *device;
+  struct c_wl_data_source *source;
+};
+
 struct c_wl_data_source {
   struct c_wl_object *obj;
 
   const char *mimetypes[32];
   size_t mimes;
 
-  struct c_wl_data_device *data_device;
+  enum wl_data_device_manager_dnd_action_enum actions;
+
+  struct c_wl_data_device *device;
+
 };
 
 struct c_wl_data_device {
   struct c_wl_object *obj;
-  struct c_wl_data_source *data_source;
+
+  struct c_wl_data_source *source;
+  struct c_wl_data_offer *offer;
+
+  struct {
+    struct c_wl_data_source *source;
+    struct c_wl_surface *origin;
+    struct c_wl_surface *icon;
+  } dnd;
 };
 
 struct c_wl_pointer {
