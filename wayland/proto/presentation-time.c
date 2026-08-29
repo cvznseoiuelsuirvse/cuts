@@ -1,3 +1,4 @@
+/* auto-generated */
 #include <stdint.h>
 
 #include "wayland/server.h"

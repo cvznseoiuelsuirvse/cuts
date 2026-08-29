@@ -1,3 +1,4 @@
+/* auto-generated */
 #ifndef CUTS_XDG_DECORATION_UNSTABLE_V1_H
 #define CUTS_XDG_DECORATION_UNSTABLE_V1_H
 

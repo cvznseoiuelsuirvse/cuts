@@ -4,6 +4,9 @@ src_root = meson.project_source_root()
 
 xmls = run_command('find', src_root / 'protocols', '-name', '*.xml', check: true).stdout().strip().split('\n')
 
+run_command('rm', '-rf', src_root / 'wayland' / 'proto', check: true)
+run_command('mkdir', src_root / 'wayland' / 'proto', check: true)
+
 proto_sources = []
 foreach xml : xmls
   proto = fs.stem(xml)
@@ -29,6 +32,8 @@ wayland_sources = files(
   'impl/viewporter.c',
   'impl/cursor-shape-v1.c',
   'impl/presentation-time.c',
+  'impl/fractional-scale-v1.c',
+  'impl/ext-data-control-v1.c',
 )
 
 wayland_dep = declare_dependency(

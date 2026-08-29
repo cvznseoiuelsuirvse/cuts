@@ -1,3 +1,4 @@
+/* auto-generated */
 #ifndef CUTS_CURSOR_SHAPE_V1_H
 #define CUTS_CURSOR_SHAPE_V1_H
 

@@ -4,9 +4,6 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include "wayland/types.h"
-
-void calc_popup_coords(struct c_xdg_surface *surface, int32_t *x, int32_t *y);
 int32_t read_i32(uint8_t *buffer, size_t *offset);
 uint32_t read_u32(uint8_t *buffer, size_t *offset);
 uint16_t read_u16(uint8_t *buffer, size_t *offset);

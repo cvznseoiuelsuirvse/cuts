@@ -110,8 +110,6 @@ int zwp_linux_buffer_params_v1_create_immed(struct c_wl_connection *conn, c_wl_a
   if (!buffer)
         c_wl_error_set_and_return(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed");
 
-  buffer->scale = 1;
-
   dma->drm_format = format;
   dma->width = width;
   dma->height = height;

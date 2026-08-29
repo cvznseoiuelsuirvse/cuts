@@ -8,9 +8,6 @@
 #define DISPATCH_FATAL_ERR  -2
 #define DISPATCH_CLIENT_ERR -3
 
-#define BUFFER_SIZE 2048
-#define HEADER_SIZE 8
-#define STRING_SIZE (BUFFER_SIZE - HEADER_SIZE - 4) // 4 (string prefix)
 
 #define C_WL_OBJECT_NEW_SERVER_ID 0
 
@@ -41,30 +38,6 @@
   }
 
 struct c_wl_display;
-struct c_wl_object {
-	c_wl_object_id id;
-  uint32_t version;
-  void *data;
-	const struct c_wl_interface *iface;
-  struct {
-    void **handlers;
-    void *userdata;
-  } listeners;
-  struct c_wl_connection *conn;
-};
-
-typedef union c_wl_arg {
-	c_wl_int 	  i;
-	c_wl_uint   u;
-	c_wl_fixed  f;
-	c_wl_new_id n;
-	c_wl_array  *a;
-	c_wl_fd     F;
-	c_wl_enum   e;
-	c_wl_object_id o;
-	char      s[STRING_SIZE];
-} c_wl_arg, *c_wl_args;
-
 struct c_wl_message {
 	c_wl_object_id id;
 	uint32_t op;

@@ -305,6 +305,7 @@ def parse(xml_path: str, basename: str) -> None:
     h_guard_name = f"CUTS_{os.path.basename(basename).replace("-", "_").upper()}_H"
 
     with open(f"{basename}.h", "w") as f:
+        f.write(f'/* auto-generated */\n')
         f.write(f'#ifndef {h_guard_name}\n')
         f.write(f'#define {h_guard_name}\n\n')
 
@@ -331,6 +332,7 @@ def parse(xml_path: str, basename: str) -> None:
         f.write("#endif")
 
     with open(f"{basename}.c", "w") as f:
+        f.write(f'/* auto-generated */\n')
         f.write('#include <stdint.h>\n\n')
         f.write('#include "wayland/server.h"\n')
         f.write('#include "wayland/display.h"\n')

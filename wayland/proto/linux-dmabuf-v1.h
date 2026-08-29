@@ -1,3 +1,4 @@
+/* auto-generated */
 #ifndef CUTS_LINUX_DMABUF_V1_H
 #define CUTS_LINUX_DMABUF_V1_H
 

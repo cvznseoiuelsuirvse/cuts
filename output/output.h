@@ -43,8 +43,6 @@ struct c_output {
 	uint32_t mm_width, mm_height;
 	int subpixel;
 
-  uint32_t x, y;
-
 	c_list *modes;
   struct c_output_mode *current_mode;
 

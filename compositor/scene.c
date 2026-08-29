@@ -3,7 +3,13 @@
 #include "render/renderer.h"
 #include "compositor/window.h"
 #include "compositor/scene.h"
+#include "compositor/matrix.h"
 #include "output/output.h"
+
+#include "wayland/impl/wayland.h"
+#include "wayland/impl/xdg-shell.h"
+#include "wayland/impl/viewporter.h"
+#include "wayland/proto/viewporter.h"
 
 #include "util/log.h"
 #include "util/malloc.h"
@@ -12,6 +18,7 @@ enum c_scene_node_types {
   C_SCENE_WINDOW,
   C_SCENE_RECT,
   C_SCENE_BUFFER,
+  C_SCENE_SURFACE,
 };
 
 struct c_scene_node {
@@ -22,7 +29,6 @@ struct c_scene_node {
   };
   void *data;
   int is_hidden;
-  collect_quads_function collect;
 };
 
 struct c_scene {
@@ -39,6 +45,15 @@ static void ref_window_quads(struct c_scene_node *node) {
   struct c_renderer_quad *quad;
   c_list_for_each(node->quads, quad)
     c_ref(quad->buffer);
+}
+
+static void create_surface_quad(struct c_scene_surface *surface, struct c_renderer_quad *quad) {
+  quad->type = C_RENDERER_BUFFER;
+
+  quad->x = surface->x;
+  quad->y = surface->y;
+  
+  matrix3_new(quad->transform);
 }
 
 static void create_buffer_quad(struct c_scene_buffer *buffer, struct c_renderer_quad *quad) {
@@ -59,8 +74,7 @@ static void create_buffer_quad(struct c_scene_buffer *buffer, struct c_renderer_
   quad->width = buffer->width;
   quad->height = buffer->height;
 
-  quad->uv_scale[0] = 1.0f;
-  quad->uv_scale[1] = 1.0f;
+  matrix3_new(quad->transform);
 }
 
 static void create_rect_quad(struct c_scene_rect *rect, struct c_renderer_quad *quad) {
@@ -76,27 +90,208 @@ static void create_rect_quad(struct c_scene_rect *rect, struct c_renderer_quad *
   quad->color[3] = rect->color[3] / 255.0f;
 }
 
+void get_surface_raw_buf_size(struct c_wl_surface *surface, int32_t *width, int32_t *height) {
+  if (surface->buffer.active->dma) {
+    *width = surface->buffer.active->dma->width;
+    *height = surface->buffer.active->dma->height;
+  } else {
+    *width = surface->buffer.active->shm->width;
+    *height = surface->buffer.active->shm->height;
+  }
+}
+
+void get_surface_buf_size(struct c_wl_surface *surface, int32_t *width, int32_t *height) {
+  double scale;
+  if (surface->fscale)
+    scale = surface->fscale / 120.0f;
+  else
+    scale = surface->scale;
+
+  if (surface->buffer.active->dma) {
+    *width = surface->buffer.active->dma->width / scale;
+    *height = surface->buffer.active->dma->height / scale;
+  } else {
+    *width = surface->buffer.active->shm->width / scale;
+    *height = surface->buffer.active->shm->height / scale;
+  }
+}
+
+void get_surface_size(struct c_wl_surface *surface, double *width, double *height) {
+  int32_t buf_w, buf_h;
+  get_surface_buf_size(surface, &buf_w, &buf_h);
+
+  *width = buf_w;
+  *height = buf_h;
+
+  if (!surface->viewport) return;
+
+  struct c_wp_viewport *vp = surface->viewport;
+
+  if (vp->src.width > 0 && vp->src.height > 0) {
+    *width = vp->src.width;
+    *height = vp->src.height;
+  }
+
+  if (vp->dst.width > 0 && vp->dst.height > 0) {
+    *width = vp->dst.width;
+    *height = vp->dst.height;
+  }
+}
+
+static void collect_window_tree(struct c_window *window, struct c_wl_surface *surface,
+                        double scale, double x, double y,
+                        c_list *quads) {
+  if (!surface->buffer.active) return;
+
+  struct c_renderer_quad q = {
+    .type = C_RENDERER_BUFFER,
+  };
+
+  if (surface->buffer.active->dma) {
+    q.buffer = surface->buffer.active->dma;
+    q.buffer_type = C_BUFFER_DMA;
+  } else {
+    q.buffer = surface->buffer.active->shm;
+    q.buffer_type = C_BUFFER_RAW;
+  }
+
+  int32_t raw_w, raw_h;
+  get_surface_raw_buf_size(surface, &raw_w, &raw_h);
+
+  double src_x = 0, src_y = 0;
+  double src_w = raw_w, src_h = raw_h;
+
+  double surf_x = 0, surf_y = 0;
+  double surf_w, surf_h;
+  get_surface_size(surface, &surf_w, &surf_h);
+
+  if (surface->viewport) {
+    struct c_wp_viewport *vp = surface->viewport;
+
+    if (vp->src.x + vp->src.width > raw_w || vp->src.y + vp->src.height > raw_h) {
+      wl_display_error(surface->obj->conn, 1, vp->obj->id,
+                       WP_VIEWPORT_ERROR_OUT_OF_BUFFER,
+                       "viewport source rect exceeds wl_surface's buffer");
+      return;
+    }
+
+
+    if (vp->src.width > 0 && vp->src.height > 0) {
+      src_x = vp->src.x;
+      src_y = vp->src.y;
+      src_w = vp->src.width;
+      src_h = vp->src.height;
+      surf_w = src_w;
+      surf_h = src_h;
+    }
+
+    if (vp->dst.width > 0 && vp->dst.height > 0) {
+      surf_w = vp->dst.width;
+      surf_h = vp->dst.height;
+    }
+  }
+
+  if (surf_w <= 0 || surf_h <= 0) return;
+
+  matrix3_new(q.transform);
+
+  matrix3_translate(q.transform, 0.5f, 0.5f);
+  matrix3_rotate(q.transform, surface->transform);
+  matrix3_translate(q.transform, -0.5f, -0.5f);
+
+  matrix3_translate(q.transform, src_x / raw_w, src_y / raw_h);
+  matrix3_scale(q.transform, src_w / raw_w, src_h / raw_h);
+
+  if (window && surface->xdg_surface) {
+    double crop_w = window->width / scale;
+    double crop_h = window->height / scale;
+    double crop_x = (surf_w - crop_w) / 2;
+    double crop_y = (surf_h - crop_h) / 2;
+
+    matrix3_translate(q.transform, crop_x / surf_w, crop_y / surf_h);
+    matrix3_scale(q.transform, crop_w / surf_w, crop_h / surf_h);
+
+    surf_x = crop_x;
+    surf_y = crop_y;
+    surf_w = crop_w;
+    surf_h = crop_h;
+  }
+
+  q.x = window ? window->x : x;
+  q.y = window ? window->y : y;
+  q.width = surf_w * scale;
+  q.height = surf_h * scale;
+
+  c_list_push(quads, &q, sizeof(q));
+
+  if (surface->sub.children) {
+    struct c_wl_subsurface *ss;
+    c_list_for_each(surface->sub.children, ss) {
+      collect_window_tree(NULL, ss->surface, scale,
+                          q.x + (ss->x - surf_x) * scale,
+                          q.y + (ss->y - surf_y) * scale, quads);
+    }
+  }
+
+  if (surface->xdg_surface && surface->xdg_surface->children) {
+    struct c_xdg_surface *xs;
+    c_list_for_each(surface->xdg_surface->children, xs) {
+      collect_window_tree(NULL, xs->surface, scale,
+                          q.x + (xs->popup.x - xs->x) * scale,
+                          q.y + (xs->popup.y - xs->y) * scale, quads);
+    }
+  }
+}
+
+
 static int on_redraw(struct c_output_manager *mgr, struct c_output *output, void *userdata) {
   struct c_scene *scene = userdata;
-
   c_renderer_begin(mgr->renderer, output);
 
   struct c_scene_node *node;
-  struct c_renderer_quad *quad;
   c_list_for_each(scene->nodes, node) {
     if (node->is_hidden) continue;
 
     if (node->type == C_SCENE_WINDOW) {
+      struct c_renderer_quad *quad;
       c_list_for_each(node->quads, quad)
         c_renderer_draw(mgr->renderer, output, quad);
+
+    } else if (node->type == C_SCENE_SURFACE) {
+      struct c_renderer_quad *quad = node->quad;
+      struct c_scene_surface *surf = node->data;
+      if (quad->buffer)
+        c_unref(quad->buffer);
+
+      if (!surf->surface->buffer.active) continue;
+
+
+      int32_t w, h;
+      get_surface_buf_size(surf->surface, &w, &h);
+
+      if (surf->surface->buffer.active->shm) {
+        quad->buffer = surf->surface->buffer.active->shm;
+        quad->buffer_type = C_BUFFER_RAW;
+      } else {
+        quad->buffer = surf->surface->buffer.active->dma;
+        quad->buffer_type = C_BUFFER_DMA;
+      }
+
+
+      quad->width = w;
+      quad->height = h;
+
+      c_ref(quad->buffer);
+      c_renderer_draw(mgr->renderer, output, node->quad);
+
     } else {
       c_renderer_draw(mgr->renderer, output, node->quad);
     }
+
   }
 
   return c_renderer_commit(mgr->renderer, output);
 }
-
 static struct c_scene_node *node_create(enum c_scene_node_types type, void *data) {
   struct c_scene_node *node = calloc(1, sizeof(*node));
   node->type = type;
@@ -109,19 +304,20 @@ static struct c_scene_node *node_create(enum c_scene_node_types type, void *data
 }
 
 static void node_remove(struct c_scene_node *node) {
-  switch (node->type) {
-    case C_SCENE_WINDOW:
-      c_list_destroy(node->quads);
-      break;
+  if (node->type == C_SCENE_WINDOW) {
+    unref_window_quads(node);
+    c_list_destroy(node->quads);
 
-    case C_SCENE_RECT:
-      free(node->quad);
-      break;
+  } else if (node->type == C_SCENE_SURFACE) {
+    struct c_scene_surface *surf = node->data;
+    c_unref(surf->surface);
 
-    case C_SCENE_BUFFER:
-      free(node->quad);
-      free(((struct c_scene_buffer *)node->data)->raw.texture);
-      break;
+  } else if (node->type == C_SCENE_RECT) {
+    free(node->quad);
+
+  } else if (node->type == C_SCENE_BUFFER) {
+    free(node->quad);
+    free(((struct c_scene_buffer *)node->data)->raw.texture);
   }
 
   free(node);
@@ -179,33 +375,41 @@ struct c_scene_node *c_scene_add_buffer(struct c_scene *scene, struct c_scene_bu
   return node;
 }
 
+struct c_scene_node *c_scene_add_surface(struct c_scene *scene, struct c_scene_surface *surface) {
+  struct c_renderer_quad *quad = calloc(1, sizeof(*quad));
+  create_surface_quad(surface, quad);
+
+  struct c_scene_node *node = node_create(C_SCENE_SURFACE, surface);
+  c_list_push(scene->nodes, node, 0);
+  node->quad = quad;
+
+  return node;
+}
+
 void c_scene_node_update(struct c_scene_node *node) {
-  switch (node->type) {
-    case C_SCENE_WINDOW:
+  if (node->type == C_SCENE_WINDOW) {
       unref_window_quads(node);
       c_list_clear(node->quads);
 
-      if (node->collect) {
-          node->collect(node, node->quads);
-          ref_window_quads(node);
-      }
-      break;
+      struct c_window *window = node->data;
+      collect_window_tree(window, window->surface->surface, window->scale, window->x, window->y, node->quads);
+      ref_window_quads(node);
 
-    case C_SCENE_RECT:
+  } else if (node->type == C_SCENE_RECT) {
       create_rect_quad(node->data, node->quad);
-      break;
 
-    case C_SCENE_BUFFER:
+  } else if (node->type == C_SCENE_BUFFER) {
       ((struct c_scene_buffer *)node->data)->raw.dirty = 1;
       create_buffer_quad(node->data, node->quad);
-      break;
+
+  } else if (node->type == C_SCENE_SURFACE) {
+      struct c_renderer_quad *quad = node->quad;
+      struct c_scene_surface *surf = node->data;
+      create_surface_quad(surf, quad);
   }
 }
 
 void c_scene_node_remove(struct c_scene *scene, struct c_scene_node *node) {
-  if (node->type == C_SCENE_WINDOW)
-    unref_window_quads(node);
-
   node_remove(node);
   c_list_remove(&scene->nodes, node);
 }
@@ -221,8 +425,4 @@ void c_scene_node_set_visibility(struct c_scene_node *node, int is_visible) {
 
 void *c_scene_node_data(struct c_scene_node *node) {
   return node->data;
-}
-
-void c_scene_node_set_collect(struct c_scene_node *node, collect_quads_function func) {
-  node->collect = func;
 }

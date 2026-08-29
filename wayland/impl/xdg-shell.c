@@ -1,15 +1,94 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "wayland/types.h"
+
 #include "wayland/proto/xdg-shell.h"
 #include "wayland/impl/xdg-shell.h"
 #include "wayland/proto/wayland.h"
 #include "wayland/impl/wayland.h"
 
-#include "wayland/types.h"
-#include "wayland/util.h"
-
 #include "util/malloc.h"
+#include "util/log.h"
+
+static void calc_popup_coords(struct c_xdg_surface *surface, int32_t *x, int32_t *y) {
+  struct c_xdg_positioner *popup = surface->popup.positioner;
+
+  int32_t anchor_x, anchor_y;
+  int32_t dx, dy;
+
+  switch (popup->anchor) {
+    case XDG_POSITIONER_ANCHOR_RIGHT:
+    case XDG_POSITIONER_ANCHOR_TOP_RIGHT:
+    case XDG_POSITIONER_ANCHOR_BOTTOM_RIGHT:
+      anchor_x = popup->anchor_rect.width;
+      break;
+
+    case XDG_POSITIONER_ANCHOR_TOP:
+    case XDG_POSITIONER_ANCHOR_BOTTOM:
+      anchor_x = popup->anchor_rect.width / 2;
+      break;
+
+    default:
+      anchor_x = 0;
+      break;
+  }
+
+  switch (popup->anchor) {
+    case XDG_POSITIONER_ANCHOR_BOTTOM:
+    case XDG_POSITIONER_ANCHOR_BOTTOM_LEFT:
+    case XDG_POSITIONER_ANCHOR_BOTTOM_RIGHT:
+      anchor_y = popup->anchor_rect.height;
+      break;
+
+    case XDG_POSITIONER_ANCHOR_LEFT:
+    case XDG_POSITIONER_ANCHOR_RIGHT:
+      anchor_y = popup->anchor_rect.height / 2;
+      break;
+
+    default:
+      anchor_y = 0;
+      break;
+  }
+
+  switch (popup->gravity) {
+    case XDG_POSITIONER_GRAVITY_LEFT:
+    case XDG_POSITIONER_GRAVITY_TOP_LEFT:
+    case XDG_POSITIONER_GRAVITY_BOTTOM_LEFT:
+      dx = -popup->width;
+      break;
+
+    case XDG_POSITIONER_GRAVITY_TOP:
+    case XDG_POSITIONER_GRAVITY_BOTTOM:
+      dx = -popup->width / 2;
+      break;
+
+    default:
+      dx = 0;
+      break;
+  }
+
+  switch (popup->gravity) {
+    case XDG_POSITIONER_GRAVITY_TOP:
+    case XDG_POSITIONER_GRAVITY_TOP_LEFT:
+    case XDG_POSITIONER_GRAVITY_TOP_RIGHT:
+      dy = -popup->height;
+      break;
+
+    case XDG_POSITIONER_GRAVITY_LEFT:
+    case XDG_POSITIONER_GRAVITY_RIGHT:
+      dy = -popup->height / 2;
+      break;
+
+    default:
+      dy = 0;
+      break;
+  }
+
+  *x = popup->anchor_rect.x + popup->x + anchor_x + dx;
+  *y = popup->anchor_rect.y + popup->y + anchor_y + dy;
+
+}
 
 int xdg_wm_base_get_xdg_surface(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_wl_object *self = c_wl_self(conn, args);
@@ -78,6 +157,11 @@ int xdg_surface_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
     c_unref(xdg_surface);
   }
 
+  if (xdg_surface->popup.positioner) {
+    c_unref(xdg_surface->popup.positioner);
+    xdg_surface->popup.positioner = NULL;
+  }
+
   c_wl_object_del(conn, xdg_surface_id);
   return 0;
 }
@@ -106,6 +190,9 @@ int xdg_surface_get_toplevel(struct c_wl_connection *conn, union c_wl_arg *args)
   C_WL_CHECK_IF_NOT_REGISTERED(xdg_toplevel_id, xdg_toplevel);
 
   struct c_xdg_surface *xdg_surface = self->data;
+  if (xdg_surface->surface->role)
+    c_wl_error_set_and_return(self->id, XDG_SURFACE_ERROR_ALREADY_CONSTRUCTED, "specified surface already has a role");
+
   xdg_surface->surface->role = C_WL_SURFACE_ROLE_XDG_TOPLEVEL;
   c_ref(xdg_surface);
 
@@ -241,13 +328,19 @@ int xdg_positioner_set_offset(struct c_wl_connection *conn, union c_wl_arg *args
 
 int xdg_positioner_set_gravity(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_xdg_positioner *p = c_wl_self(conn, args)->data;
-  p->gravity = args[1].u;
+  p->gravity = args[1].e;
   return 0;
 }
 
 int xdg_positioner_set_constraint_adjustment(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_xdg_positioner *p = c_wl_self(conn, args)->data;
-  p->constraint_adjustment = args[1].u;
+  p->constraint_adjustment = args[1].e;
+  return 0;
+}
+
+int xdg_positioner_set_anchor(struct c_wl_connection *conn, union c_wl_arg *args) {
+  struct c_xdg_positioner *p = c_wl_self(conn, args)->data;
+  p->anchor =  args[1].e;
   return 0;
 }
 
@@ -260,15 +353,7 @@ int xdg_positioner_set_anchor_rect(struct c_wl_connection *conn, union c_wl_arg 
   return 0;
 }
 
-int xdg_positioner_set_anchor(struct c_wl_connection *conn, union c_wl_arg *args) {
-  struct c_xdg_positioner *p = c_wl_self(conn, args)->data;
-  p->anchor =  args[1].u;
-  return 0;
-}
-
-
 int xdg_positioner_destroy(struct c_wl_connection *conn, union c_wl_arg *args) { C_WL_DESTRUCTOR(conn, args); }
-
 
 int xdg_surface_get_popup(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_wl_object *self = c_wl_self(conn, args);
@@ -286,12 +371,16 @@ int xdg_surface_get_popup(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_xdg_surface *xdg_surface_parent = parent_surface->data;
   struct c_xdg_positioner *xdg_positioner = positioner->data;
   
+  if (xdg_surface->surface->role)
+    c_wl_error_set_and_return(self->id, XDG_SURFACE_ERROR_ALREADY_CONSTRUCTED, "specified surface already has a role");
+
   xdg_surface->surface->role = C_WL_SURFACE_ROLE_XDG_POPUP;
 
   xdg_surface->parent = xdg_surface_parent;
   c_ref(xdg_surface_parent);
 
-  memcpy(&xdg_surface->popup, xdg_positioner, sizeof(*xdg_positioner));
+  xdg_surface->popup.positioner = xdg_positioner;
+  c_ref(xdg_positioner);
 
   if (!xdg_surface_parent->children)
     xdg_surface_parent->children = c_list_new();
@@ -303,6 +392,11 @@ int xdg_surface_get_popup(struct c_wl_connection *conn, union c_wl_arg *args) {
   c_wl_object_add(conn, args[1].n, self->version, c_wl_interface_get("xdg_popup"), xdg_surface);
 
   calc_popup_coords(xdg_surface, &xdg_surface->popup.x, &xdg_surface->popup.y);
+
+  c_log(C_LOG_DEBUG, "popup#%d (%d %d %d) %dx%d x=%d y=%d", xdg_popup_id, 
+      xdg_positioner->anchor, xdg_positioner->gravity, xdg_positioner->constraint_adjustment,
+      xdg_positioner->width, xdg_positioner->height,
+      xdg_surface->popup.x, xdg_surface->popup.y);
 
   xdg_popup_configure(conn, xdg_popup_id, xdg_surface->popup.x,
                       xdg_surface->popup.y, xdg_positioner->width,
@@ -340,12 +434,16 @@ int xdg_popup_reposition(struct c_wl_connection *conn, c_wl_args args) {
 int xdg_popup_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_xdg_surface *xdg_surface = c_wl_self(conn, args)->data;
 
-  memset(&xdg_surface->popup, 0, sizeof(xdg_surface->popup));
   xdg_surface->surface->role = 0;
 
   c_list_remove(&xdg_surface->parent->children, xdg_surface);
   c_unref(xdg_surface);
   c_unref(xdg_surface->parent);
+
+  c_unref(xdg_surface->popup.positioner);
+  xdg_surface->popup.positioner = NULL;
+  xdg_surface->popup.x = 0;
+  xdg_surface->popup.y = 0;
 
   c_wl_object_del(conn, args[0].o);
   return 0;

@@ -26,8 +26,6 @@ struct c_wl_buffer {
 	struct c_wl_object *obj;
   struct c_wl_shm_pool *pool;
 
-  c_wl_int scale;
-
   struct c_dmabuf *dma;
   struct c_rawbuf *shm;
 };
@@ -36,10 +34,16 @@ enum c_wl_surface_roles {
 	C_WL_SURFACE_ROLE_XDG_TOPLEVEL = 1,
 	C_WL_SURFACE_ROLE_XDG_POPUP,
 	C_WL_SURFACE_ROLE_SUBSURFACE,
+	C_WL_SURFACE_ROLE_DND_ICON,
 };
 
 struct c_wl_surface {
 	struct c_wl_object *obj;
+
+  c_wl_int scale;
+  c_wl_int fscale;
+
+  enum wl_output_transform_enum transform;
 
   c_wl_object_id frames[8];
   size_t frames_n;
@@ -61,11 +65,20 @@ struct c_wl_surface {
     c_list *children;
   } sub;
 
-	struct c_wl_region opaque;
-	struct c_wl_region input;
+  struct {
+    struct c_wl_region pending;
+    struct c_wl_region active;
+  } input;
 
-	struct c_wl_buffer 	*pending;
-	struct c_wl_buffer 	*active;
+  struct {
+    struct c_wl_region pending;
+    struct c_wl_region active;
+  } opaque;
+
+  struct {
+    struct c_wl_buffer 	*pending;
+    struct c_wl_buffer 	*active;
+  } buffer;
 
   struct c_wp_viewport *viewport;
 
@@ -96,7 +109,7 @@ struct c_wl_data_offer {
 struct c_wl_data_source {
   struct c_wl_object *obj;
 
-  const char *mimetypes[32];
+  const char *mimetypes[64];
   size_t mimes;
 
   enum wl_data_device_manager_dnd_action_enum actions;
@@ -108,7 +121,7 @@ struct c_wl_data_source {
 struct c_wl_data_device {
   struct c_wl_object *obj;
 
-  struct c_wl_data_source *source;
+  struct c_wl_data_source *selection;
   struct c_wl_data_offer *offer;
 
   struct {

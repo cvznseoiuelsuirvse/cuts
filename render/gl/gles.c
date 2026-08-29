@@ -313,11 +313,8 @@ void c_gles_add_texture(struct c_gles *gl, struct c_output *output,
   get_location(gl_program, tex);
   glUniform1i(tex_loc, 0);
 
-  get_location(gl_program, uv_offset);
-  glUniform2f(uv_offset_loc, quad->uv_offset[0], quad->uv_offset[1]);
-
-  get_location(gl_program, uv_scale);
-  glUniform2f(uv_scale_loc, quad->uv_scale[0], quad->uv_scale[1]);
+  get_location(gl_program, transform);
+  glUniformMatrix3fv(transform_loc, 1, GL_FALSE, (GLfloat *)quad->transform);
 
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 

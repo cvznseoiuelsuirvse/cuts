@@ -1,3 +1,4 @@
+/* auto-generated */
 #ifndef CUTS_PRESENTATION_TIME_H
 #define CUTS_PRESENTATION_TIME_H
 

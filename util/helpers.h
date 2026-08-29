@@ -7,20 +7,17 @@
 
 #define CONCAT(a, b) a##b
 #define STREQ(s1, s2) (strcmp((s1), (s2)) == 0)
-#define LENGTH(s) (sizeof((s)) /  sizeof(*(s)))
+#define LENGTH(s) (sizeof((s)) / sizeof(*(s)))
 #define MAX(v1, v2) (((v1) > (v2)) ? (v1) : (v2))
 #define MIN(v1, v2) (((v1) > (v2)) ? (v2) : (v1))
 #define CLAMP(value, min, max) MAX((min), MIN((value), (max)))
 
 #define SWITCH_STR(var) { const char *__switch_var = (var); if (0) {
-#define CASE_STR(value)  } else if (STREQ(__switch_var, (value))) {
-#define DEFAULT_STR } else {
-#define SWITCH_STR_END } }
+#define CASE_STR(value) } else if (STREQ(__switch_var, (value))) {
+#define DEFAULT_STR }     else {
+#define SWITCH_STR_END  } }
 
-#define CURSOR_INSIDE(px, py, area) \
-	(((area)->x + (area)->width + (area)->y + (area)->x == 0) || \
-	((area)->x <= (px) && (px) <= (area)->x + (area)->width &&   \
-	 (area)->y <= (py) && (py) <= (area)->y + (area)->height)) \
+#define CURSOR_INSIDE(px, py, x, y, w, h) (((x) <= (px) && (px) <= (x) + (w)) && ((y) <= (py) && (py) <= (y) + (h)))
 
 #define ENUM_FLAG(e) (1 << (e))
 

@@ -344,7 +344,7 @@ static int dispatch(struct c_wl_connection *conn, struct message_header *header,
   c_log_wl_request(conn, object, &request, args);
 
 
-  int handlers_called;
+  int handlers_called = 0;
   int status = handle_request(conn, object, args, header->op, &handlers_called);
   if (!handlers_called) {
     c_log(C_LOG_ERROR, "%s.%s method not implemented", iface->name, request.name);
@@ -531,7 +531,7 @@ int c_wl_connection_free(struct c_wl_connection *conn) {
 
       if (object->iface->destructor_request >= 0) {
         c_wl_arg arg = {.o = object->id};
-        int handlers_called;
+        int handlers_called = 0;
         handle_request(conn, object, &arg, object->iface->destructor_request, &handlers_called);
         if (!((USER_HANDLER_D | IMPLEMENTATION_HANDLER) & handlers_called)) goto unref;
 

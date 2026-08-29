@@ -1,3 +1,4 @@
+/* auto-generated */
 #ifndef CUTS_XDG_SHELL_H
 #define CUTS_XDG_SHELL_H
 

@@ -5,12 +5,11 @@ precision highp float;
 in vec2 v_uv;
 
 uniform samplerExternalOES tex;
-uniform vec2 uv_offset;
-uniform vec2 uv_scale;
+uniform mat3 transform;
 
 out vec4 fragColor;
 
 void main() {
-  vec2 uv = uv_offset + v_uv * uv_scale;
+  vec2 uv = (vec3(v_uv, 1.0) * transform).xy;
   fragColor = texture(tex, uv);
 }

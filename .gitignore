@@ -1,6 +1,7 @@
 .venv/
 .cache/
 build/
+proto/
 .clangd
 *.sh
 *.log*

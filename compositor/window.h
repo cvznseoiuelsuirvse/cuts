@@ -17,6 +17,7 @@ struct c_window {
   double y;
   uint32_t width;
   uint32_t height;
+  double scale;
 
   char **title;
   char **app_id;
@@ -39,8 +40,7 @@ struct c_window *c_window_new(struct c_scene *scene,
 
 int c_window_activate(struct c_window *window);
 int c_window_deactivate(struct c_window *window);
-void c_window_focus(struct c_window *window, double hotspot_x,
-                    double hotspot_y);
+void c_window_focus(struct c_window *window, double mx, double my);
 void c_window_unfocus(struct c_window *window);
 void c_window_close(struct c_window *window);
 

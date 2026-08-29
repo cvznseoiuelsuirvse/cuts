@@ -1,3 +1,4 @@
+/* auto-generated */
 #ifndef CUTS_WAYLAND_H
 #define CUTS_WAYLAND_H
 

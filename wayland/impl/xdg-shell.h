@@ -2,6 +2,7 @@
 #define CUTS_WAYLAND_IMPL_XDG_SHELL_H
 
 #include "wayland/types.h"
+#include "wayland/proto/xdg-shell.h"
 #include "util/list.h"
 
 struct c_xdg_positioner {
@@ -14,9 +15,9 @@ struct c_xdg_positioner {
   c_wl_int width;
   c_wl_int height;
 
-  c_wl_uint gravity;
-  c_wl_uint anchor;
-  c_wl_uint constraint_adjustment;
+  enum xdg_positioner_gravity_enum               gravity;
+  enum xdg_positioner_anchor_enum                anchor;
+  enum xdg_positioner_constraint_adjustment_enum constraint_adjustment;
 
   struct {
     c_wl_int x; 
@@ -51,7 +52,7 @@ struct c_xdg_surface {
   struct c_wl_surface *surface;
 
   struct {
-    struct c_xdg_positioner positioner;
+    struct c_xdg_positioner *positioner;
     c_wl_int x, y;
   } popup;
 

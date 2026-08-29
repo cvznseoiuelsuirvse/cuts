@@ -1,3 +1,4 @@
+/* auto-generated */
 #ifndef CUTS_VIEWPORTER_H
 #define CUTS_VIEWPORTER_H
 

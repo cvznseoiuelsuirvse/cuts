@@ -11,66 +11,78 @@
 #include "util/log.h"
 #include "util/helpers.h"
 
-static void get_surface_buf_size(struct c_wl_surface *surface, int32_t *width, int32_t *height) {
-  if (surface->active->dma) {
-    *width = surface->active->dma->width / surface->active->scale;
-    *height = surface->active->dma->height / surface->active->scale;
-  } else {
-    *width = surface->active->shm->width / surface->active->scale;
-    *height = surface->active->shm->height / surface->active->scale;
+void get_surface_size(struct c_wl_surface *surface, double *width, double *height);
+
+struct c_wl_surface *surface_hit_test(struct c_window *window,
+                                      struct c_wl_surface *surface,
+                                      double scale, 
+                                      double px, double py,
+                                      double offset_x, double offset_y,
+                                      double *x, double *y) {
+
+  if (!surface->buffer.active) return NULL;
+
+  double surf_x = 0, surf_y = 0;
+  double surf_w, surf_h;
+  get_surface_size(surface, &surf_w, &surf_h);
+
+
+  if (window) {
+    px /= scale;
+    py /= scale;
+    offset_x /= scale;
+    offset_y /= scale;
   }
-}
 
-struct c_wl_surface *surface_hit_test(struct c_wl_surface *surface,
-                                            double ox, double oy,
-                                            double px, double py,
-                                            double *lx, double *ly) {
-  if (!surface->active) return NULL;
-
-  int32_t buf_w, buf_h;
-  get_surface_buf_size(surface, &buf_w, &buf_h);
-
-  double w_x = 0, w_y = 0;
-  uint32_t w_w = buf_w, w_h = buf_h;
-  if (surface->xdg_surface && surface->xdg_surface->width > 0) {
-    w_x = surface->xdg_surface->x;
-    w_y = surface->xdg_surface->y;
-    w_w = surface->xdg_surface->width;
-    w_h = surface->xdg_surface->height;
+  if (window && surface->xdg_surface) {
+    double crop_w = window->width / scale;
+    double crop_h = window->height / scale;
+    surf_x = (surf_w - crop_w) / 2;
+    surf_y = (surf_h - crop_h) / 2;
   }
+  
 
   struct c_wl_surface *hit = NULL;
 
   if (surface->sub.children) {
-    struct c_wl_subsurface *s;
-    c_list_for_each(surface->sub.children, s) {
-      hit = surface_hit_test(s->surface, ox + s->x, oy + s->y, px, py, lx, ly);
+    struct c_wl_subsurface *ss;
+    struct c_wl_surface *h;
+    c_list_for_each(surface->sub.children, ss) {
+      h = surface_hit_test(NULL, ss->surface, scale, px, py,
+                           offset_x + ss->x - surf_x,
+                           offset_y + ss->y - surf_y,
+                           x, y);
+      if (h) hit = h;
     }
   }
 
   if (surface->xdg_surface && surface->xdg_surface->children) {
     struct c_xdg_surface *xs;
+    struct c_wl_surface *h;
     c_list_for_each(surface->xdg_surface->children, xs) {
-      hit = surface_hit_test(xs->surface, ox + xs->x + xs->popup.x,
-                           oy + xs->y + xs->popup.y, px, py, lx, ly);
+      h = surface_hit_test(NULL, xs->surface, scale, px, py, 
+          offset_x + xs->popup.x - xs->x,
+          offset_y + xs->popup.y - xs->y,
+          x, y);
+      if (h) hit = h;
     }
   }
 
   if (hit) return hit;
 
-  if (px >= ox && px < ox + w_w && py >= oy && py < oy + w_h) {
-    double sx = px - ox + w_x;
-    double sy = py - oy + w_y;
 
-    int has_input = surface->input.width > 0 && surface->input.height > 0;
+  if (CURSOR_INSIDE(px, py, offset_x, offset_y, surf_w, surf_h)) {
+    double sx = px - offset_x + surf_x;
+    double sy = py - offset_y + surf_y;
 
-    if (!has_input ||
-        !(sx >= surface->input.x && sx < surface->input.x + surface->input.width &&
-          sy >= surface->input.y && sy < surface->input.y + surface->input.height))
+    struct c_wl_region *input = &surface->input.active;
+    if (input &&
+        !CURSOR_INSIDE(sx, sy, input->x, input->y, input->width, input->height))
       return NULL;
 
-    *lx = sx;
-    *ly = sy;
+    *x = sx;
+    *y = sy;
+
     return surface;
   }
 
@@ -123,10 +135,12 @@ static void surface_leave(struct c_window *window, struct c_wl_surface *surface,
 }
 
 struct c_wl_surface *c_window_surface_at(struct c_window *window, double x, double y, double *lx, double *ly) {
-  struct c_wl_surface *surf = surface_hit_test(window->surface->surface, window->x, window->y, x, y, lx, ly);
+  struct c_wl_surface *surf = surface_hit_test(window,
+      window->surface->surface, window->scale, x, y, window->x, window->y, lx, ly);
+
   if (!surf) {
-    *lx = x - window->x;
-    *ly = y - window->y;
+    *lx = (x - window->x) / window->scale;
+    *ly = (y - window->y) / window->scale;
     return window->surface->surface;
   }
   return surf;
@@ -193,8 +207,8 @@ void c_window_free(struct c_scene *scene, struct c_window *window) {
 int c_window_deactivate(struct c_window *window) {
   struct c_xdg_surface *xdg_surface = window->surface;
 
-  uint32_t width = window->width;
-  uint32_t height = window->height;
+  uint32_t width = window->width / window->scale;
+  uint32_t height = window->height / window->scale;
 
   size_t state_size = 0;
   c_wl_enum state[16];
@@ -215,6 +229,9 @@ int c_window_deactivate(struct c_window *window) {
 
 int c_window_activate(struct c_window *window) {
   struct c_xdg_surface *xdg_surface = window->surface;
+
+  uint32_t width = window->width / window->scale;
+  uint32_t height = window->height / window->scale;
   
   size_t state_size = 1;
   c_wl_enum state[16] = {XDG_TOPLEVEL_STATE_ACTIVATED};
@@ -224,9 +241,6 @@ int c_window_activate(struct c_window *window) {
     .size = state_size * sizeof(*state),
     .data = &state,
   };
-
-  uint32_t width = window->width;
-  uint32_t height = window->height;
 
   int serial = c_wl_serial();
   xdg_toplevel_configure(window->conn, xdg_surface->toplevel.obj->id, width, height, &arr);
@@ -261,11 +275,12 @@ void c_window_close(struct c_window *window) {
 
 void c_window_pointer_move(struct c_window *window, double x, double y) {
   double lx, ly;
-  struct c_wl_surface *focused = surface_hit_test(window->surface->surface, window->x, window->y, x, y, &lx, &ly);
+  struct c_wl_surface *focused =
+      surface_hit_test(window, window->surface->surface, window->scale, x, y, window->x, window->y, &lx, &ly);
 
   if (!focused) {
-    lx = x - window->x;
-    ly = y - window->y;
+    lx = (x - window->x) / window->scale;
+    ly = (y - window->y) / window->scale;
   } else if (focused != window->focused) {
     if (window->focused)
       surface_leave(window, window->focused, 0);

@@ -6,6 +6,8 @@
 #include <EGL/eglext.h>
 #include <GL/gl.h>
 
+#include "compositor/matrix.h"
+
 enum c_render_buffer_type {
   C_BUFFER_RAW,
   C_BUFFER_DMA,
@@ -62,9 +64,7 @@ struct c_renderer_quad {
 
 	double  x, y;
 	int32_t width, height;
-
-	double uv_offset[2];
-	double uv_scale[2];
+  mat3    transform;
 };
 
 #endif
