@@ -4,20 +4,21 @@ src_root = meson.project_source_root()
 
 xmls = run_command('find', src_root / 'protocols', '-name', '*.xml', check: true).stdout().strip().split('\n')
 
-run_command('rm', '-rf', src_root / 'wayland' / 'proto', check: true)
-run_command('mkdir', src_root / 'wayland' / 'proto', check: true)
-
 proto_sources = []
 foreach xml : xmls
   proto = fs.stem(xml)
-  out = src_root / 'wayland' / 'proto' / proto
-  run_command(python,
-    src_root / 'scripts' / 'wayland-codegen.py',
-    xml,
-    out,
-    check: true,
+  proto_gen = custom_target(proto + '-proto',
+    input: xml,
+    output: [proto + '.c', proto + '.h'],
+    build_subdir: 'proto',
+    command: [
+      python,
+      src_root / 'scripts' / 'wayland-codegen.py',
+      '@INPUT@',
+      '@OUTDIR@' / proto,
+    ],
   )
-  proto_sources += files('proto' / (proto + '.c'))
+  proto_sources += proto_gen
 endforeach
 
 wayland_sources = files(

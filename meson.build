@@ -4,6 +4,7 @@ project('cuts', 'c',
     'warning_level=2',
     'c_std=c11',
   ],
+  meson_version: '>=1.10.0',
 )
 
 cc = meson.get_compiler('c')

@@ -1,7 +1,7 @@
 .venv/
 .cache/
 build/
-proto/
+wayland/proto/
 .clangd
 *.sh
 *.log*
