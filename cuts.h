@@ -57,7 +57,7 @@ struct bar_config {
 };
 
 typedef union {
-	char  const *s;
+	const char  *s;
 	int32_t      i;
 	uint32_t     u;
   double       d;

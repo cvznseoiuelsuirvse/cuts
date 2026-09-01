@@ -31,6 +31,9 @@ struct c_xdg_positioner {
 struct c_xdg_surface {
   struct c_wl_object *obj;
 
+  c_wl_uint serial;
+  c_wl_uint acked_serial;
+
   c_wl_int x;
   c_wl_int y;
   c_wl_int width;

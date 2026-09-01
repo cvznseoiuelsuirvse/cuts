@@ -103,13 +103,14 @@ static c_list *get_modes(int fd, drmModeConnectorPtr connector) {
       goto error;
     }
 
+    c_log(C_LOG_DEBUG, "  mode: %dx%d@%f %s", c_mode.width, c_mode.height,
+          c_mode.refresh_rate, c_mode.preferred ? "(preferred)" : "");
     c_list_push(modes, &c_mode, sizeof(c_mode));
   }
 
   return modes;
 
   struct c_output_mode *mode;
-
 error:
   c_list_for_each(modes, mode)
     drmModeDestroyPropertyBlob(fd, mode->drm.blob_id);
@@ -291,19 +292,23 @@ c_list *c_drm_get_outputs(int drm_fd) {
 
     if (get_output_drm_objects(drm_fd, &output, connector, resources, &taken_crtcs)) goto iter_end_error;
 
-
     output.orig_crtc = drmModeGetCrtc(drm_fd, output.crtc.id);
 
     output.mm_width = connector->mmWidth;
     output.mm_height = connector->mmHeight;
     output.subpixel = connector->subpixel;
 
-    output.modes = get_modes(drm_fd, connector);
+    get_output_make_model(drm_fd, &output);
+
     snprintf(output.name, sizeof(output.name), "%s-%d",
              drm_connector_str(connector->connector_type),
              connector->connector_type_id);
 
-    get_output_make_model(drm_fd, &output);
+    c_log(C_LOG_DEBUG, "output found: %s %dmm x %dmm %s", output.name,
+          output.mm_width, output.mm_height, output.manufacturer_name);
+
+    output.modes = get_modes(drm_fd, connector);
+
 
     output.timeline = c_drm_sync_object_init(drm_fd);
     if (!output.timeline) {

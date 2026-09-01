@@ -40,6 +40,8 @@ struct c_dmabuf {
 	struct c_dmabuf_plane planes[4];
 	EGLImageKHR image;
 	struct c_gles_texture *texture;
+
+  struct c_renderer *renderer;
 };
 
 struct c_rawbuf {

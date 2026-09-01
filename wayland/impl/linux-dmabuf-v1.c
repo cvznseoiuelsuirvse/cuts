@@ -8,10 +8,9 @@
 #include "wayland/server.h"
 
 #include "render/types.h"
+#include "util/mem.h"
 
-#include "util/log.h"
-#include "util/malloc.h"
-
+void defer_wl_buffer(void *data);
 
 int zwp_linux_dmabuf_v1_get_surface_feedback(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
@@ -45,7 +44,6 @@ int zwp_linux_dmabuf_v1_create_params(struct c_wl_connection *conn, c_wl_args ar
 
   struct c_dmabuf *dma = c_malloc(sizeof(*dma));
   if (!dma) {
-    c_log(C_LOG_ERROR, "calloc failed");
     c_wl_error_set_and_return(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed");
   }
 
@@ -110,6 +108,7 @@ int zwp_linux_buffer_params_v1_create_immed(struct c_wl_connection *conn, c_wl_a
   if (!buffer)
         c_wl_error_set_and_return(args[0].o, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed");
 
+  c_defer(buffer, defer_wl_buffer); 
   dma->drm_format = format;
   dma->width = width;
   dma->height = height;

@@ -1,7 +1,7 @@
 #include "wayland/server.h"
 #include "wayland/impl/wayland.h"
 #include "wayland/proto/fractional-scale-v1.h"
-#include "util/malloc.h"
+#include "util/mem.h"
 
 int wp_fractional_scale_manager_v1_get_fractional_scale(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);

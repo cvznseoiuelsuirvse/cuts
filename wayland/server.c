@@ -14,7 +14,7 @@
 
 #include "util/helpers.h"
 #include "util/log.h"
-#include "util/malloc.h"
+#include "util/mem.h"
 #include "util/bitmap.h"
 
 #define MAX_CMSG_FDS 256
@@ -466,6 +466,7 @@ struct c_wl_object *c_wl_object_add(struct c_wl_connection *conn, c_wl_new_id id
   }
 
   new_object.id = id;
+  c_log(C_LOG_DEBUG, "add %s#%lu", interface->name, id);
   return c_map_set(conn->objects, id, &new_object, sizeof(struct c_wl_object));
 }
 
@@ -477,8 +478,10 @@ int c_wl_object_del(struct c_wl_connection *conn, c_wl_object_id id) {
   struct c_wl_object *o = c_map_get(conn->objects, id);
   if (!o) return 1;
   
-  if (o->data)
+  if (o->data) {
+    c_log(C_LOG_DEBUG, "del %s#%lu rc=%d", o->iface->name, id, c_get_refcount(o->data));
     c_unref(o->data);
+  }
 
   c_map_remove(conn->objects, id);
   if (id < 0xFF000000) {
@@ -533,7 +536,10 @@ int c_wl_connection_free(struct c_wl_connection *conn) {
         c_wl_arg arg = {.o = object->id};
         int handlers_called = 0;
         handle_request(conn, object, &arg, object->iface->destructor_request, &handlers_called);
-        if (!((USER_HANDLER_D | IMPLEMENTATION_HANDLER) & handlers_called)) goto unref;
+        if (!((USER_HANDLER_D | IMPLEMENTATION_HANDLER) & handlers_called)) {
+          c_log(C_LOG_DEBUG, "no destructor for %s", object->iface->name);
+          goto unref;
+        }
 
         goto iter_end;
       }

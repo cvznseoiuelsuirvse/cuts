@@ -63,7 +63,8 @@ void *c_list_push(c_list *l, void *data, size_t data_size) {
 void *c_list_insert(c_list **head, uint32_t i, void *data, size_t data_size) {
   c_list *l = *head;
   if (i > l->size) return NULL;
-  l->size++;
+
+  (*head)->size++;
 
   for (uint32_t ii = 0; l->next; l = l->next, ii++)
     if (ii == i) break;
@@ -90,10 +91,36 @@ void *c_list_insert(c_list **head, uint32_t i, void *data, size_t data_size) {
   return c_list_push(*head, data, data_size);
 }
 
+void *c_list_insert2(c_list **head, c_list *node, void *data, size_t data_size) {
+  c_list *l = node;
+  (*head)->size++;
+    
+  if (!l->prev && l->next) {  // first
+    c_list *new = c_list_new2(data, data_size);
+    new->size = l->size;
+    new->next = l;
+    l->prev = new;
+    *head = new;
+    return new->data;
+
+  } else if (l->prev && l->next) {  // middle
+    c_list *new = c_list_new2(data, data_size);
+    new->prev = l->prev;
+    new->next = l;
+    l->prev->next = new;
+    l->prev = new;
+    return new->data;
+  }
+
+  // last
+  (*head)->size--;
+  return c_list_push(*head, data, data_size);
+}
+
 void c_list_remove(c_list **head, void *data) {
   c_list *l = *head;
 
-  for (size_t i = 0; l; l = l->next, i++) {
+  for (; l; l = l->next) {
     if (l->data == data) {
       if (!l->prev && l->next) {
         *head = l->next;

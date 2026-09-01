@@ -7,6 +7,9 @@ project('cuts', 'c',
   meson_version: '>=1.10.0',
 )
 
+fs = import('fs')
+python = find_program('python3')
+src_root = meson.project_source_root()
 cc = meson.get_compiler('c')
 
 c_args = [
@@ -14,8 +17,8 @@ c_args = [
   '-D_GNU_SOURCE',
 ]
 
-if get_option('logo_key')
-  c_args += '-DUSE_LOGO_KEY'
+if get_option('test')
+  c_args += '-DCUTS_TEST'
 endif
 
 subdir('util')
@@ -25,8 +28,6 @@ subdir('wayland')
 subdir('render')
 subdir('output')
 subdir('cursor')
-
-fs = import('fs')
 
 freetype_dep = dependency('freetype2')
 sources = [

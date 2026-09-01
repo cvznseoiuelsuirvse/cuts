@@ -8,7 +8,7 @@
 #include "wayland/proto/wayland.h"
 #include "wayland/impl/wayland.h"
 
-#include "util/malloc.h"
+#include "util/mem.h"
 #include "util/log.h"
 
 static void calc_popup_coords(struct c_xdg_surface *surface, int32_t *x, int32_t *y) {
@@ -127,11 +127,17 @@ int xdg_wm_base_destroy(struct c_wl_connection *conn, c_wl_args args) {
 }
 
 int xdg_surface_ack_configure(struct c_wl_connection *conn, union c_wl_arg *args) {
-  c_wl_object_id xdg_surface_id = args[0].o;
-  if (!args[1].u) {
-    c_wl_error_set_and_return(xdg_surface_id, XDG_SURFACE_ERROR_INVALID_SERIAL, "invalid serial");
+  struct c_wl_object *self = c_wl_self(conn, args);
+  struct c_xdg_surface *xs = self->data;
+
+  c_wl_uint serial = args[1].u;
+
+  if (!serial) {
+    c_wl_error_set_and_return(self->id, XDG_SURFACE_ERROR_INVALID_SERIAL, "invalid serial");
     return -1;
   }
+  
+  xs->acked_serial = serial;
   return 0;
 }
 

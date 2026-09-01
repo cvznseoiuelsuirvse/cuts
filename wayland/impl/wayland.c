@@ -14,7 +14,7 @@
 #include "output/drm/util.h"
 
 #include "util/log.h"
-#include "util/malloc.h"
+#include "util/mem.h"
 #include "util/helpers.h"
 #include "render/types.h"
 
@@ -32,23 +32,17 @@ static void damage_surface(struct c_wl_surface *surface, c_wl_args args) {
 
 }
 
-static void free_buffer(struct c_wl_buffer *wl_buffer) {
-  if (c_get_refcount(wl_buffer) != 1) return;
+static void defer_pool(void *data) {
+  struct c_wl_shm_pool *pool = data;
+  munmap(pool->ptr, pool->size);
+  close(pool->fd);
+}
 
-  if (wl_buffer->dma) {
-    c_unref(wl_buffer->dma);
-  }
-
-  if (wl_buffer->shm)
-    c_unref(wl_buffer->shm);
-
-  if (wl_buffer->pool) {
-    if (c_get_refcount(wl_buffer->pool) == 1) {
-      munmap(wl_buffer->pool->ptr, wl_buffer->pool->size);
-      close(wl_buffer->pool->fd);
-    }
-    c_unref(wl_buffer->pool);
-  }
+void defer_wl_buffer(void *data) {
+  struct c_wl_buffer *buf = data;
+  if (buf->dma)  c_unref(buf->dma);
+  if (buf->shm)  c_unref(buf->shm);
+  if (buf->pool) c_unref(buf->pool);
 }
 
 int wl_display_get_registry(struct c_wl_connection *conn, c_wl_args args) {
@@ -108,6 +102,7 @@ int wl_shm_create_pool(struct c_wl_connection *conn, c_wl_args args) {
 
   struct c_wl_shm_pool *pool = c_malloc(sizeof(*pool));
   if (!pool) c_wl_error_set_and_return(wl_shm_id, WL_DISPLAY_ERROR_IMPLEMENTATION, "calloc failed");
+  c_defer(pool, defer_pool);
 
   pool->fd = pool_fd;
 
@@ -170,6 +165,8 @@ int wl_shm_pool_create_buffer(struct c_wl_connection *conn, c_wl_args args) {
   }
 
   struct c_wl_buffer *buffer = c_malloc(sizeof(*buffer));
+  c_defer(buffer, defer_wl_buffer); 
+
   struct c_rawbuf *buf = c_malloc(sizeof(*buf));
 
   buffer->pool = pool;
@@ -194,8 +191,6 @@ int wl_buffer_destroy(struct c_wl_connection *conn, union c_wl_arg *args) {
   struct c_wl_object *self = c_wl_self(conn, args);
   struct c_wl_buffer *wl_buffer = self->data;
 
-  free_buffer(wl_buffer);
-
   wl_buffer->obj = NULL;
   c_wl_object_del(conn, self->id);
   return 0;
@@ -219,18 +214,7 @@ int wl_shm_pool_resize(struct c_wl_connection *conn, c_wl_args args) {
   return 0;
 }
 
-int wl_shm_pool_destroy(struct c_wl_connection *conn, c_wl_args args) {
-  c_wl_object_id wl_shm_pool_id = args[0].o;
-  struct c_wl_shm_pool *pool = c_wl_object_get(conn, wl_shm_pool_id)->data;
-
-  if (c_get_refcount(pool) == 1) {
-    munmap(pool->ptr, pool->size);
-    close(pool->fd);
-  }
-
-  c_wl_object_del(conn, wl_shm_pool_id);
-  return 0;
-}
+int wl_shm_pool_destroy(struct c_wl_connection *conn, c_wl_args args) { C_WL_DESTRUCTOR(conn, args); }
 
 int wl_surface_set_buffer_scale(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
@@ -345,12 +329,10 @@ int wl_surface_destroy(struct c_wl_connection *conn, c_wl_args args) {
   }
 
   if (wl_surface->buffer.active) {
-    free_buffer(wl_surface->buffer.active);
     c_unref(wl_surface->buffer.active);
   }
 
   if (wl_surface->buffer.pending && wl_surface->buffer.pending != wl_surface->buffer.active) {
-    free_buffer(wl_surface->buffer.pending);
     c_unref(wl_surface->buffer.pending);
   }
 
@@ -416,7 +398,7 @@ int wl_surface_set_input_region(struct c_wl_connection *conn, c_wl_args args) {
 
   c_wl_object_id wl_region_id = args[1].o;
   if (wl_region_id == 0) {
-    surface->input.pending.x = surface->input.pending.x = 0;
+    surface->input.pending.x = surface->input.pending.y = 0;
     surface->input.pending.width = surface->input.pending.height = -1;
     return 0;
   }
@@ -454,7 +436,6 @@ int wl_surface_attach(struct c_wl_connection *conn, c_wl_args args) {
       if (wl_surface->buffer.pending->obj)
         wl_buffer_release(conn, wl_surface->buffer.pending->obj->id);
 
-      free_buffer(wl_surface->buffer.pending);
       c_unref(wl_surface->buffer.pending);
     }
 
@@ -463,7 +444,6 @@ int wl_surface_attach(struct c_wl_connection *conn, c_wl_args args) {
 
   } else {
     if (wl_surface->buffer.pending && wl_surface->buffer.pending != wl_surface->buffer.active) {
-      free_buffer(wl_surface->buffer.pending);
       c_unref(wl_surface->buffer.pending);
     }
     wl_surface->buffer.pending = NULL;
@@ -481,11 +461,11 @@ int wl_surface_commit(struct c_wl_connection *conn, c_wl_args args) {
       if (surface->buffer.active->obj)
         wl_buffer_release(conn, surface->buffer.active->obj->id);
 
-      free_buffer(surface->buffer.active);
       c_unref(surface->buffer.active);
     }
 
     surface->buffer.active = surface->buffer.pending;
+    // surface->buffer.pending = NULL;
 
   }
 
@@ -764,7 +744,7 @@ int wl_data_device_start_drag(struct c_wl_connection *conn, c_wl_args args) {
 
     data_device->dnd.icon = surface;
     surface->role = C_WL_SURFACE_ROLE_DND_ICON;
-    c_ref(data_device->dnd.icon);
+    c_ref(surface);
   }
 
   return 0;
@@ -854,11 +834,6 @@ int wl_data_offer_accept(struct c_wl_connection *conn, c_wl_args args) {
 int wl_data_offer_destroy(struct c_wl_connection *conn, c_wl_args args) { 
   struct c_wl_object *self = c_wl_self(conn, args);
   struct c_wl_data_offer *data_offer = self->data;
-  if (data_offer->device) {
-    c_unref(data_offer->device->offer);
-    data_offer->device->offer = NULL;
-    c_unref(data_offer->device);
-  }
 
   if (data_offer->mimetype)
     free(data_offer->mimetype);

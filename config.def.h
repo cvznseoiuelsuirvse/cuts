@@ -36,13 +36,13 @@ static const uint32_t cursor_size = 32;
 #define BACKGROUND4    0xffffffff
 #define BORDER_FOCUS   0x888888ff
 #define BORDER_UNFOCUS 0x333333ff
-#define BORDER_URGENT  0xffffffff
-#define FONT_FOCUS     0xffffffff
+#define BORDER_URGENT  BACKGROUND4
+#define FONT_FOCUS     BACKGROUND4
 #define FONT_UNFOCUS   0x777777ff
-#define FONT_URGENT    0x000000ff
+#define FONT_URGENT    BACKGROUND1
 
 static const struct bar_config bar_cfg = {
-  .font = {15, "SF Mono Regular"},
+  .font = {12, "Noto Sans Font Mono"},
   .pos = BAR_TOP,
 
   .tag = {
@@ -79,7 +79,6 @@ static const uint32_t border_urgent[4]    = COLOR_TO_BYTES(BORDER_URGENT);
 static float    mfact   = 0.5f;
 static uint32_t nmaster = 1;
 
-// libinput
 static enum libinput_config_accel_profile accel_profile = LIBINPUT_CONFIG_ACCEL_PROFILE_FLAT;
 static const uint32_t keyboard_repeat_rate  = 50;
 static const uint32_t keyboard_repeat_delay = 300;
@@ -90,15 +89,20 @@ static struct xkb_rule_names xkb_rules = {
 };
 
 static struct monitor_config monitors[] = {};
+static const char *autostart[] = {};
 
 static struct layout layouts[] = {
 	{tile, "//"},
 	{zoom, "\\/"},
 };
 
+#define TERM "alacritty"
+#define MENU "bemenu-run"
+
 static struct key_bind keys[] = {
 	{LEADER,                        XKB_KEY_q,          quit, 			       {}},
-	{LEADER,                        XKB_KEY_Return,     spawn, 	           {.s = "alacritty"}},
+	{LEADER,                        XKB_KEY_Return, 	  spawn, 	           {.s = TERM}},
+	{LEADER,                        XKB_KEY_p, 	        spawn, 	           {.s = MENU}},
 	{LEADER,                        XKB_KEY_x, 	  	    window_kill,	     {}},
 	{LEADER,                        XKB_KEY_j, 	  	    move_focus,        {.i = 1}},
 	{LEADER,                        XKB_KEY_k, 	  	    move_focus,        {.i = -1}},

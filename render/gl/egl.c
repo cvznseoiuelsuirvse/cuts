@@ -54,7 +54,10 @@ static int has_ext_egl(const char *ext, const char *exts) {
 
   char *token = strtok(exts_cpy, " ");
   while (token != NULL) {
-    if (STREQ(token, ext)) return 1;
+    if (STREQ(token, ext)) { 
+      c_log(C_LOG_DEBUG, "loaded EGL %s extension", ext);
+      return 1;
+    }
     token = strtok(NULL, " ");
   }
 
@@ -71,7 +74,6 @@ static int load_egl_exts(struct c_egl *egl) {
     c_log(C_LOG_ERROR, "EGL_KHR_surfaceless_context not supported");
     return -1;
   }
-
 
   if (has_ext_egl("EGL_EXT_image_dma_buf_import", exts_display)) {
     egl->ext_support.EXT_image_dma_buf_import = 1;
@@ -328,15 +330,16 @@ struct c_egl *c_egl_init(struct gbm_device *device) {
     return NULL;
   }
 
-  if (has_ext_egl("EGL_EXT_platform_device", eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS)))
+  if (has_ext_egl("EGL_EXT_platform_device", eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS))) {
     egl->proc.eglGetPlatformDisplayEXT = (void *)eglGetProcAddress("eglGetPlatformDisplayEXT");
+  }
   
 
   EGLDisplay display;
   if (egl->proc.eglGetPlatformDisplayEXT) {
     display = egl->proc.eglGetPlatformDisplayEXT(EGL_PLATFORM_GBM_KHR, device, NULL);
   } else {
-    c_log(C_LOG_ERROR, "EGL_EXT_platform_device not supported\n");
+    c_log(C_LOG_ERROR, "EGL_EXT_platform_device not supported");
     free(egl);
     return NULL;
   }
@@ -350,9 +353,8 @@ struct c_egl *c_egl_init(struct gbm_device *device) {
     return NULL;
   }
 
-
   if (!eglBindAPI(EGL_OPENGL_ES_API)) {
-    c_log(C_LOG_ERROR, "Failed to to bind api EGL_OPENGL_ES_API");
+    c_log(C_LOG_ERROR, "failed to to bind api EGL_OPENGL_ES_API");
     c_egl_free(egl);
     return NULL;
   }
@@ -399,7 +401,7 @@ struct c_egl *c_egl_init(struct gbm_device *device) {
   }
 
   if (!selected_config) {
-    c_log(C_LOG_ERROR, "No config selected");
+    c_log(C_LOG_ERROR, "no config selected");
     goto err;
   }
 

@@ -4,15 +4,6 @@
 #include <stdio.h>
 #include "wayland/types.h"
 
-struct c_ext_data_control_offer {
-  struct c_wl_object *obj;
-
-  char *mimetype;
-
-  struct c_ext_data_control_device *device;
-  struct c_ext_data_control_source *source;
-};
-
 struct c_ext_data_control_source {
   struct c_wl_object *obj;
 

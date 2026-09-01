@@ -31,11 +31,11 @@
 
 #define c_wl_self(conn, args) c_wl_object_get(conn, args[0].o)
 
-#define C_WL_DESTRUCTOR(conn, args)                                                 \
-  {                                                                            \
+#define C_WL_DESTRUCTOR(conn, args)                                            \
+  do {                                                                         \
     c_wl_object_del(conn, args[0].o);                                          \
     return 0;                                                                  \
-  }
+  } while (0);
 
 struct c_wl_display;
 struct c_wl_message {

@@ -22,9 +22,8 @@
 
 #include "util/log.h"
 #include "util/shm.h"
-#include "util/malloc.h"
+#include "util/mem.h"
 
-static struct c_wl_buffer_listeners buffer_listeners;
 static struct c_wl_shm_pool_listeners shm_pool_listeneres;
 struct c_zwp_linux_dmabuf_v1_listeners linux_dmabuf_listeners;
 
@@ -34,6 +33,11 @@ static int import_raw(struct c_renderer *render, struct c_rawbuf *shm) {
     return -1;
   }
 
+	char *format_name = drmGetFormatName(shm->format);
+  c_log(C_LOG_DEBUG, "imported SHM %p: %dx%d %s (0x%08"PRIx32")",
+        shm, shm->width, shm->height, format_name, shm->format);
+
+  free(format_name);
 	return 0;
 }
 
@@ -82,6 +86,8 @@ static int import_dmabuf(struct c_renderer *render, struct c_dmabuf *dmabuf) {
     goto out;
   }
 
+  c_log(C_LOG_DEBUG, "imported DMA %p: %dx%d %s (0x%08" PRIx32 ") 0x%08" PRIx64,
+        dmabuf, dmabuf->width, dmabuf->height, format_name, dmabuf->drm_format, dmabuf->modifier);
 out:
 	for (uint32_t i = 0; i < dmabuf->n_planes; i++) close(dmabuf->planes[i].fd);
 
@@ -91,6 +97,29 @@ out_pre_image:
 	return ret;
 }
 
+static void defer_dma(void *data) {
+  c_log(C_LOG_DEBUG, __PRETTY_FUNCTION__);
+  struct c_dmabuf *buf = data;
+  struct c_renderer *renderer = buf->renderer;
+  if (buf->image && renderer->egl->proc.eglDestroyImageKHR)
+    renderer->egl->proc.eglDestroyImageKHR(renderer->egl->display, buf->image);
+
+  if (buf->texture) {
+    glDeleteTextures(1, &buf->texture->texture);
+    free(buf->texture);
+  }
+  c_log(C_LOG_DEBUG, "DMA %p destroyed", buf);
+}
+
+static void defer_shm(void *data) {
+  struct c_rawbuf *buf = data;
+  if (buf->texture) {
+    glDeleteTextures(1, &buf->texture->texture);
+    free(buf->texture);
+  }
+  c_log(C_LOG_DEBUG, "SHM %p destroyed", buf);
+}
+
 static struct c_gles_texture *ensure_imported(struct c_renderer *render, void *buffer,
                 enum c_render_buffer_type buf_type) {
 
@@ -98,15 +127,22 @@ static struct c_gles_texture *ensure_imported(struct c_renderer *render, void *b
     struct c_dmabuf *buf = buffer;
 		if (!buf->texture) {
 			if (import_dmabuf(render, buf) < 0) return NULL;
+
+      buf->renderer = render;
+      c_defer(buf, defer_dma);
     }
 
 		return buf->texture;
 
 	} else if (buf_type == C_BUFFER_RAW) {
     struct c_rawbuf *buf = buffer;
+    int no_texture = !buf->texture;
 		if (!buf->texture || buf->dirty) {
 			if (import_raw(render, buf) < 0) return NULL;
       buf->dirty = 0;
+      if (no_texture) {
+        c_defer(buf, defer_shm);
+      }
     }
 
 		return buf->texture;
@@ -276,33 +312,6 @@ static int on_shm_buffer_create(struct c_wl_connection *conn, c_wl_args args, vo
   }
 
   c_wl_error_set_and_return(args[0].o, WL_SHM_ERROR_INVALID_FORMAT, "format not supported");
-
-}
-
-static int on_buffer_destroy(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
-  struct c_wl_buffer *buffer = c_wl_self(conn, args)->data;
-  struct c_renderer *render = userdata;
-
-  if (buffer->dma && !buffer->shm) {
-    struct c_dmabuf *buf = buffer->dma;
-    if (c_get_refcount(buf) == 1) {
-      if (buf->image && render->egl->proc.eglDestroyImageKHR)
-        render->egl->proc.eglDestroyImageKHR(render->egl->display, buf->image);
-
-      if (buf->texture) {
-        glDeleteTextures(1, &buf->texture->texture);
-        free(buf->texture);
-      }
-    }
-  } else if (buffer->shm && !buffer->dma) {
-    struct c_rawbuf *buf = buffer->shm;
-    if (c_get_refcount(buf) == 1 && buf->texture) {
-        glDeleteTextures(1, &buf->texture->texture);
-        free(buf->texture);
-    }
-  }
-
-  return 0;
 }
 
 struct c_renderer *c_renderer_init(struct c_output_manager *mgr, struct c_wl_display *display) {
@@ -318,10 +327,6 @@ struct c_renderer *c_renderer_init(struct c_output_manager *mgr, struct c_wl_dis
 
   render->formats = c_egl_query_formats(render->egl, &render->format_table_entries);
   render->format_table_fd = create_format_table(render);
-
-
-  buffer_listeners.destroy = on_buffer_destroy;
-  wl_buffer_add_listener(display, &buffer_listeners, render);
 
   shm_pool_listeneres.create_buffer = on_shm_buffer_create;
   wl_shm_pool_add_listener(display, &shm_pool_listeneres, render);

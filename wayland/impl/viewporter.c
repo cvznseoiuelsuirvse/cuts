@@ -2,7 +2,7 @@
 #include "wayland/impl/wayland.h"
 #include "wayland/impl/viewporter.h"
 #include "wayland/server.h"
-#include "util/malloc.h"
+#include "util/mem.h"
 
 int wp_viewporter_get_viewport(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);

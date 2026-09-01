@@ -4,7 +4,8 @@
 #include "wayland/proto/ext-data-control-v1.h"
 #include "wayland/impl/ext-data-control-v1.h"
 #include "wayland/server.h"
-#include "util/malloc.h"
+#include "util/mem.h"
+#include "util/helpers.h"
 
 int ext_data_control_manager_v1_get_data_device(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
@@ -25,6 +26,8 @@ int ext_data_control_manager_v1_get_data_device(struct c_wl_connection *conn, c_
                       c_wl_interface_get("ext_data_control_device_v1"), data_device);
   return 0;
 }
+
+int ext_data_control_device_v1_set_primary_selection(struct c_wl_connection *conn, c_wl_args args) { return 0;}
 
 int ext_data_control_device_v1_destroy(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
@@ -55,6 +58,20 @@ int ext_data_control_manager_v1_create_data_source(struct c_wl_connection *conn,
   return 0;
 }
 
+int ext_data_control_source_v1_offer(struct c_wl_connection *conn, c_wl_args args) {
+  struct c_wl_object *self = c_wl_self(conn, args);
+  struct c_ext_data_control_source *data_source = self->data;
+
+  c_wl_string mime_type = args[1].s;
+
+  if (data_source->mimes >= LENGTH(data_source->mimetypes))
+    c_wl_error_set_and_return(self->id, WL_DISPLAY_ERROR_IMPLEMENTATION, "too many mime types (max 32)");
+
+  data_source->mimetypes[data_source->mimes++] = strdup(mime_type);
+  return 0;
+
+}
+
 int ext_data_control_source_v1_destroy(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
   struct c_ext_data_control_source *data_source = self->data;
@@ -65,3 +82,6 @@ int ext_data_control_source_v1_destroy(struct c_wl_connection *conn, c_wl_args a
   c_wl_object_del(conn, args[0].o);
   return 0;
 }
+
+
+int ext_data_control_offer_v1_destroy(struct c_wl_connection *conn, c_wl_args args) { C_WL_DESTRUCTOR(conn, args); }

@@ -1,9 +1,7 @@
 #include <stdlib.h>
-#include <unistd.h>
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
 #include <GLES3/gl3.h>
-#include <fcntl.h>
 #include <inttypes.h>
 
 #include "render/gl/gles.h"
@@ -12,11 +10,10 @@
 #include "util/helpers.h"
 #include "output/drm/util.h"
 
-#define VERTEX_SHADER_PATH  "render/shaders/shader.vert"
-
-#define FRAG_SOLID_SHADER_PATH   "render/shaders/solid.frag"
-#define FRAG_TEX_SHADER_PATH     "render/shaders/texture.frag"
-#define FRAG_TEX_EXT_SHADER_PATH "render/shaders/texture_external.frag"
+#include "render/shaders/shader-vert.h"
+#include "render/shaders/solid-frag.h"
+#include "render/shaders/texture-frag.h"
+#include "render/shaders/textureext-frag.h"
 
 #define VERT_POS_TOP_LEFT(vp)     vp.tl_x, -(vp.tl_y)
 #define VERT_POS_BOTTOM_LEFT(vp)  vp.bl_x, -(vp.bl_y)
@@ -46,30 +43,13 @@ struct vert_pos {
 	float tr_x, tr_y;
 };
 
-static GLuint compile_shader(const char *path, GLenum type) {
+const char *asdfasdf = 
+"asdfasdf";
+
+static GLuint compile_shader(const char *shader_text, GLenum type) {
   GLuint shader = glCreateShader(type);
 
-  FILE *f;
-
-  f = fopen(path, "r");
-
-  if (!f) {
-    c_log_errno(C_LOG_ERROR, "failed to open %s", (type == GL_VERTEX_SHADER) ? "vertex" : "fragment");
-    return 0;
-  }
-
-  GLchar shader_source[4096];
-  int c;
-  int i = 0;
-  while ((c = fgetc(f)) != EOF && i < (int)sizeof(shader_source) - 1) {
-    shader_source[i++] = c;   
-  }
-  shader_source[i] = 0;
-
-  fclose(f);
-
-  const GLchar *shader_code = shader_source;
-  glShaderSource(shader, 1, &shader_code, NULL);
+  glShaderSource(shader, 1, &shader_text, NULL);
   glCompileShader(shader);
 
   GLint success = 0;
@@ -102,7 +82,10 @@ static int has_ext_gles(const char *ext, const char *exts) {
 
   char *token = strtok(exts_cpy, " ");
   while (token != NULL) {
-    if (STREQ(token, ext)) return 1;
+    if (STREQ(token, ext)) {
+      c_log(C_LOG_DEBUG, "loaded GL %s extension", ext);
+      return 1;
+    }
     token = strtok(NULL, " ");
   }
 
@@ -342,7 +325,7 @@ void c_gles_free(struct c_gles *gl) {
 
 static int create_program(struct c_gles *gl, const char *frag_shader, GLuint *prog) {
   GLuint vertex, fragment;
-  if (!(vertex = compile_shader(VERTEX_SHADER_PATH, GL_VERTEX_SHADER))) {
+  if (!(vertex = compile_shader(shader_vert, GL_VERTEX_SHADER))) {
     c_log(C_LOG_ERROR, "failed to compile vertex shader");
     return -1;
   }
@@ -400,17 +383,17 @@ struct c_gles *c_gles_init() {
   c_log(C_LOG_INFO, "GL vendor %s", glGetString(GL_VENDOR));
   c_log(C_LOG_INFO, "GL display extensions %s", glGetString(GL_EXTENSIONS));
 
-  if (create_program(gl, FRAG_SOLID_SHADER_PATH, &gl->solid_program) == -1) {
+  if (create_program(gl, solid_frag, &gl->solid_program) == -1) {
     c_log(C_LOG_ERROR, "failed to create program");
     goto err;
   }
 
-  if (create_program(gl, FRAG_TEX_SHADER_PATH, &gl->tex_program) == -1) {
+  if (create_program(gl, texture_frag, &gl->tex_program) == -1) {
     c_log(C_LOG_ERROR, "failed to create program");
     goto err;
   }
 
-  if (create_program(gl, FRAG_TEX_EXT_SHADER_PATH, &gl->tex_ext_program) == -1) {
+  if (create_program(gl, textureext_frag, &gl->tex_ext_program) == -1) {
     c_log(C_LOG_ERROR, "failed to create program");
     goto err;
   }

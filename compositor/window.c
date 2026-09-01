@@ -1,17 +1,17 @@
 #include <assert.h> 
 #include <unistd.h>
+#include <stdlib.h>
 
 #include "wayland/proto/xdg-shell.h"
 #include "wayland/impl/xdg-shell.h"
-#include "wayland/proto/wayland.h"
 #include "wayland/impl/wayland.h"
 
 #include "compositor/window.h"
-#include "compositor/scene.h"
+#include "compositor/surface.h"
+#include "compositor/util.h"
+
 #include "util/log.h"
 #include "util/helpers.h"
-
-void get_surface_size(struct c_wl_surface *surface, double *width, double *height);
 
 struct c_wl_surface *surface_hit_test(struct c_window *window,
                                       struct c_wl_surface *surface,
@@ -35,8 +35,8 @@ struct c_wl_surface *surface_hit_test(struct c_window *window,
   }
 
   if (window && surface->xdg_surface) {
-    double crop_w = window->width / scale;
-    double crop_h = window->height / scale;
+    double crop_w = surface->xdg_surface->width;
+    double crop_h = surface->xdg_surface->height;
     surf_x = (surf_w - crop_w) / 2;
     surf_y = (surf_h - crop_h) / 2;
   }
@@ -89,51 +89,6 @@ struct c_wl_surface *surface_hit_test(struct c_window *window,
   return NULL;
 }
 
-static void surface_enter(struct c_window *window, struct c_wl_surface *surface, double mx, double my, int enter_keyboard) {
-  struct c_wl_connection *conn = window->conn;
-  int wl_pointer_serial = c_wl_serial();
-  int wl_keyboard_serial = c_wl_serial();
-  int wl_keyboard_modifiers_serial = c_wl_serial();
-
-  struct c_wl_object *o = NULL;
-  c_wl_objects_for_each(conn, o) {
-    SWITCH_STR(o->iface->name)
-      CASE_STR("wl_keyboard")
-        if (enter_keyboard) {
-          c_wl_array arr = {0};
-          wl_keyboard_enter(conn, o->id, wl_keyboard_serial, surface->obj->id, &arr);
-          wl_keyboard_modifiers(conn, o->id, wl_keyboard_modifiers_serial, 0, 0, 0, 0);
-        }
-
-      CASE_STR("wl_pointer")
-        c_wl_fixed hotspot_x = C_WL_FIXED_FROM_DOUBLE(mx);
-        c_wl_fixed hotspot_y = C_WL_FIXED_FROM_DOUBLE(my);
-
-        wl_pointer_enter(conn, o->id, wl_pointer_serial, surface->obj->id, hotspot_x, hotspot_y);
-        wl_pointer_frame(conn, o->id);
-
-    SWITCH_STR_END
-    }
-}
-
-static void surface_leave(struct c_window *window, struct c_wl_surface *surface, int leave_keyboard) {
-  struct c_wl_connection *conn = window->conn;
-  int wl_keyboard_serial = c_wl_serial();
-  int wl_pointer_serial = c_wl_serial();
-
-  struct c_wl_object *o = NULL;
-  c_wl_objects_for_each(conn, o) {
-    SWITCH_STR(o->iface->name)
-      CASE_STR("wl_keyboard")
-        if (leave_keyboard)
-          wl_keyboard_leave(conn, o->id, wl_keyboard_serial, surface->obj->id);
-      CASE_STR("wl_pointer")
-        wl_pointer_leave(conn, o->id, wl_pointer_serial, surface->obj->id);
-        wl_pointer_frame(conn, o->id);
-    SWITCH_STR_END
-  }
-}
-
 struct c_wl_surface *c_window_surface_at(struct c_window *window, double x, double y, double *lx, double *ly) {
   struct c_wl_surface *surf = surface_hit_test(window,
       window->surface->surface, window->scale, x, y, window->x, window->y, lx, ly);
@@ -146,9 +101,7 @@ struct c_wl_surface *c_window_surface_at(struct c_window *window, double x, doub
   return surf;
 }
 
-struct c_window *c_window_new(struct c_scene *scene,
-                              struct c_wl_connection *connection,
-                              struct c_xdg_surface *surface) {
+struct c_window *c_window_new(struct c_wl_connection *connection, struct c_xdg_surface *surface) {
   struct c_window *window = calloc(1, sizeof(*window));
   if (!window) {
     c_log_errno(C_LOG_ERROR, "failed to allocate window for a new client");
@@ -159,9 +112,6 @@ struct c_window *c_window_new(struct c_scene *scene,
   window->surface = surface;
   window->title = &surface->toplevel.title;
   window->app_id = &surface->toplevel.app_id;
-
-  window->node = c_scene_add_window(scene, window);
-
   return window;
 }
 
@@ -199,12 +149,11 @@ static void add_states(struct c_window *window, c_wl_enum state[16], size_t *siz
   }
 }
 
-void c_window_free(struct c_scene *scene, struct c_window *window) {
-  c_scene_node_remove(scene, window->node);
+void c_window_free(struct c_window *window) {
   free(window);
 }
 
-int c_window_deactivate(struct c_window *window) {
+void c_window_deactivate(struct c_window *window) {
   struct c_xdg_surface *xdg_surface = window->surface;
 
   uint32_t width = window->width / window->scale;
@@ -220,14 +169,15 @@ int c_window_deactivate(struct c_window *window) {
   };
 
   int serial = c_wl_serial();
+  xdg_surface->serial = serial;
+
   xdg_toplevel_configure(window->conn, xdg_surface->toplevel.obj->id, width, height, &arr);
   xdg_surface_configure(window->conn, xdg_surface->obj->id, serial);
 
   c_wl_connection_flush(window->conn);
-  return serial;
 }
 
-int c_window_activate(struct c_window *window) {
+void c_window_activate(struct c_window *window) {
   struct c_xdg_surface *xdg_surface = window->surface;
 
   uint32_t width = window->width / window->scale;
@@ -243,26 +193,27 @@ int c_window_activate(struct c_window *window) {
   };
 
   int serial = c_wl_serial();
+  xdg_surface->serial = serial;
+
   xdg_toplevel_configure(window->conn, xdg_surface->toplevel.obj->id, width, height, &arr);
   xdg_surface_configure(window->conn, xdg_surface->obj->id, serial);
 
   c_wl_connection_flush(window->conn);
-
-  return serial;
 };
 
 void c_window_focus(struct c_window *window, double mx, double my) {
   double lx, ly;
   struct c_wl_surface *focused = c_window_surface_at(window, mx, my, &lx, &ly);
 
-  surface_enter(window, focused, mx, my, 1);
+  c_surface_enter(focused, mx, my);
   c_window_activate(window);
   c_wl_connection_flush(window->conn);
 }
 
 void c_window_unfocus(struct c_window *window) {
   struct c_wl_surface *surface = window->surface->surface;
-  surface_leave(window, surface, 1);
+
+  c_surface_leave(surface);
   c_window_deactivate(window);
   c_wl_connection_flush(window->conn);
 }
@@ -283,89 +234,11 @@ void c_window_pointer_move(struct c_window *window, double x, double y) {
     ly = (y - window->y) / window->scale;
   } else if (focused != window->focused) {
     if (window->focused)
-      surface_leave(window, window->focused, 0);
+      c_surface_leave_pointer(window->focused);
 
-    surface_enter(window, focused, lx, ly, 0);
+    c_surface_enter_pointer(focused, lx, ly);
     window->focused = focused;
   }
 
-  c_wl_fixed hotspot_x = C_WL_FIXED_FROM_DOUBLE(lx);
-  c_wl_fixed hotspot_y = C_WL_FIXED_FROM_DOUBLE(ly);
-  c_wl_object_id frames[16];
-  size_t frame_n = 0;
-
-  struct c_wl_object *o = NULL;
-  c_wl_objects_for_each(window->conn, o) {
-    if (STREQ(o->iface->name, "wl_pointer")) {
-      wl_pointer_motion(window->conn, o->id, c_since_start_ms(), hotspot_x, hotspot_y);
-      frames[frame_n++] = o->id;
-    }
-  }
-
-  for (size_t i = 0; i < frame_n; i++)
-    wl_pointer_frame(window->conn, frames[i]);
-
-  c_wl_connection_flush(window->conn);
-}
-
-void c_window_pointer_button(struct c_window *window, uint32_t button, int pressed) {
-  int serial = c_wl_serial();
-
-  struct c_wl_object *o = NULL;
-  c_wl_objects_for_each(window->conn, o) {
-    if (STREQ(o->iface->name, "wl_pointer")) {
-      wl_pointer_button(window->conn, o->id, serial, c_since_start_ms(), button, pressed);
-      wl_pointer_frame(window->conn, o->id);
-    }
-  }
-  c_wl_connection_flush(window->conn);
-}
-
-void c_window_pointer_scroll(struct c_window *window, double axis, double axis120,
-                             enum wl_pointer_axis_source_enum axis_source,
-                             enum wl_pointer_axis_enum axis_orient,
-                             int axis_discrete) {
-
-  struct c_wl_connection *conn = window->conn;
-  struct c_wl_object *o = NULL;
-  c_wl_objects_for_each(window->conn, o) {
-    if (STREQ(o->iface->name, "wl_pointer")) {
-      wl_pointer_axis_source(conn, o->id, axis_source);
-
-      if (C_WL_POINTER_AXIS_DISCRETE_SINCE <= o->version &&
-          o->version < C_WL_POINTER_AXIS_DISCRETE_DEPRECATED_SINCE) {
-        wl_pointer_axis_discrete(conn, o->id, axis_orient, axis_discrete);
-
-      } else if (o->version >= C_WL_POINTER_AXIS_VALUE120_SINCE) {
-        if (o->version >= C_WL_POINTER_AXIS_RELATIVE_DIRECTION_SINCE)
-          wl_pointer_axis_relative_direction(conn, o->id, axis_orient, WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);
-        wl_pointer_axis_value120(conn, o->id, axis_orient, (c_wl_int)axis120);
-      }
-
-      wl_pointer_axis(conn, o->id, c_since_start_ms(), axis_orient, C_WL_FIXED_FROM_DOUBLE(axis));
-      wl_pointer_frame(conn, o->id);
-    }
-  }
-  c_wl_connection_flush(window->conn);
-}
-
-void c_window_keyboard_key(struct c_window *window, int32_t key, int pressed, 
-		xkb_mod_mask_t mods_depressed, xkb_mod_mask_t mods_latched, xkb_mod_mask_t mods_locked, 
-		xkb_layout_index_t group, int send_mods) {
-
-  int serial = c_wl_serial();
-  int serial2 = c_wl_serial();
-  
-  struct c_wl_object *o = NULL;
-  c_wl_objects_for_each(window->conn, o) {
-    if (STREQ(o->iface->name, "wl_keyboard")) {
-      wl_keyboard_key(window->conn, o->id, serial, c_since_start_ms(), 
-                      key, pressed ? WL_KEYBOARD_KEY_STATE_PRESSED : WL_KEYBOARD_KEY_STATE_RELEASED);
-
-      if (send_mods)
-        wl_keyboard_modifiers(window->conn, o->id, serial2, mods_depressed, mods_latched, mods_locked, group);
-
-    }
-  }
-  c_wl_connection_flush(window->conn);
+  c_surface_pointer_move(window->conn, lx, ly);
 }

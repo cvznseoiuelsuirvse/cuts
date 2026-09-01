@@ -1,6 +1,6 @@
 #include "wayland/server.h"
 #include "wayland/display.h"
-#include "util/malloc.h"
+#include "util/mem.h"
 
 int wp_cursor_shape_manager_v1_get_pointer(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);

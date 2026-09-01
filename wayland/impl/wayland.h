@@ -35,6 +35,7 @@ enum c_wl_surface_roles {
 	C_WL_SURFACE_ROLE_XDG_POPUP,
 	C_WL_SURFACE_ROLE_SUBSURFACE,
 	C_WL_SURFACE_ROLE_DND_ICON,
+	C_WL_SURFACE_ROLE_LAYER_SURFACE,
 };
 
 struct c_wl_surface {
@@ -113,9 +114,7 @@ struct c_wl_data_source {
   size_t mimes;
 
   enum wl_data_device_manager_dnd_action_enum actions;
-
   struct c_wl_data_device *device;
-
 };
 
 struct c_wl_data_device {
