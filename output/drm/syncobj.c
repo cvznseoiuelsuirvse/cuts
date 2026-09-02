@@ -39,6 +39,8 @@ error:
 
 int c_drm_import_sync_file(struct c_drm_sync_object *syncobj, int sync_file_fd) {
   uint32_t handle;
+  syncobj->point++;
+
   drm_call(drmSyncobjCreate,error, syncobj->drm_fd, 0, &handle);
   drm_call(drmSyncobjImportSyncFile, error_after_create, syncobj->drm_fd,
            handle, sync_file_fd);

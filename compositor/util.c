@@ -1,17 +1,16 @@
 #include "render/types.h"
 #include "wayland/impl/wayland.h"
 #include "wayland/impl/viewporter.h"
-#include "wayland/proto/viewporter.h"
 
 #include "compositor/util.h"
 
 void get_surface_raw_buf_size(struct c_wl_surface *surface, int32_t *width, int32_t *height) {
-  if (surface->buffer.active->dma) {
-    *width = surface->buffer.active->dma->width;
-    *height = surface->buffer.active->dma->height;
+  if (surface->active.buffer->dma) {
+    *width = surface->active.buffer->dma->width;
+    *height = surface->active.buffer->dma->height;
   } else {
-    *width = surface->buffer.active->shm->width;
-    *height = surface->buffer.active->shm->height;
+    *width = surface->active.buffer->shm->width;
+    *height = surface->active.buffer->shm->height;
   }
 }
 
@@ -20,14 +19,14 @@ void get_surface_buf_size(struct c_wl_surface *surface, int32_t *width, int32_t 
   if (surface->fscale)
     scale = surface->fscale / 120.0f;
   else
-    scale = surface->scale;
+    scale = surface->active.scale;
 
-  if (surface->buffer.active->dma) {
-    *width = surface->buffer.active->dma->width / scale;
-    *height = surface->buffer.active->dma->height / scale;
+  if (surface->active.buffer->dma) {
+    *width = surface->active.buffer->dma->width / scale;
+    *height = surface->active.buffer->dma->height / scale;
   } else {
-    *width = surface->buffer.active->shm->width / scale;
-    *height = surface->buffer.active->shm->height / scale;
+    *width = surface->active.buffer->shm->width / scale;
+    *height = surface->active.buffer->shm->height / scale;
   }
 }
 
@@ -40,7 +39,7 @@ void get_surface_size(struct c_wl_surface *surface, double *width, double *heigh
 
   if (!surface->viewport) return;
 
-  struct c_wp_viewport *vp = surface->viewport;
+  struct c_wp_viewport_state *vp = &surface->viewport->active;
 
   if (vp->src.width > 0 && vp->src.height > 0) {
     *width = vp->src.width;

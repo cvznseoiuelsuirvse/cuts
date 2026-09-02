@@ -57,6 +57,12 @@ int read_at(void *ptr, size_t size, size_t n, size_t offset, FILE *f) {
   return fread(ptr, size, n, f);
 }
 
+int64_t now_us() {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (int64_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+}
+
 int64_t now_ms() {
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);

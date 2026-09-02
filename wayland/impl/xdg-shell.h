@@ -28,28 +28,38 @@ struct c_xdg_positioner {
   } anchor_rect;
 };
 
+enum c_xdg_surface_state_commited {
+  C_XDG_SURFACE_STATE_MAX_SIZE = 1 << 0,
+  C_XDG_SURFACE_STATE_MIN_SIZE = 1 << 1,
+  C_XDG_SURFACE_STATE_GEOM     = 1 << 2,
+};
+
+struct c_xdg_surface_state {
+  uint32_t commited;
+
+  struct { c_wl_int width, height; } max;
+  struct { c_wl_int width, height; } min;
+
+  struct {
+    c_wl_int x, y;
+    c_wl_int width, height;
+  } geo;
+  
+};
+
 struct c_xdg_surface {
   struct c_wl_object *obj;
 
   c_wl_uint serial;
   c_wl_uint acked_serial;
 
-  c_wl_int x;
-  c_wl_int y;
-  c_wl_int width;
-  c_wl_int height;
+  struct c_xdg_surface_state pending, active;
   
   struct {
     struct c_wl_object *obj;
 
-    c_wl_int max_width;
-    c_wl_int max_height;
-    c_wl_int min_width;
-    c_wl_int min_height;
-
     char *title;
     char *app_id;
-
   } toplevel;
 
   struct c_wl_surface *surface;
@@ -62,5 +72,7 @@ struct c_xdg_surface {
   c_list *children;
   struct c_xdg_surface *parent;
 };
+
+void c_xdg_surface_state_apply(struct c_xdg_surface *surface);
 
 #endif

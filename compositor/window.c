@@ -20,7 +20,8 @@ struct c_wl_surface *surface_hit_test(struct c_window *window,
                                       double offset_x, double offset_y,
                                       double *x, double *y) {
 
-  if (!surface->buffer.active) return NULL;
+  struct c_wl_buffer *buffer = surface->active.buffer;
+  if (!buffer) return NULL;
 
   double surf_x = 0, surf_y = 0;
   double surf_w, surf_h;
@@ -35,8 +36,8 @@ struct c_wl_surface *surface_hit_test(struct c_window *window,
   }
 
   if (window && surface->xdg_surface) {
-    double crop_w = surface->xdg_surface->width;
-    double crop_h = surface->xdg_surface->height;
+    double crop_w = surface->xdg_surface->active.geo.width;
+    double crop_h = surface->xdg_surface->active.geo.height;
     surf_x = (surf_w - crop_w) / 2;
     surf_y = (surf_h - crop_h) / 2;
   }
@@ -61,8 +62,8 @@ struct c_wl_surface *surface_hit_test(struct c_window *window,
     struct c_wl_surface *h;
     c_list_for_each(surface->xdg_surface->children, xs) {
       h = surface_hit_test(NULL, xs->surface, scale, px, py, 
-          offset_x + xs->popup.x - xs->x,
-          offset_y + xs->popup.y - xs->y,
+          offset_x + xs->popup.x - xs->active.geo.x,
+          offset_y + xs->popup.y - xs->active.geo.y,
           x, y);
       if (h) hit = h;
     }
@@ -75,8 +76,8 @@ struct c_wl_surface *surface_hit_test(struct c_window *window,
     double sx = px - offset_x + surf_x;
     double sy = py - offset_y + surf_y;
 
-    struct c_wl_region *input = &surface->input.active;
-    if (input &&
+    struct c_wl_region *input = &surface->active.input;
+    if (input->width >= 0 &&
         !CURSOR_INSIDE(sx, sy, input->x, input->y, input->width, input->height))
       return NULL;
 
@@ -116,35 +117,40 @@ struct c_window *c_window_new(struct c_wl_connection *connection, struct c_xdg_s
 }
 
 static void add_states(struct c_window *window, c_wl_enum state[16], size_t *size) {
-  if (window->state & C_WINDOW_FULLSCREEN) {
+  if (ENUM_FLAG(XDG_TOPLEVEL_STATE_MAXIMIZED) & window->states)
+    state[(*size)++] = XDG_TOPLEVEL_STATE_MAXIMIZED;
+
+  if (ENUM_FLAG(XDG_TOPLEVEL_STATE_FULLSCREEN) & window->states)
     state[(*size)++] = XDG_TOPLEVEL_STATE_FULLSCREEN;
-  }
+
+  if (ENUM_FLAG(XDG_TOPLEVEL_STATE_RESIZING) & window->states)
+    state[(*size)++] = XDG_TOPLEVEL_STATE_RESIZING;
 
   if (window->surface->obj->version >= C_XDG_TOPLEVEL_TILED_TOP_SINCE) {
-    if (ENUM_FLAG(XDG_TOPLEVEL_STATE_TILED_TOP) & window->xdg_states)
+    if (ENUM_FLAG(XDG_TOPLEVEL_STATE_TILED_TOP) & window->states)
       state[(*size)++] = XDG_TOPLEVEL_STATE_TILED_TOP;
 
-    if (ENUM_FLAG(XDG_TOPLEVEL_STATE_TILED_RIGHT) & window->xdg_states)
+    if (ENUM_FLAG(XDG_TOPLEVEL_STATE_TILED_RIGHT) & window->states)
       state[(*size)++] = XDG_TOPLEVEL_STATE_TILED_RIGHT;
 
-    if (ENUM_FLAG(XDG_TOPLEVEL_STATE_TILED_BOTTOM) & window->xdg_states)
+    if (ENUM_FLAG(XDG_TOPLEVEL_STATE_TILED_BOTTOM) & window->states)
       state[(*size)++] = XDG_TOPLEVEL_STATE_TILED_BOTTOM;
 
-    if (ENUM_FLAG(XDG_TOPLEVEL_STATE_TILED_LEFT) & window->xdg_states)
+    if (ENUM_FLAG(XDG_TOPLEVEL_STATE_TILED_LEFT) & window->states)
       state[(*size)++] = XDG_TOPLEVEL_STATE_TILED_LEFT;
   }
 
   if (window->surface->obj->version >= C_XDG_TOPLEVEL_CONSTRAINED_TOP_SINCE) {
-    if (ENUM_FLAG(XDG_TOPLEVEL_STATE_CONSTRAINED_TOP) & window->xdg_states)
+    if (ENUM_FLAG(XDG_TOPLEVEL_STATE_CONSTRAINED_TOP) & window->states)
       state[(*size)++] = XDG_TOPLEVEL_STATE_CONSTRAINED_TOP;
 
-    if (ENUM_FLAG(XDG_TOPLEVEL_STATE_CONSTRAINED_RIGHT) & window->xdg_states)
+    if (ENUM_FLAG(XDG_TOPLEVEL_STATE_CONSTRAINED_RIGHT) & window->states)
       state[(*size)++] = XDG_TOPLEVEL_STATE_CONSTRAINED_RIGHT;
 
-    if (ENUM_FLAG(XDG_TOPLEVEL_STATE_CONSTRAINED_BOTTOM) & window->xdg_states)
+    if (ENUM_FLAG(XDG_TOPLEVEL_STATE_CONSTRAINED_BOTTOM) & window->states)
       state[(*size)++] = XDG_TOPLEVEL_STATE_CONSTRAINED_BOTTOM;
 
-    if (ENUM_FLAG(XDG_TOPLEVEL_STATE_CONSTRAINED_LEFT) & window->xdg_states)
+    if (ENUM_FLAG(XDG_TOPLEVEL_STATE_CONSTRAINED_LEFT) & window->states)
       state[(*size)++] = XDG_TOPLEVEL_STATE_CONSTRAINED_LEFT;
   }
 }

@@ -479,7 +479,7 @@ int c_wl_object_del(struct c_wl_connection *conn, c_wl_object_id id) {
   if (!o) return 1;
   
   if (o->data) {
-    c_log(C_LOG_DEBUG, "del %s#%lu rc=%d", o->iface->name, id, c_get_refcount(o->data));
+    c_log(C_LOG_DEBUG, "del %s#%lu", o->iface->name, id);
     c_unref(o->data);
   }
 

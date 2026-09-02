@@ -30,5 +30,6 @@ uint32_t swap_32(uint32_t value);
 uint16_t swap_16(uint32_t value);
 int read_at(void *ptr, size_t size, size_t n, size_t offset, FILE *f);
 int64_t now_ms();
+int64_t now_us();
 
 #endif

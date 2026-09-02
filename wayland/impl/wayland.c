@@ -9,6 +9,7 @@
 #include "wayland/impl/wayland.h"
 #include "wayland/impl/xdg-shell.h"
 #include "wayland/impl/viewporter.h"
+#include "wayland/impl/wlr-layer-shell-unstable-v1.h"
 
 #include "wayland/display.h"
 #include "output/drm/util.h"
@@ -24,12 +25,10 @@ static void damage_surface(struct c_wl_surface *surface, c_wl_args args) {
   c_wl_int width =  args[3].i;
   c_wl_int height = args[4].i;
 
-  surface->damage.x = x;
-  surface->damage.y = y;
-  surface->damage.width = width;
-  surface->damage.height = height;
-  surface->damage.damaged = 1;
-
+  surface->pending.damage.x = x;
+  surface->pending.damage.y = y;
+  surface->pending.damage.width = width;
+  surface->pending.damage.height = height;
 }
 
 static void defer_pool(void *data) {
@@ -44,6 +43,32 @@ void defer_wl_buffer(void *data) {
   if (buf->shm)  c_unref(buf->shm);
   if (buf->pool) c_unref(buf->pool);
 }
+
+void c_wl_surface_state_apply(struct c_wl_surface *surface) {
+  struct c_wl_surface_state *p = &surface->pending;
+  struct c_wl_surface_state *a = &surface->active;
+
+  if (p->commited & C_WL_SURFACE_STATE_DAMAGE)   { a->damage = p->damage;       };
+  if (p->commited & C_WL_SURFACE_STATE_INPUT)    { a->input  = p->input;        };
+  if (p->commited & C_WL_SURFACE_STATE_OPAQUE)   { a->opaque = p->opaque;       };
+  if (p->commited & C_WL_SURFACE_STATE_SCALE)    { a->scale     = p->scale;     };
+  if (p->commited & C_WL_SURFACE_STATE_OPAQUE)   { a->transform = p->transform; };
+
+  if (p->commited & C_WL_SURFACE_STATE_BUFFER)   { 
+    if (a->buffer) {
+      if (a->buffer->obj)
+        wl_buffer_release(a->buffer->obj->conn, a->buffer->obj->id);
+      c_unref(a->buffer);
+    }
+
+    a->buffer = p->buffer;       
+    if (a->buffer && a->buffer->shm)
+      a->buffer->shm->dirty = 1;
+    p->buffer = NULL;
+  };
+
+  p->commited = 0;
+};
 
 int wl_display_get_registry(struct c_wl_connection *conn, c_wl_args args) {
   c_wl_new_id object_id = args[1].n;
@@ -223,7 +248,8 @@ int wl_surface_set_buffer_scale(struct c_wl_connection *conn, c_wl_args args) {
   if (scale < 0)
     c_wl_error_set_and_return(self->id, WL_SURFACE_ERROR_INVALID_SCALE, "scale must be > 0");
 
-  surface->scale = scale;
+  surface->pending.scale = scale;
+  surface->pending.commited |= C_WL_SURFACE_STATE_SCALE;
 
   return 0;
 }
@@ -236,7 +262,8 @@ int wl_surface_set_buffer_transform(struct c_wl_connection *conn, c_wl_args args
   if (transform > WL_OUTPUT_TRANSFORM_FLIPPED_270)
     c_wl_error_set_and_return(self->id, WL_SURFACE_ERROR_INVALID_TRANSFORM, "invalid transform");
 
-  surface->transform = transform;
+  surface->pending.transform = transform;
+  surface->pending.commited |= C_WL_SURFACE_STATE_TRANSFORM;
 
   return 0;
 }
@@ -322,52 +349,58 @@ int wl_surface_frame(struct c_wl_connection *conn, c_wl_args args) {
 
 int wl_surface_destroy(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
-  struct c_wl_surface *wl_surface = self->data;
+  struct c_wl_surface *surface = self->data;
 
-  for (size_t i = 0; i < wl_surface->feedbacks_n; i++) {
-    wp_presentation_feedback_discarded(conn, wl_surface->feedbacks[i]);
+  for (size_t i = 0; i < surface->feedbacks_n; i++) {
+    wp_presentation_feedback_discarded(conn, surface->feedbacks[i]);
   }
 
-  if (wl_surface->buffer.active) {
-    c_unref(wl_surface->buffer.active);
+  if (surface->active.buffer) {
+    c_unref(surface->active.buffer);
   }
 
-  if (wl_surface->buffer.pending && wl_surface->buffer.pending != wl_surface->buffer.active) {
-    c_unref(wl_surface->buffer.pending);
+  if (surface->pending.buffer) {
+    c_unref(surface->pending.buffer);
   }
 
-  if (wl_surface->xdg_surface) {
-      wl_surface->xdg_surface->surface = NULL;
-      c_unref(wl_surface->xdg_surface);
-      wl_surface->xdg_surface = NULL;
-      c_unref(wl_surface);
+  if (surface->wlr_layer_surface) {
+    surface->wlr_layer_surface->surface = NULL;
+    c_unref(surface->wlr_layer_surface);
+    surface->wlr_layer_surface = NULL;
+    c_unref(surface);
   }
 
-  if (wl_surface->sub.surface) {
-      wl_surface->sub.surface->surface = NULL;
-      c_unref(wl_surface->sub.surface);
-      wl_surface->sub.surface = NULL;
-      c_unref(wl_surface);
+  if (surface->xdg_surface) {
+      surface->xdg_surface->surface = NULL;
+      c_unref(surface->xdg_surface);
+      surface->xdg_surface = NULL;
+      c_unref(surface);
   }
 
-  if (wl_surface->sub.children) {
+  if (surface->sub.surface) {
+      surface->sub.surface->surface = NULL;
+      c_unref(surface->sub.surface);
+      surface->sub.surface = NULL;
+      c_unref(surface);
+  }
+
+  if (surface->sub.children) {
     struct c_wl_subsurface *ss;
-    c_list_for_each(wl_surface->sub.children, ss) {
+    c_list_for_each(surface->sub.children, ss) {
       ss->parent = NULL;
       c_unref(ss);
-      c_unref(wl_surface);
+      c_unref(surface);
     }
 
-    c_list_destroy(wl_surface->sub.children);
-    wl_surface->sub.children = NULL;
+    c_list_destroy(surface->sub.children);
+    surface->sub.children = NULL;
   }
 
-
-  if (wl_surface->viewport) {
-    wl_surface->viewport->surface = NULL;
-    c_unref(wl_surface->viewport);
-    wl_surface->viewport = NULL;
-    c_unref(wl_surface);
+  if (surface->viewport) {
+    surface->viewport->surface = NULL;
+    c_unref(surface->viewport);
+    surface->viewport = NULL;
+    c_unref(surface);
   }
 
   c_wl_object_del(conn, self->id);
@@ -380,7 +413,8 @@ int wl_surface_set_opaque_region(struct c_wl_connection *conn, c_wl_args args) {
 
   c_wl_object_id wl_region_id = args[1].o;
   if (wl_region_id == 0) {
-    memset(&surface->opaque.pending, 0, sizeof(surface->opaque.pending));
+    memset(&surface->pending.opaque, 0, sizeof(surface->pending.opaque));
+    surface->pending.commited |= C_WL_SURFACE_STATE_OPAQUE;
     return 0;
   }
 
@@ -388,7 +422,8 @@ int wl_surface_set_opaque_region(struct c_wl_connection *conn, c_wl_args args) {
   C_WL_CHECK_IF_REGISTERED(wl_region_id, c_wl_region);
 
   struct c_wl_region *region = c_wl_region->data;
-  memcpy(&surface->opaque.pending, region, sizeof(surface->opaque.pending));
+  memcpy(&surface->pending.opaque, region, sizeof(surface->pending.opaque));
+  surface->pending.commited |= C_WL_SURFACE_STATE_OPAQUE;
   return 0;
 }
 
@@ -398,8 +433,9 @@ int wl_surface_set_input_region(struct c_wl_connection *conn, c_wl_args args) {
 
   c_wl_object_id wl_region_id = args[1].o;
   if (wl_region_id == 0) {
-    surface->input.pending.x = surface->input.pending.y = 0;
-    surface->input.pending.width = surface->input.pending.height = -1;
+    surface->pending.input.x     = surface->pending.input.y = 0;
+    surface->pending.input.width = surface->pending.input.height = -1;
+    surface->pending.commited |= C_WL_SURFACE_STATE_INPUT;
     return 0;
   }
 
@@ -407,14 +443,14 @@ int wl_surface_set_input_region(struct c_wl_connection *conn, c_wl_args args) {
   C_WL_CHECK_IF_REGISTERED(wl_region_id, c_wl_region);
 
   struct c_wl_region *region = c_wl_region->data;
-  memcpy(&surface->input.pending, region, sizeof(surface->input.pending));
-
+  memcpy(&surface->pending.input, region, sizeof(surface->pending.input));
+  surface->pending.commited |= C_WL_SURFACE_STATE_INPUT;
   return 0;
 }
 
 int wl_surface_attach(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
-  struct c_wl_surface *wl_surface = self->data;
+  struct c_wl_surface *surface = self->data;
 
   c_wl_object_id buf_id = args[1].o;
   c_wl_int x = args[2].i;
@@ -423,31 +459,21 @@ int wl_surface_attach(struct c_wl_connection *conn, c_wl_args args) {
   if (self->version >= 5 && (x > 0 || y > 0))
     c_wl_error_set_and_return(args[0].o, WL_SURFACE_ERROR_INVALID_OFFSET,
                               "invalid x or y", self->version);
-
+  struct c_wl_buffer *buffer = NULL;
   if (buf_id > 0) {
-    struct c_wl_object *wl_buffer_o;
-    C_WL_CHECK_IF_REGISTERED(buf_id, wl_buffer_o);
-    struct c_wl_buffer *wl_buffer = wl_buffer_o->data;
-
-    if (wl_surface->buffer.pending == wl_buffer)
-      return 0;
-
-    if (wl_surface->buffer.pending && wl_surface->buffer.pending != wl_surface->buffer.active) {
-      if (wl_surface->buffer.pending->obj)
-        wl_buffer_release(conn, wl_surface->buffer.pending->obj->id);
-
-      c_unref(wl_surface->buffer.pending);
-    }
-
-    wl_surface->buffer.pending = wl_buffer;
-    c_ref(wl_buffer);
-
-  } else {
-    if (wl_surface->buffer.pending && wl_surface->buffer.pending != wl_surface->buffer.active) {
-      c_unref(wl_surface->buffer.pending);
-    }
-    wl_surface->buffer.pending = NULL;
+    struct c_wl_object *wl_buffer;
+    C_WL_CHECK_IF_REGISTERED(buf_id, wl_buffer);
+    buffer = wl_buffer->data;
   }
+
+  if (surface->pending.commited & C_WL_SURFACE_STATE_BUFFER && surface->pending.buffer) {
+    c_unref(surface->pending.buffer);
+  }
+
+  surface->pending.buffer = buffer;
+  if (buffer) c_ref(buffer);
+
+  surface->pending.commited |= C_WL_SURFACE_STATE_BUFFER;
 
   return 0;
 }
@@ -456,28 +482,14 @@ int wl_surface_commit(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
   struct c_wl_surface *surface = self->data;
 
-  if (surface->buffer.pending != surface->buffer.active) {
-    if (surface->buffer.active) {
-      if (surface->buffer.active->obj)
-        wl_buffer_release(conn, surface->buffer.active->obj->id);
+  int error = 0;
 
-      c_unref(surface->buffer.active);
-    }
+  c_wl_surface_state_apply(surface);
+  if (surface->xdg_surface)       c_xdg_surface_state_apply(surface->xdg_surface);
+  if (surface->wlr_layer_surface) c_zwlr_layer_surface_state_apply(surface->wlr_layer_surface);
+  if (surface->viewport)          error = c_wp_viewport_state_apply(surface->viewport);
 
-    surface->buffer.active = surface->buffer.pending;
-    // surface->buffer.pending = NULL;
-
-  }
-
-  if (surface->buffer.active) {
-    struct c_rawbuf *shm = surface->buffer.active->shm;
-    if (shm) shm->dirty = 1;
-  }
-
-  memcpy(&surface->input.active, &surface->input.pending, sizeof(surface->input.active));
-  memcpy(&surface->opaque.active, &surface->opaque.pending, sizeof(surface->opaque.active));
-
-  return 0;
+  return error;
 }
 
 int wl_compositor_create_surface(struct c_wl_connection *conn, c_wl_args args) {
@@ -491,10 +503,15 @@ int wl_compositor_create_surface(struct c_wl_connection *conn, c_wl_args args) {
   surface->obj = c_wl_object_add(conn, wl_surface_id, self->version,
                       c_wl_interface_get("wl_surface"), surface);
 
-  surface->scale = 1;
-  surface->transform = WL_OUTPUT_TRANSFORM_NORMAL;
-  surface->input.active.width = -1;
-  surface->input.active.height = -1;
+  surface->pending.scale = 1;
+  surface->pending.commited |= C_WL_SURFACE_STATE_SCALE;
+
+  surface->pending.transform = WL_OUTPUT_TRANSFORM_NORMAL;
+  surface->pending.commited |= C_WL_SURFACE_STATE_TRANSFORM;
+
+  surface->pending.input.width = -1;
+  surface->pending.input.height = -1;
+  surface->pending.commited |= C_WL_SURFACE_STATE_INPUT;
   return 0;
 }
 

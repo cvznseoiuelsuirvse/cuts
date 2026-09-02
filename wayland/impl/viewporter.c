@@ -2,7 +2,41 @@
 #include "wayland/impl/wayland.h"
 #include "wayland/impl/viewporter.h"
 #include "wayland/server.h"
+
+#include "render/types.h"
+
 #include "util/mem.h"
+#include "util/log.h"
+
+int c_wp_viewport_state_apply(struct c_wp_viewport *vp) {
+  struct c_wp_viewport_state *p = &vp->pending;
+  struct c_wp_viewport_state *a = &vp->active;
+
+  if (p->commited & C_WP_VIEWPORT_STATE_SRC) { 
+    struct c_wl_surface *surface = vp->surface;
+    if (surface->active.buffer) {
+      c_wl_int width, height;
+      if (surface->active.buffer->dma) {
+        width = surface->active.buffer->dma->width;
+        height = surface->active.buffer->dma->height;
+      } else {
+        width = surface->active.buffer->shm->width;
+        height = surface->active.buffer->shm->height;
+      }
+
+      if (vp->pending.src.x + vp->pending.src.width > width || vp->pending.src.y + vp->pending.src.height > height)
+        c_wl_error_set_and_return(
+            vp->obj->id, WP_VIEWPORT_ERROR_OUT_OF_BUFFER,
+            "viewport source rect exceeds wl_surface's buffer");
+    }
+
+    a->src = p->src;
+  }
+
+  if (p->commited & C_WP_VIEWPORT_STATE_DST) { a->dst  = p->dst;    }
+
+  return 0;
+}
 
 int wp_viewporter_get_viewport(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
@@ -27,7 +61,6 @@ int wp_viewporter_get_viewport(struct c_wl_connection *conn, c_wl_args args) {
 
   viewport->surface = surface;
   c_ref(surface);
-
   surface->viewport = viewport;
   c_ref(viewport);
 
@@ -41,8 +74,9 @@ int wp_viewporter_destroy(struct c_wl_connection *conn, c_wl_args args) { C_WL_D
 int wp_viewport_set_source(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *wp_viewport = c_wl_self(conn, args); 
   struct c_wp_viewport *viewport = wp_viewport->data;
+  struct c_wl_surface *surface = viewport->surface;
 
-  if (!viewport->surface) {
+  if (!surface) {
     c_wl_error_set_and_return(wp_viewport->id, WP_VIEWPORT_ERROR_NO_SURFACE, "associated wl_surface was already destroyed");
   }
 
@@ -61,19 +95,21 @@ int wp_viewport_set_source(struct c_wl_connection *conn, c_wl_args args) {
   }
 
 out:
-  viewport->src.x = x;
-  viewport->src.y = y;
-  viewport->src.width = width;
-  viewport->src.height = height;
+  viewport->pending.src.x = x;
+  viewport->pending.src.y = y;
+  viewport->pending.src.width = width;
+  viewport->pending.src.height = height;
 
+  viewport->pending.commited |= C_WP_VIEWPORT_STATE_SRC;
   return 0;
 }
 
 int wp_viewport_set_destination(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *wp_viewport = c_wl_self(conn, args); 
   struct c_wp_viewport *viewport = wp_viewport->data;
+  struct c_wl_surface *surface = viewport->surface;
 
-  if (!viewport->surface) {
+  if (!surface) {
     c_wl_error_set_and_return(wp_viewport->id, WP_VIEWPORT_ERROR_NO_SURFACE, "associated wl_surface was already destroyed");
   }
 
@@ -87,8 +123,10 @@ int wp_viewport_set_destination(struct c_wl_connection *conn, c_wl_args args) {
   }
 
 out:
-  viewport->dst.width = width;
-  viewport->dst.height = height;
+  viewport->pending.dst.width = width;
+  viewport->pending.dst.height = height;
+
+  viewport->pending.commited |= C_WP_VIEWPORT_STATE_DST;
 
   return 0;
 }
@@ -97,13 +135,15 @@ out:
 int wp_viewport_destroy(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *wp_viewport = c_wl_self(conn, args); 
   struct c_wp_viewport *viewport = wp_viewport->data;
+  struct c_wl_surface *surface = viewport->surface;
 
-  if (viewport->surface) {
-    viewport->surface->viewport = NULL;
-    c_unref(viewport->surface);
-    viewport->surface = NULL;
+  if (surface) {
+    surface->viewport = NULL;
     c_unref(viewport);
+    c_unref(surface);
   }
+
+  viewport->surface = NULL;
 
   C_WL_DESTRUCTOR(conn, args);
 }

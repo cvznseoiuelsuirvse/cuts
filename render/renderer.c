@@ -282,7 +282,6 @@ int c_renderer_commit(struct c_renderer *render, struct c_output *output) {
     }
     c_egl_destroy_sync(render->egl, sync);
 
-    output->timeline->point++;
     if (c_drm_import_sync_file(output->timeline, fence_fd)) {
       c_log(C_LOG_ERROR, "failed to import sync file into timeline");
       return -1;
@@ -290,6 +289,7 @@ int c_renderer_commit(struct c_renderer *render, struct c_output *output) {
     close(fence_fd);
 
   } else {
+    c_log(C_LOG_DEBUG, "glFlush");
     glFlush();
     glFinish();
   }

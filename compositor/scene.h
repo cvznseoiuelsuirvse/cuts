@@ -78,6 +78,7 @@ struct c_scene_node *c_scene_add_surface(struct c_scene *scene, struct c_scene_s
 
 struct c_scene_node;
 void c_scene_node_update(struct c_scene_node *node);
+void c_scene_node_move(struct c_scene_node *node, double dx, double dy);
 void c_scene_node_remove(struct c_scene *scene, struct c_scene_node *node);
 void c_scene_node_raise(struct c_scene *scene, struct c_scene_node *node);
 

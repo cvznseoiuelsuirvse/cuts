@@ -205,7 +205,7 @@ void *on_wp_presentation_bind(struct c_wl_connection *conn, struct c_wl_object *
   return NULL;
 }
 
-int c_output_damage(struct c_output_manager *mgr, struct c_output *output) {
+int c_output_commit(struct c_output_manager *mgr, struct c_output *output) {
   output->need_redraw = 1;
   return schedule_pageflip(mgr, output);
 }
@@ -222,7 +222,7 @@ void c_output_set_mode(struct c_output_manager *mgr, struct c_output *output, st
   c_drm_atomic_commit(mgr->drm_fd, output, mode, DRM_MODE_ATOMIC_ALLOW_MODESET, NULL, -1);
 
   glViewport(0, 0, mode->width, mode->height);
-  c_output_damage(mgr, output);
+  c_output_commit(mgr, output);
 }
 
 void c_output_register_on_redraw(struct c_output_manager *mgr, on_redraw_handler handler, void *userdata) {
@@ -292,6 +292,14 @@ struct c_output_manager *c_output_manager_init(struct c_session *session,
   struct c_output *output;
   c_list_for_each(mgr->outputs, output) {
     output->active_surfaces = c_list_new();
+    if (mgr->renderer->egl->ext_support.KHR_fence_sync) {
+      output->timeline = c_drm_sync_object_init(drm_fd);
+      if (!output->timeline) {
+        c_log(C_LOG_WARNING, "failed to create timeline sync object for %s", output->name);
+      } else {
+        c_log(C_LOG_DEBUG, "created timeline sync object for %s", output->name);
+      }
+    }
   }
 
   c_event_loop_add(loop, drm_fd, drm_callback, mgr);

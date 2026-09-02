@@ -6,11 +6,6 @@
 
 #include "wayland/impl/wayland.h"
 
-enum c_window_states {
-	C_WINDOW_FLOAT        = 1 << 1,
-	C_WINDOW_FULLSCREEN   = 1 << 2,
-};
-
 struct c_window {
   double x;
   double y;
@@ -21,8 +16,7 @@ struct c_window {
   char **title;
   char **app_id;
 
-  enum c_window_states state;
-  uint32_t xdg_states;
+  uint32_t states;
 
   struct c_wl_connection *conn;
   struct c_xdg_surface *surface;

@@ -13,8 +13,9 @@ typedef struct c_list {
   size_t size;
 } c_list;
 
-#define c_list_for_each(pos, member)                             \
-  for (c_list *__pos = pos; __pos->next && ((member = __pos->data), 1); __pos = __pos->next) 	\
+#define c_list_for_each(pos, member)                                           \
+  for (c_list *__pos = pos; __pos->next && ((member = __pos->data), 1);        \
+       __pos = __pos->next)
 
 c_list *c_list_new();
 void    c_list_destroy(c_list *l);

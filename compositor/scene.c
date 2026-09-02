@@ -10,7 +10,6 @@
 #include "wayland/impl/wayland.h"
 #include "wayland/impl/xdg-shell.h"
 #include "wayland/impl/viewporter.h"
-#include "wayland/proto/viewporter.h"
 
 #include "util/log.h"
 #include "util/mem.h"
@@ -86,17 +85,18 @@ static void create_rect_quad(struct c_scene_rect *rect, struct c_renderer_quad *
 static void collect_window_tree(struct c_window *window, struct c_wl_surface *surface,
                         double scale, double x, double y,
                         c_list *quads) {
-  if (!surface || !surface->buffer.active) return;
+  if (!surface || !surface->active.buffer) return;
+  struct c_wl_buffer *buffer = surface->active.buffer;
 
   struct c_renderer_quad q = {
     .type = C_RENDERER_BUFFER,
   };
 
-  if (surface->buffer.active->dma) {
-    q.buffer = surface->buffer.active->dma;
+  if (buffer->dma) {
+    q.buffer = buffer->dma;
     q.buffer_type = C_BUFFER_DMA;
   } else {
-    q.buffer = surface->buffer.active->shm;
+    q.buffer = buffer->shm;
     q.buffer_type = C_BUFFER_RAW;
   }
 
@@ -111,16 +111,7 @@ static void collect_window_tree(struct c_window *window, struct c_wl_surface *su
   get_surface_size(surface, &surf_w, &surf_h);
 
   if (surface->viewport) {
-    struct c_wp_viewport *vp = surface->viewport;
-
-    if (vp->src.x + vp->src.width > raw_w || vp->src.y + vp->src.height > raw_h) {
-      wl_display_error(surface->obj->conn, 1, vp->obj->id,
-                       WP_VIEWPORT_ERROR_OUT_OF_BUFFER,
-                       "viewport source rect exceeds wl_surface's buffer");
-      return;
-    }
-
-
+    struct c_wp_viewport_state *vp = &surface->viewport->active;
     if (vp->src.width > 0 && vp->src.height > 0) {
       src_x = vp->src.x;
       src_y = vp->src.y;
@@ -141,17 +132,18 @@ static void collect_window_tree(struct c_window *window, struct c_wl_surface *su
   matrix3_new(q.transform);
 
   matrix3_translate(q.transform, 0.5f, 0.5f);
-  matrix3_rotate(q.transform, surface->transform);
+  matrix3_rotate(q.transform, surface->active.transform);
   matrix3_translate(q.transform, -0.5f, -0.5f);
 
   matrix3_translate(q.transform, src_x / raw_w, src_y / raw_h);
   matrix3_scale(q.transform, src_w / raw_w, src_h / raw_h);
 
   if (window && surface->xdg_surface) {
-    double crop_w = surface->xdg_surface->width;
-    double crop_h = surface->xdg_surface->height;
-    double crop_x = (surf_w - crop_w) / 2;
-    double crop_y = (surf_h - crop_h) / 2;
+    double crop_w = surface->xdg_surface->active.geo.width;
+    double crop_h = surface->xdg_surface->active.geo.height;
+
+    double crop_x = surface->xdg_surface->active.geo.x;
+    double crop_y = surface->xdg_surface->active.geo.y;
 
     matrix3_translate(q.transform, crop_x / surf_w, crop_y / surf_h);
     matrix3_scale(q.transform, crop_w / surf_w, crop_h / surf_h);
@@ -182,8 +174,8 @@ static void collect_window_tree(struct c_window *window, struct c_wl_surface *su
     struct c_xdg_surface *xs;
     c_list_for_each(surface->xdg_surface->children, xs) {
       collect_window_tree(NULL, xs->surface, scale,
-                          q.x + (xs->popup.x - xs->x) * scale,
-                          q.y + (xs->popup.y - xs->y) * scale, quads);
+                          q.x + (xs->popup.x - xs->active.geo.x) * scale,
+                          q.y + (xs->popup.y - xs->active.geo.y) * scale, quads);
     }
   }
 }
@@ -199,8 +191,9 @@ static int on_redraw(struct c_output_manager *mgr, struct c_output *output, void
 
     if (node->type == C_SCENE_NODE_WINDOW) {
       struct c_renderer_quad *quad;
-      c_list_for_each(node->quads, quad)
+      c_list_for_each(node->quads, quad) {
         c_renderer_draw(mgr->renderer, output, quad);
+      }
 
     } else if (node->type == C_SCENE_NODE_SURFACE) {
       struct c_renderer_quad *quad = node->quad;
@@ -209,7 +202,8 @@ static int on_redraw(struct c_output_manager *mgr, struct c_output *output, void
         quad->buffer = NULL;
       }
 
-      if (!surf->surface->buffer.active) continue;
+      struct c_wl_buffer *buffer = surf->surface->active.buffer;
+      if (!buffer) continue;
 
       int32_t w, h;
       get_surface_buf_size(surf->surface, &w, &h);
@@ -217,11 +211,11 @@ static int on_redraw(struct c_output_manager *mgr, struct c_output *output, void
       if (surf->width)  w = surf->width;
       if (surf->height) h = surf->height;
 
-      if (surf->surface->buffer.active->shm) {
-        quad->buffer = surf->surface->buffer.active->shm;
+      if (buffer->shm) {
+        quad->buffer = buffer->shm;
         quad->buffer_type = C_BUFFER_RAW;
       } else {
-        quad->buffer = surf->surface->buffer.active->dma;
+        quad->buffer = buffer->dma;
         quad->buffer_type = C_BUFFER_DMA;
       }
 
@@ -379,6 +373,21 @@ void c_scene_node_update(struct c_scene_node *node) {
     struct c_scene_surface *surf = node->data;
     create_surface_quad(surf, quad);
   }
+}
+
+void c_scene_node_move(struct c_scene_node *node, double dx, double dy) {
+  if (node->type == C_SCENE_NODE_WINDOW) {
+    struct c_renderer_quad *quad;
+    c_list_for_each(node->quads, quad) {
+      quad->x += dx; 
+      quad->y += dy;
+    }
+
+  } else {
+    node->quad->x += dx; 
+    node->quad->y += dy;
+  }
+
 }
 
 void c_scene_node_remove(struct c_scene *scene, struct c_scene_node *node) {

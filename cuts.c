@@ -40,7 +40,7 @@
 #define LAYOUT(mon)                                                            \
   {                                                                            \
     cuts.layout.func();                                                        \
-    output_damage(mon->output);                                                \
+    output_commit(mon->output);                                                \
   }
 
 #define clients_for_each_in_tag(client) \
@@ -79,8 +79,8 @@
 
 #define is_bar_horizontal(bar) ((bar)->cfg->pos == BAR_TOP) || ((bar)->cfg->pos == BAR_BOTTOM)
 #define is_bar_vertical(bar) ((bar)->cfg->pos == BAR_RIGHT) || ((bar)->cfg->pos == BAR_LEFT)
-#define is_window_fullscreen(window) ((window)->state & C_WINDOW_FULLSCREEN)
-#define is_window_floating(window) ((window)->state & C_WINDOW_FLOAT)
+#define is_client_fullscreen(client) ((client)->state & CLIENT_FULLSCREEN)
+#define is_client_floating(client) ((client)->state & CLIENT_FLOAT)
 #define is_client(client, _type) ((client)->node && (client)->node->type == _type)
 
 #define text_rect_width(text_len, bar)                                         \
@@ -131,8 +131,16 @@ struct clipboard_selection {
   size_t mimes;
 };
 
+enum client_state {
+	CLIENT_NORMAL,
+	CLIENT_FLOAT,
+	CLIENT_FULLSCREEN,
+};
+
+
 struct client {
   uint32_t tag;
+  enum client_state state;
 
   struct c_wl_connection *conn;
   struct monitor *mon;
@@ -224,7 +232,7 @@ const enum c_scene_layers layer_map[4] = {
 int get_fontpath(const char *font, char *fontpath, size_t size);
 uint32_t utf8_char(const char *s, size_t *i);
 size_t utf8_len(const char *s);
-void output_damage(struct c_output *output);
+void output_commit(struct c_output *output);
 struct c_wl_surface *wl_surface_from_node(struct c_scene_node *node);
 void set_background(struct monitor *mon, struct c_output_mode *mode);
 void cursor_move(struct c_cursor *cur, double x, double y);
@@ -355,8 +363,8 @@ size_t utf8_len(const char *s) {
  return n;
 }
 
-void output_damage(struct c_output *output) {
-  if (c_output_damage(cuts.mgr, output))
+void output_commit(struct c_output *output) {
+  if (c_output_commit(cuts.mgr, output))
     c_event_loop_stop(cuts.loop);
 }
 
@@ -399,13 +407,7 @@ int count_tiled() {
   struct client *client;
   int i = 0;
   clients_for_each_in_tag(client) {
-    struct c_scene_node *node = client->node;
-    if (!node) continue;
-
-    if (is_client(client, C_SCENE_NODE_WINDOW)) {
-      struct c_window *window = node->data;
-      if (!(window->state & (C_WINDOW_FLOAT | C_WINDOW_FULLSCREEN))) i++;
-    }
+    if (is_client(client, C_SCENE_NODE_WINDOW) && !client->state) i++;
   }
   return i;
 }
@@ -861,7 +863,9 @@ void client_set_fullscreen(struct client *client, struct monitor *mon) {
 
   window->x = mon->x;
   window->y = mon->y;
-  window->state = (window->state & ~C_WINDOW_FLOAT) | C_WINDOW_FULLSCREEN;
+
+  client->state = (client->state & ~CLIENT_FLOAT) | CLIENT_FULLSCREEN;
+  window->states |= XDG_TOPLEVEL_STATE_FULLSCREEN;
 
   cuts.fullscreen |= client->tag;
   client->node->layer = C_SCENE_LAYER_OVERLAY;
@@ -872,7 +876,8 @@ void client_set_fullscreen(struct client *client, struct monitor *mon) {
 
 void client_unset_fullscreen(struct client *client) {
   struct c_window *window = client->node->data;
-  window->state &= ~C_WINDOW_FULLSCREEN;
+  client->state &= ~CLIENT_FULLSCREEN;
+  window->states &= ~XDG_TOPLEVEL_STATE_FULLSCREEN;
   cuts.fullscreen &= ~client->tag;
   client->node->layer = C_SCENE_LAYER_NORMAL;
   client_border_set_visibility(client, 1);
@@ -884,14 +889,13 @@ void client_set_visibility(struct client *client, int is_visible) {
   client->node->is_visible = is_visible;
 
   if (is_client(client, C_SCENE_NODE_WINDOW)) {
-    struct c_window *window = client->node->data;
-    client_border_set_visibility(client, is_visible && (window->state ^ C_WINDOW_FULLSCREEN));
+    client_border_set_visibility(client, is_visible && (client->state ^ CLIENT_FULLSCREEN));
   }
 }
 
 void client_toggle_floating(struct client *client) {
-  struct c_window *window = client->node->data;
-  window->state ^= C_WINDOW_FLOAT;
+  client->state ^= CLIENT_FLOAT;
+  LAYOUT(client->mon);
 }
 
 void on_mouse_movement(struct c_input_mouse_event *event, void *userdata) {
@@ -1117,7 +1121,7 @@ int on_wl_surface_commit(struct c_wl_connection *conn, c_wl_args args, void *use
     struct c_output *output = surface->output->output;
     if (surface->frames_n > 0 && c_list_idx(output->active_surfaces, wl_surface) < 0)
       c_list_push(output->active_surfaces, wl_surface, 0);
-    output_damage(surface->output->output);
+    output_commit(surface->output->output);
   }
 
   return 0;
@@ -1130,8 +1134,11 @@ int on_wl_surface_destroy(struct c_wl_connection *conn, c_wl_args args, void *us
   if (!client) goto no_client;
 
   if (client->node) c_scene_node_update(client->node);
+
   if (is_client(client, C_SCENE_NODE_WINDOW)) {
     struct c_window *window = client->node->data; 
+    c_log_value(surface, "%p");
+    c_log_value(window->focused, "%p");
     if (surface == window->focused)
       window->focused = NULL;
   }
@@ -1141,7 +1148,7 @@ no_client:
 
   struct c_output *output = surface->output->output;
   c_list_remove(&output->active_surfaces, wl_surface);
-  output_damage(output);
+  output_commit(output);
   c_unref(surface->output);
   return 0;
 }
@@ -1151,7 +1158,7 @@ int on_xdg_surface_get_toplevel(struct c_wl_connection *conn, c_wl_args args, vo
   struct client *client = client_new(conn);
 
   struct c_window *window = c_window_new(conn, surface);
-  window->xdg_states = (1 << XDG_TOPLEVEL_STATE_TILED_TOP)       |
+  window->states = (1 << XDG_TOPLEVEL_STATE_TILED_TOP)       |
                                (1 << XDG_TOPLEVEL_STATE_TILED_RIGHT)     |
                                (1 << XDG_TOPLEVEL_STATE_TILED_BOTTOM)    |
                                (1 << XDG_TOPLEVEL_STATE_TILED_LEFT)      ;
@@ -1435,7 +1442,7 @@ int on_zwlr_layer_shell_v1_get_layer_surface(struct c_wl_connection *conn, c_wl_
   struct c_scene_surface *surface = calloc(1, sizeof(*surface));
 
   surface->surface = layer_surface->surface;
-  surface->layer = layer_map[layer_surface->layer];
+  surface->layer = layer_map[layer_surface->pending.layer];
   surface->obj = layer_surface->obj;
 
   client->node = c_scene_add_surface(cuts.scene, surface);
@@ -1448,8 +1455,8 @@ int on_zwlr_layer_surface_v1_set_size(struct c_wl_connection *conn, c_wl_args ar
   struct c_output *output = cuts.focused_mon->output;
   struct c_output_mode *mode = output->current_mode;
 
-  uint32_t layer_w = layer_surface->width ? layer_surface->width : mode->width;
-  uint32_t layer_h = layer_surface->height ? layer_surface->height : mode->height;
+  uint32_t layer_w = layer_surface->pending.width ? layer_surface->pending.width : mode->width;
+  uint32_t layer_h = layer_surface->pending.height ? layer_surface->pending.height : mode->height;
 
   double layer_x = (double)mode->width / 2 - (double)layer_w / 2;
   double layer_y = (double)mode->height / 2 - (double)layer_h / 2;
@@ -1461,20 +1468,20 @@ int on_zwlr_layer_surface_v1_set_size(struct c_wl_connection *conn, c_wl_args ar
   double shift_x = layer_x;
   double shift_y = layer_y;
 
-  if (layer_surface->anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT)
+  if (layer_surface->pending.anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT)
     layer_x -= shift_x;
 
-  if (layer_surface->anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT)
+  if (layer_surface->pending.anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT)
     layer_x += shift_x;
 
-  if (layer_surface->anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP)
+  if (layer_surface->pending.anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP)
     layer_y -= shift_y;
 
-  if (layer_surface->anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM)
+  if (layer_surface->pending.anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM)
     layer_y += shift_y;
 
-  layer_surface->width = layer_w;
-  layer_surface->height = layer_h;
+  layer_surface->pending.width = layer_w;
+  layer_surface->pending.height = layer_h;
 
 
   struct client *client = client_from_surface(layer_surface->surface);
@@ -1548,10 +1555,8 @@ void set_layout(bind_args *args) {
 void toggle_fullscreen(bind_args *args) {
   struct client *client = cuts.focused_client;
   if (!client) return;
-  
-  struct c_window *window = client->node->data;
 
-  if (is_window_fullscreen(window))
+  if (is_client_fullscreen(client))
     client_unset_fullscreen(client);
   else
     client_set_fullscreen(client, client->mon);
@@ -1598,8 +1603,6 @@ void toggle_floating(bind_args *args) {
 
   client_raise(cuts.focused_client);
   client_toggle_floating(cuts.focused_client);
-
-  LAYOUT(cuts.focused_client->mon);
 }
 
 void change_mfact(bind_args *args) {
@@ -1625,12 +1628,14 @@ void window_move(int done, bind_args *args) {
       !is_client(cuts.focused_client, C_SCENE_NODE_WINDOW))
     return;
 
-  struct client *focused = cuts.focused_client;
-  struct c_window *window = focused->node->data;
+  struct client *client = cuts.focused_client;
+  struct c_window *window = client->node->data;
 
-  client_raise(focused);
-  if (!(window->state & C_WINDOW_FLOAT))
-    client_toggle_floating(focused);
+  if (!cuts.pointer.is_dragging)
+    client_raise(client);
+
+  if (!(client->state & CLIENT_FLOAT))
+    client_toggle_floating(client);
 
   if (done) {
     pointer_x_prev = pointer_x;
@@ -1651,7 +1656,9 @@ void window_move(int done, bind_args *args) {
 
   cuts.pointer.is_dragging = !done;
 
-  LAYOUT(focused->mon);
+  c_scene_node_move(client->node, dist_x, dist_y);
+  client_border_sync(client);
+  output_commit(client->mon->output);
 }
 
 void window_move_to_workspace(bind_args *args) {
@@ -1664,9 +1671,6 @@ void window_move_to_workspace(bind_args *args) {
   struct client *next;
   if ((next = tag_select_client(1)))
     client_change_focus(next, pointer_x, pointer_y);
-
-
-  LAYOUT(cuts.focused_client->mon);
 }
 
 void window_resize(int done, bind_args *args) {
@@ -1674,12 +1678,14 @@ void window_resize(int done, bind_args *args) {
       !is_client(cuts.focused_client, C_SCENE_NODE_WINDOW))
     return;
 
-  struct client *focused = cuts.focused_client;
-  struct c_window *window = focused->node->data;
+  struct client *client = cuts.focused_client;
+  struct c_window *window = client->node->data;
 
-  client_raise(focused);
-  if (!(window->state & C_WINDOW_FLOAT))
-    client_toggle_floating(focused);
+  if (!cuts.pointer.is_dragging)
+    client_raise(client);
+
+  if (!(client->state & CLIENT_FLOAT))
+    client_toggle_floating(client);
 
   if (done) {
     pointer_x_prev = pointer_x;
@@ -1697,9 +1703,21 @@ void window_resize(int done, bind_args *args) {
   } else if (done) {
     c_cursor_set_shape(cuts.pointer.cur, C_CURSOR_DEFAULT);
   }
-
+  
+  c_scene_node_update(client->node);
   cuts.pointer.is_dragging = !done;
-  LAYOUT(focused->mon);
+
+  if (done)
+    window->states &= ~(ENUM_FLAG(XDG_TOPLEVEL_STATE_RESIZING) |
+                        ENUM_FLAG(XDG_TOPLEVEL_STATE_CONSTRAINED_LEFT) |
+                        ENUM_FLAG(XDG_TOPLEVEL_STATE_CONSTRAINED_TOP));
+  else
+    window->states |=  (ENUM_FLAG(XDG_TOPLEVEL_STATE_RESIZING) |
+                        ENUM_FLAG(XDG_TOPLEVEL_STATE_CONSTRAINED_LEFT) |
+                        ENUM_FLAG(XDG_TOPLEVEL_STATE_CONSTRAINED_TOP));
+  c_log_value(window->states, "%08b");
+
+  LAYOUT(client->mon);
 }
 
 void change_border(bind_args *args) {
@@ -1729,8 +1747,8 @@ void zoom() {
     if (!is_client(client, C_SCENE_NODE_WINDOW)) continue;
 
     struct c_window *window = client->node->data;
-    if (is_window_floating(window)) goto floating;
-    if (is_window_fullscreen(window)) goto fullscreen;
+    if (is_client_floating(client)) goto floating;
+    if (is_client_fullscreen(client)) goto fullscreen;
 
     window->width = layout.width - border_width * 2;
     window->height = layout.height - border_width * 2;
@@ -1776,8 +1794,8 @@ void tile() {
     if (!is_client(client, C_SCENE_NODE_WINDOW)) continue;
 
     struct c_window *window = client->node->data;
-    if (is_window_fullscreen(window)) goto fullscreen;
-    if (is_window_floating(window)) goto floating;
+    if (is_client_fullscreen(client)) goto fullscreen;
+    if (is_client_floating(client)) goto floating;
 
     if (i < nmaster) {
       window->x = layout.master.x;
@@ -1904,7 +1922,7 @@ void bar_block_update(struct bar_block *block) {
   c_scene_node_update(block->rect_node);
   c_scene_node_update(block->text_node);
 
-  output_damage(cuts.focused_mon->output);
+  output_commit(cuts.focused_mon->output);
 }
 
 void bar_block_clear_text(struct bar *bar, struct bar_block *block) {

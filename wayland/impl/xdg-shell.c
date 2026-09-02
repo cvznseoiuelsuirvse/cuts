@@ -87,7 +87,17 @@ static void calc_popup_coords(struct c_xdg_surface *surface, int32_t *x, int32_t
 
   *x = popup->anchor_rect.x + popup->x + anchor_x + dx;
   *y = popup->anchor_rect.y + popup->y + anchor_y + dy;
+}
 
+void c_xdg_surface_state_apply(struct c_xdg_surface *surface) {
+  struct c_xdg_surface_state *p = &surface->pending;
+  struct c_xdg_surface_state *a = &surface->active;
+
+  if (p->commited & C_XDG_SURFACE_STATE_MAX_SIZE) { a->max  = p->max;    }
+  if (p->commited & C_XDG_SURFACE_STATE_MIN_SIZE) { a->min  = p->min;    }
+  if (p->commited & C_XDG_SURFACE_STATE_GEOM)     { a->geo  = p->geo;    }
+
+  p->commited = 0;
 }
 
 int xdg_wm_base_get_xdg_surface(struct c_wl_connection *conn, union c_wl_arg *args) {
@@ -180,10 +190,12 @@ int xdg_surface_set_window_geometry(struct c_wl_connection *conn, union c_wl_arg
   c_wl_int width = args[3].i;
   c_wl_int height = args[4].i;
 
-  surface->x = x;
-  surface->y = y;
-  surface->width = width;
-  surface->height = height;
+  surface->pending.geo.x = x;
+  surface->pending.geo.y = y;
+  surface->pending.geo.width = width;
+  surface->pending.geo.height = height;
+
+  surface->pending.commited |= C_XDG_SURFACE_STATE_GEOM;
 
   return 0;
 }
@@ -232,9 +244,10 @@ int xdg_toplevel_set_min_size(struct c_wl_connection *conn, union c_wl_arg *args
   c_wl_int min_width = args[1].i;
   c_wl_int min_height = args[2].i;
 
-  surface->toplevel.min_width = min_width;
-  surface->toplevel.min_height = min_height;
+  surface->pending.min.width = min_width;
+  surface->pending.min.height = min_height;
 
+  surface->pending.commited |= C_XDG_SURFACE_STATE_MIN_SIZE;
   return 0;
 }
 
@@ -244,9 +257,10 @@ int xdg_toplevel_set_max_size(struct c_wl_connection *conn, union c_wl_arg *args
   c_wl_int max_width = args[1].i;
   c_wl_int max_height = args[2].i;
 
-  surface->toplevel.max_width =  max_width;
-  surface->toplevel.max_height = max_height;
+  surface->pending.max.width =  max_width;
+  surface->pending.max.height = max_height;
 
+  surface->pending.commited |= C_XDG_SURFACE_STATE_MAX_SIZE;
   return 0;
 }
 

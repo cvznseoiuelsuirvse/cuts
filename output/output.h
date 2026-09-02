@@ -83,7 +83,7 @@ struct c_output_manager {
 struct c_output_manager *c_output_manager_init(struct c_session *session, struct c_event_loop *loop, struct c_wl_display *display);
 void c_output_manager_free(struct c_output_manager *mgr);
 void c_output_set_mode(struct c_output_manager *mgr, struct c_output *output, struct c_output_mode *mode);
-int c_output_damage(struct c_output_manager *mgr, struct c_output *output);
+int c_output_commit(struct c_output_manager *mgr, struct c_output *output);
 void c_output_register_on_redraw(struct c_output_manager *mgr, on_redraw_handler handler, void *userdata);
 
 #endif

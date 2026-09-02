@@ -6,6 +6,21 @@
 #include "wayland/impl/wlr-layer-shell-unstable-v1.h"
 #include "util/mem.h"
 
+void c_zwlr_layer_surface_state_apply(struct c_zwlr_layer_surface *surface) {
+  struct c_zwlr_layer_surface_state *p = &surface->pending;
+  struct c_zwlr_layer_surface_state *a = &surface->active;
+
+  if (p->commited & C_ZWLR_LAYER_SURFACE_STATE_LAYER)            { a->layer = p->layer; } 
+  if (p->commited & C_ZWLR_LAYER_SURFACE_STATE_ANCHOR)           { a->anchor = p->anchor; } 
+  if (p->commited & C_ZWLR_LAYER_SURFACE_STATE_SIZE)             { a->width = p->width; a->height = p->height; } 
+  if (p->commited & C_ZWLR_LAYER_SURFACE_STATE_EXCLUSIVE_ZONE)   { a->exclusive_zone = p->exclusive_zone; } 
+  if (p->commited & C_ZWLR_LAYER_SURFACE_STATE_KEYBOARD_INTERAC) 
+  { a->keyboard_interactivity = p->keyboard_interactivity; } 
+
+  p->commited = 0;
+
+};
+
 int zwlr_layer_shell_v1_get_layer_surface(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
 
@@ -31,7 +46,7 @@ int zwlr_layer_shell_v1_get_layer_surface(struct c_wl_connection *conn, c_wl_arg
     c_wl_error_set_and_return(self->id, ZWLR_LAYER_SHELL_V1_ERROR_ROLE,
                               "specifed surface already has a role");
 
-  if (surface->buffer.pending || surface->buffer.active)
+  if ((surface->pending.commited | surface->active.commited) & C_WL_SURFACE_STATE_BUFFER)
     c_wl_error_set_and_return(
         self->id, ZWLR_LAYER_SHELL_V1_ERROR_ALREADY_CONSTRUCTED,
         "specifed surface already has an attached or commited buffer");
@@ -43,7 +58,11 @@ int zwlr_layer_shell_v1_get_layer_surface(struct c_wl_connection *conn, c_wl_arg
   struct c_zwlr_layer_surface *layer_surface = c_malloc(sizeof(*layer_surface));
   layer_surface->surface = surface;
   c_ref(surface);
-  layer_surface->layer = layer;
+
+  surface->wlr_layer_surface = layer_surface;
+  c_ref(layer_surface);
+
+  layer_surface->pending.layer = layer;
   layer_surface->namespace = strdup(namespace);
 
   layer_surface->obj = c_wl_object_add(
@@ -58,7 +77,9 @@ int zwlr_layer_shell_v1_destroy(struct c_wl_connection *conn, c_wl_args args) { 
 int zwlr_layer_surface_v1_set_anchor(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
   struct c_zwlr_layer_surface *layer_surface = self->data;
-  layer_surface->anchor = args[1].e;
+  layer_surface->pending.anchor = args[1].e;
+  layer_surface->pending.commited |= C_ZWLR_LAYER_SURFACE_STATE_ANCHOR;
+
   return 0;
 }
 
@@ -68,20 +89,22 @@ int zwlr_layer_surface_v1_set_size(struct c_wl_connection *conn, c_wl_args args)
   c_wl_uint width  = args[1].u;
   c_wl_uint height = args[2].u;
 
-  if (layer_surface->anchor) {
-    if (!(layer_surface->anchor & (ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT)) && !width)
+  enum zwlr_layer_surface_v1_anchor_enum anchor = layer_surface->pending.anchor;
+  if (anchor) {
+    if (!(anchor & (ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT)) && !width)
       c_wl_error_set_and_return(
           self->id, ZWLR_LAYER_SURFACE_V1_ERROR_INVALID_SIZE,
           "width is 0 while surface isn't anchored to left and right");
 
-    if (!(layer_surface->anchor & (ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM)) && !height)
+    if (!(anchor & (ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM)) && !height)
     c_wl_error_set_and_return(
         self->id, ZWLR_LAYER_SURFACE_V1_ERROR_INVALID_SIZE,
         "height is 0 while surface isn't anchored to top and bottom");
   }
 
-  layer_surface->width  = args[1].u;
-  layer_surface->height = args[2].u;
+  layer_surface->pending.width  = args[1].u;
+  layer_surface->pending.height = args[2].u;
+  layer_surface->pending.commited |= C_ZWLR_LAYER_SURFACE_STATE_SIZE;
   return 0;
 }
 
@@ -89,7 +112,8 @@ int zwlr_layer_surface_v1_set_exclusive_zone(struct c_wl_connection *conn, c_wl_
   struct c_wl_object *self = c_wl_self(conn, args);
   struct c_zwlr_layer_surface *layer_surface = self->data;
 
-  layer_surface->exclusive_zone = args[1].i;
+  layer_surface->pending.exclusive_zone = args[1].i;
+  layer_surface->pending.commited |= C_ZWLR_LAYER_SURFACE_STATE_EXCLUSIVE_ZONE;
   return 0;
 }
 
@@ -97,7 +121,8 @@ int zwlr_layer_surface_v1_set_keyboard_interactivity(struct c_wl_connection *con
   struct c_wl_object *self = c_wl_self(conn, args);
   struct c_zwlr_layer_surface *layer_surface = self->data;
 
-  layer_surface->keyboard_interactivity = args[1].e;
+  layer_surface->pending.keyboard_interactivity = args[1].e;
+  layer_surface->pending.commited |= C_ZWLR_LAYER_SURFACE_STATE_KEYBOARD_INTERAC;
   return 0;
 }
 
@@ -113,7 +138,12 @@ int zwlr_layer_surface_v1_destroy(struct c_wl_connection *conn, c_wl_args args) 
   struct c_zwlr_layer_surface *layer_surface = self->data;
 
   free(layer_surface->namespace);
+
+  layer_surface->surface->wlr_layer_surface = NULL;
   c_unref(layer_surface->surface);
+  
+  layer_surface->surface = NULL;
+  c_unref(layer_surface);
 
   C_WL_DESTRUCTOR(conn, args);
 }

@@ -38,13 +38,30 @@ enum c_wl_surface_roles {
 	C_WL_SURFACE_ROLE_LAYER_SURFACE,
 };
 
-struct c_wl_surface {
-	struct c_wl_object *obj;
+enum c_wl_surface_state_commited {
+  C_WL_SURFACE_STATE_DAMAGE    = 1 << 0,
+  C_WL_SURFACE_STATE_INPUT     = 1 << 1,
+  C_WL_SURFACE_STATE_OPAQUE    = 1 << 2,
+  C_WL_SURFACE_STATE_BUFFER    = 1 << 3,
+  C_WL_SURFACE_STATE_SCALE     = 1 << 4,
+  C_WL_SURFACE_STATE_TRANSFORM = 1 << 5,
+};
+
+struct c_wl_surface_state {
+  uint32_t commited;
 
   c_wl_int scale;
+  enum wl_output_transform_enum transform;
+
+  struct c_wl_region    damage, input, opaque;
+  struct c_wl_buffer   *buffer;
+};
+
+struct c_wl_surface {
+	struct c_wl_object *obj;
   c_wl_int fscale;
 
-  enum wl_output_transform_enum transform;
+  struct c_wl_surface_state pending, active;
 
   c_wl_object_id frames[8];
   size_t frames_n;
@@ -53,35 +70,15 @@ struct c_wl_surface {
   size_t feedbacks_n;
 
 	enum c_wl_surface_roles role;
-	struct {
-		c_wl_int width,  x;
-		c_wl_int height, y;
-		int		 damaged;
-	} damage;
 
-  struct c_xdg_surface *xdg_surface;
+  struct c_xdg_surface        *xdg_surface;
+  struct c_zwlr_layer_surface *wlr_layer_surface;
+  struct c_wp_viewport        *viewport;
 
   struct {
     struct c_wl_subsurface *surface;
     c_list *children;
   } sub;
-
-  struct {
-    struct c_wl_region pending;
-    struct c_wl_region active;
-  } input;
-
-  struct {
-    struct c_wl_region pending;
-    struct c_wl_region active;
-  } opaque;
-
-  struct {
-    struct c_wl_buffer 	*pending;
-    struct c_wl_buffer 	*active;
-  } buffer;
-
-  struct c_wp_viewport *viewport;
 
   struct c_wl_output *output;
 };
