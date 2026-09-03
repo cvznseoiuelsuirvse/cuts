@@ -3,10 +3,9 @@
 #include "wayland/impl/viewporter.h"
 #include "wayland/server.h"
 
+#include "wayland/display.h"
 #include "render/types.h"
-
 #include "util/mem.h"
-#include "util/log.h"
 
 int c_wp_viewport_state_apply(struct c_wp_viewport *vp) {
   struct c_wp_viewport_state *p = &vp->pending;
@@ -14,14 +13,14 @@ int c_wp_viewport_state_apply(struct c_wp_viewport *vp) {
 
   if (p->commited & C_WP_VIEWPORT_STATE_SRC) { 
     struct c_wl_surface *surface = vp->surface;
-    if (surface->active.buffer) {
+    if (surface->pending.buffer) {
       c_wl_int width, height;
-      if (surface->active.buffer->dma) {
-        width = surface->active.buffer->dma->width;
-        height = surface->active.buffer->dma->height;
+      if (surface->pending.buffer->dma) {
+        width = surface->pending.buffer->dma->width;
+        height = surface->pending.buffer->dma->height;
       } else {
-        width = surface->active.buffer->shm->width;
-        height = surface->active.buffer->shm->height;
+        width = surface->pending.buffer->shm->width;
+        height = surface->pending.buffer->shm->height;
       }
 
       if (vp->pending.src.x + vp->pending.src.width > width || vp->pending.src.y + vp->pending.src.height > height)
@@ -31,9 +30,13 @@ int c_wp_viewport_state_apply(struct c_wp_viewport *vp) {
     }
 
     a->src = p->src;
+    memset(&p->src, 0, sizeof(p->src));
   }
 
-  if (p->commited & C_WP_VIEWPORT_STATE_DST) { a->dst  = p->dst;    }
+  if (p->commited & C_WP_VIEWPORT_STATE_DST) { 
+    a->dst  = p->dst;    
+    memset(&p->dst, 0, sizeof(p->dst));
+  }
 
   return 0;
 }
@@ -80,10 +83,10 @@ int wp_viewport_set_source(struct c_wl_connection *conn, c_wl_args args) {
     c_wl_error_set_and_return(wp_viewport->id, WP_VIEWPORT_ERROR_NO_SURFACE, "associated wl_surface was already destroyed");
   }
 
-  double x      = C_WL_FIXED_TO_DOUBLE(args[1].f);
-  double y      = C_WL_FIXED_TO_DOUBLE(args[2].f);
-  double width  = C_WL_FIXED_TO_DOUBLE(args[3].f);
-  double height = C_WL_FIXED_TO_DOUBLE(args[4].f);
+  double x      = c_wl_fixed_to_double(args[1].f);
+  double y      = c_wl_fixed_to_double(args[2].f);
+  double width  = c_wl_fixed_to_double(args[3].f);
+  double height = c_wl_fixed_to_double(args[4].f);
 
   if (x == -1 && y == -1 && width == -1 && height == -1) {
     goto out;
@@ -125,7 +128,6 @@ int wp_viewport_set_destination(struct c_wl_connection *conn, c_wl_args args) {
 out:
   viewport->pending.dst.width = width;
   viewport->pending.dst.height = height;
-
   viewport->pending.commited |= C_WP_VIEWPORT_STATE_DST;
 
   return 0;

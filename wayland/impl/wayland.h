@@ -5,31 +5,6 @@
 #include "wayland/proto/wayland.h"
 #include "util/list.h"
 
-struct c_wl_region {
-	c_wl_int width,  x;
-	c_wl_int height, y;
-};
-
-struct c_wl_output {
-  struct c_wl_object *obj;
-  struct c_output *output;
-};
-
-struct c_wl_shm_pool {
-  struct c_wl_object *obj;
-	int 	     fd;
-	uint8_t	  *ptr;
-	uint32_t   size;
-};
-
-struct c_wl_buffer {
-	struct c_wl_object *obj;
-  struct c_wl_shm_pool *pool;
-
-  struct c_dmabuf *dma;
-  struct c_rawbuf *shm;
-};
-
 enum c_wl_surface_roles {
 	C_WL_SURFACE_ROLE_XDG_TOPLEVEL = 1,
 	C_WL_SURFACE_ROLE_XDG_POPUP,
@@ -47,6 +22,32 @@ enum c_wl_surface_state_commited {
   C_WL_SURFACE_STATE_TRANSFORM = 1 << 5,
 };
 
+struct c_wl_region {
+  C_WL_BASE;
+	c_wl_int width,  x;
+	c_wl_int height, y;
+};
+
+struct c_wl_output {
+  C_WL_BASE;
+  struct c_output *output;
+};
+
+struct c_wl_shm_pool {
+  C_WL_BASE;
+	int 	     fd;
+	uint8_t	  *ptr;
+	uint32_t   size;
+};
+
+struct c_wl_buffer {
+  C_WL_BASE;
+  struct c_wl_shm_pool *pool;
+
+  struct c_dmabuf *dma;
+  struct c_rawbuf *shm;
+};
+
 struct c_wl_surface_state {
   uint32_t commited;
 
@@ -58,8 +59,7 @@ struct c_wl_surface_state {
 };
 
 struct c_wl_surface {
-	struct c_wl_object *obj;
-  c_wl_int fscale;
+  C_WL_BASE;
 
   struct c_wl_surface_state pending, active;
 
@@ -70,21 +70,25 @@ struct c_wl_surface {
   size_t feedbacks_n;
 
 	enum c_wl_surface_roles role;
+  c_wl_int fscale;
 
-  struct c_xdg_surface        *xdg_surface;
-  struct c_zwlr_layer_surface *wlr_layer_surface;
-  struct c_wp_viewport        *viewport;
+  struct c_xdg_surface          *xdg_surface;
+  struct c_zwlr_layer_surface   *wlr_layer_surface;
+  struct c_wp_viewport          *viewport;
 
   struct {
     struct c_wl_subsurface *surface;
     c_list *children;
   } sub;
 
+  struct c_callback *frame_cb;
+  struct c_callback *feedback_cb;
+
   struct c_wl_output *output;
 };
 
 struct c_wl_subsurface {
-  struct c_wl_object *obj;
+  C_WL_BASE;
   c_wl_int x, y;
   int sync;
 
@@ -93,42 +97,42 @@ struct c_wl_subsurface {
 };
 
 struct c_wl_data_offer {
-  struct c_wl_object *obj;
+  C_WL_BASE;
 
   char *mimetype;
 
   enum wl_data_device_manager_dnd_action_enum actions;
   enum wl_data_device_manager_dnd_action_enum preferred;
 
-  struct c_wl_data_device *device;
-  struct c_wl_data_source *source;
+  struct c_wl_data_device *data_device;
+  struct c_wl_data_source *data_source;
 };
 
 struct c_wl_data_source {
-  struct c_wl_object *obj;
+  C_WL_BASE;
 
   const char *mimetypes[64];
   size_t mimes;
 
   enum wl_data_device_manager_dnd_action_enum actions;
-  struct c_wl_data_device *device;
+  struct c_wl_data_device *data_device;
 };
 
 struct c_wl_data_device {
-  struct c_wl_object *obj;
+  C_WL_BASE;
 
-  struct c_wl_data_source *selection;
-  struct c_wl_data_offer *offer;
+  struct c_wl_data_source *data_source;
+  struct c_wl_data_offer *data_offer;
 
   struct {
-    struct c_wl_data_source *source;
+    struct c_wl_data_source *data_source;
     struct c_wl_surface *origin;
     struct c_wl_surface *icon;
   } dnd;
 };
 
 struct c_wl_pointer {
-  struct c_wl_object *obj;
+  C_WL_BASE;
   struct c_wl_object *seat;
 };
 

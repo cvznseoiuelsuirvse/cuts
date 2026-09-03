@@ -1,6 +1,7 @@
 #include "wayland/server.h"
 #include "wayland/types.h"
 
+#include "wayland/display.h"
 #include "wayland/proto/presentation-time.h"
 #include "wayland/proto/wayland.h"
 #include "wayland/impl/wayland.h"

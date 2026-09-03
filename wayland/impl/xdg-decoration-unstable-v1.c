@@ -1,5 +1,5 @@
+#include "wayland/display.h"
 #include "wayland/proto/xdg-decoration-unstable-v1.h"
-
 #include "util/mem.h"
 
 int zxdg_decoration_manager_v1_get_toplevel_decoration(struct c_wl_connection *conn, union c_wl_arg *args) {

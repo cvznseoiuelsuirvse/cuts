@@ -9,7 +9,6 @@
 
 #include "util/list.h"
 #include "util/event_loop.h"
-#include "wayland/display.h"
 #include "seat/session/session.h"
 
 #define c_output_backbuffer(output) (output)->swapchain.buffers[(output)->swapchain.front ^ 1]
@@ -55,8 +54,6 @@ struct c_output {
 	int waiting_for_flip;
 	int need_redraw;
 
-  c_list *active_surfaces;
-
 	struct {
 		int front;
 		struct c_framebuffer *buffers[2];
@@ -64,26 +61,28 @@ struct c_output {
 
   struct c_drm_sync_object *timeline;
 
+  c_list *cb; // struct c_callback *
 };
 
-struct c_output_manager;
-typedef int (*on_redraw_handler)(struct c_output_manager *mgr, struct c_output *output, void *userdata);
 
 struct c_output_manager {
   int drm_fd;
   struct gbm_device *gbm_device;
   struct c_renderer *renderer;
-
-  void *on_redraw_userdata;
-  on_redraw_handler on_redraw;
-
-  c_list *outputs;
+  c_list *outputs; // struct c_output *
 };
 
-struct c_output_manager *c_output_manager_init(struct c_session *session, struct c_event_loop *loop, struct c_wl_display *display);
+struct c_output_events {
+  int (*schedule)(struct c_output_manager *mgr, struct c_output *output, void *userdata);
+  int (*pageflip)(struct c_output *output,
+              unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec,
+              unsigned int crtc_id, void *userdata);
+};
+
+struct c_output_manager *c_output_manager_init(struct c_session *session, struct c_event_loop *loop);
 void c_output_manager_free(struct c_output_manager *mgr);
 void c_output_set_mode(struct c_output_manager *mgr, struct c_output *output, struct c_output_mode *mode);
-int c_output_commit(struct c_output_manager *mgr, struct c_output *output);
-void c_output_register_on_redraw(struct c_output_manager *mgr, on_redraw_handler handler, void *userdata);
+int  c_output_commit(struct c_output_manager *mgr, struct c_output *output);
+struct c_callback *c_output_listen(struct c_output *output, struct c_output_events *listeners, void *userdata);
 
 #endif

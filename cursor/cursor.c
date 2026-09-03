@@ -11,8 +11,6 @@
 #include "util/log.h"
 #include "util/helpers.h"
 
-struct c_input_event_listener_mouse mouse_event_listener;
-
 extern struct c_cursor_impl hw_impl;
 
 static int cursor_write(struct c_cursor *cur, void *buffer, size_t size) {

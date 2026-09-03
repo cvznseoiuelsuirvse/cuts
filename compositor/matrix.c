@@ -1,3 +1,4 @@
+#include <string.h>
 #include "compositor/matrix.h"
 
 void matrix3_new(mat3 m) {

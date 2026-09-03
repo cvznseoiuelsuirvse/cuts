@@ -1,5 +1,6 @@
 #include <stdlib.h>
 
+#include "wayland/display.h"
 #include "wayland/proto/wayland.h"
 #include "wayland/proto/ext-data-control-v1.h"
 #include "wayland/impl/ext-data-control-v1.h"

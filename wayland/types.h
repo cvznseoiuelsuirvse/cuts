@@ -5,14 +5,21 @@
 #include <sys/types.h>
 
 #define C_WL_REQUEST __attribute__((weak)) int
-#define C_WL_EVENT int
-
-#define C_WL_FIXED_TO_DOUBLE(v) (double)((v) / 256.0f)
-#define C_WL_FIXED_FROM_DOUBLE(v) (c_wl_fixed)((v) * 256.0f)
+#define C_WL_EVENT   int
+#define C_WL_BASE                                                              \
+  struct c_wl_object *obj;                                                     \
+  struct c_callback *cb;
 
 #define BUFFER_SIZE 2048
 #define HEADER_SIZE 8
 #define STRING_SIZE (BUFFER_SIZE - HEADER_SIZE - 4) // 4 (string prefix)
+
+#define c_wl_fixed_to_double(v) (double)((v) / 256.0f)
+#define c_wl_fixed_from_double(v) (c_wl_fixed)((v) * 256.0f)
+
+#define c_wl_objects_for_each(conn, obj) \
+	__attribute__((unused)) uint64_t __key; \
+	c_map_for_each(c_wl_connection_get_objects(conn), __key, obj) \
 
 typedef int32_t 		c_wl_int;
 typedef uint32_t		c_wl_uint;
@@ -31,13 +38,10 @@ typedef struct c_wl_array {
 struct c_wl_object {
 	c_wl_object_id id;
   uint32_t version;
-  void *data;
-	const struct c_wl_interface *iface;
-  struct {
-    void **handlers;
-    void *userdata;
-  } listeners;
   struct c_wl_connection *conn;
+	const struct c_wl_interface *iface;
+  struct c_callback *cb;
+  void *data;
 };
 
 typedef union c_wl_arg {

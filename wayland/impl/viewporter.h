@@ -22,7 +22,7 @@ struct c_wp_viewport_state {
 };
 
 struct c_wp_viewport {
-  struct c_wl_object *obj;
+  C_WL_BASE;
   struct c_wl_surface *surface;
 
   struct c_wp_viewport_state pending, active;

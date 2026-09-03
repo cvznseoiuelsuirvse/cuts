@@ -24,7 +24,7 @@ struct c_zwlr_layer_surface_state {
 };
 
 struct c_zwlr_layer_surface {
-  struct c_wl_object *obj;
+  C_WL_BASE;
   struct c_wl_surface *surface;
 
   struct c_zwlr_layer_surface_state pending, active;

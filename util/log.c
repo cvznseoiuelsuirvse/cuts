@@ -104,7 +104,7 @@ void c_log_wl_request(struct c_wl_connection *conn, struct c_wl_object *object, 
         break;
 
       case 'f': 
-        _printf("%f", C_WL_FIXED_TO_DOUBLE(args[i].f));
+        _printf("%f", c_wl_fixed_to_double(args[i].f));
         break;
 
       case 'o': 
@@ -166,7 +166,7 @@ void c_log_wl_event(struct c_wl_connection *conn, struct c_wl_object *object, co
         break;
 
       case 'f': 
-        _printf("%f", C_WL_FIXED_TO_DOUBLE(args[i].f));
+        _printf("%f", c_wl_fixed_to_double(args[i].f));
         break;
 
       case 'o': 

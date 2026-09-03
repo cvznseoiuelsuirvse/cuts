@@ -1,6 +1,7 @@
 #include "wayland/proto/wayland.h"
 #include "wayland/impl/wayland.h"
 
+#include "wayland/display.h"
 #include "compositor/surface.h"
 #include "util/helpers.h"
 #include "util/log.h"
@@ -27,8 +28,8 @@ static void enter(struct c_wl_surface *surface, double mx, double my, int devs) 
 
       CASE_STR("wl_pointer")
         if (devs & EVENT_POINTER) {
-          c_wl_fixed hotspot_x = C_WL_FIXED_FROM_DOUBLE(mx);
-          c_wl_fixed hotspot_y = C_WL_FIXED_FROM_DOUBLE(my);
+          c_wl_fixed hotspot_x = c_wl_fixed_from_double(mx);
+          c_wl_fixed hotspot_y = c_wl_fixed_from_double(my);
 
           wl_pointer_enter(conn, o->id, wl_pointer_serial, surface->obj->id, hotspot_x, hotspot_y);
           wl_pointer_frame(conn, o->id);
@@ -82,8 +83,8 @@ void c_surface_leave_keyboard(struct c_wl_surface *surface) {
 }
 
 void c_surface_pointer_move(struct c_wl_connection *conn, double x, double y) {
-  c_wl_fixed hotspot_x = C_WL_FIXED_FROM_DOUBLE(x);
-  c_wl_fixed hotspot_y = C_WL_FIXED_FROM_DOUBLE(y);
+  c_wl_fixed hotspot_x = c_wl_fixed_from_double(x);
+  c_wl_fixed hotspot_y = c_wl_fixed_from_double(y);
 
   c_wl_object_id frames[16];
   size_t frame_n = 0;
@@ -134,7 +135,7 @@ void c_surface_pointer_scroll(struct c_wl_connection *conn, double axis, double 
         wl_pointer_axis_value120(conn, o->id, axis_orient, (c_wl_int)axis120);
       }
 
-      wl_pointer_axis(conn, o->id, c_since_start_ms(), axis_orient, C_WL_FIXED_FROM_DOUBLE(axis));
+      wl_pointer_axis(conn, o->id, c_since_start_ms(), axis_orient, c_wl_fixed_from_double(axis));
       wl_pointer_frame(conn, o->id);
     }
   }

@@ -5,8 +5,7 @@
 #include "wayland/types.h"
 
 struct c_ext_data_control_source {
-  struct c_wl_object *obj;
-
+  C_WL_BASE;
   const char *mimetypes[64];
   size_t mimes;
 
@@ -15,8 +14,7 @@ struct c_ext_data_control_source {
 };
 
 struct c_ext_data_control_device {
-  struct c_wl_object *obj;
-
+  C_WL_BASE;
   struct c_ext_data_control_source *selection;
   struct c_ext_data_control_source *primary_selection;
   struct c_ext_data_control_offer  *offer;

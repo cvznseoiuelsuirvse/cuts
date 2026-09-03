@@ -8,7 +8,6 @@
 #define DISPATCH_FATAL_ERR  -2
 #define DISPATCH_CLIENT_ERR -3
 
-
 #define C_WL_OBJECT_NEW_SERVER_ID 0
 
 #define C_WL_CHECK_IF_REGISTERED(id, object) \
@@ -18,10 +17,6 @@
 #define C_WL_CHECK_IF_NOT_REGISTERED(id, object) \
   (object) = c_wl_object_get(conn, (id)); \
   if ((object)) c_wl_error_set_and_return(args[0].u, 0, "object %d already registered", (id))
-
-#define c_wl_objects_for_each(conn, obj) \
-	__attribute__((unused)) uint64_t __key; \
-	c_map_for_each(c_wl_connection_get_objects(conn), __key, obj) \
 
 #define c_wl_error_set_and_return(object_id, code, msg, ...) \
   do { \
@@ -45,10 +40,9 @@ struct c_wl_message {
 	const char event_name[128];
 };
 
-typedef int (*c_wl_request_impl)(struct c_wl_connection *, c_wl_args);
 struct c_wl_request {
 	char    name[256];
-	c_wl_request_impl impl;
+	int   (*impl)(struct c_wl_connection *, c_wl_args);
 	size_t  nargs;
 	char    signature[16];
 };
@@ -60,10 +54,6 @@ struct c_wl_object *c_wl_object_add(struct c_wl_connection *conn,
 struct c_wl_object *c_wl_object_get(struct c_wl_connection *conn,
                                     c_wl_object_id id);
 int c_wl_object_del(struct c_wl_connection *conn, c_wl_object_id id);
-
-void c_wl_object_add_listener(struct c_wl_object *object, void *listeners,
-                              void *userdata);
-void c_wl_object_free_listener(struct c_wl_object *object);
 
 struct c_wl_connection *c_wl_connection_init(int client_fd,
                                              struct c_wl_display *display);

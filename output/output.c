@@ -5,6 +5,7 @@
 #include <time.h>
 #include <fcntl.h>
 
+#include "wayland/display.h"
 #include "wayland/proto/presentation-time.h"
 #include "wayland/impl/wayland.h"
 
@@ -16,7 +17,15 @@
 #include "render/gl/egl.h"
 
 #include "util/log.h"
+#include "util/mem.h"
 #include "util/event_loop.h"
+#include "util/callback.h"
+
+static struct wl_surface wl_surface;
+static struct c_output_events frames_done;
+static struct wp_presentation wp_presentation;
+static struct c_output_events presented;
+static struct c_output_events buffer_released;
 
 static int open_gpu(struct c_session *session) {
   char gpu_path[128];
@@ -95,48 +104,82 @@ static void destroy_swapchain(struct c_output *output) {
     c_framebuffer_destroy(output->swapchain.buffers[1]);
 }
 
+static int wp_presentation_presented(struct c_output *output,
+              unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec,
+              unsigned int crtc_id, void *userdata) {
+  struct c_wl_surface *surface = userdata;
+  struct c_wl_object *wl_surface = surface->obj;
+
+  for (size_t i = 0; i< surface->feedbacks_n; i++) {
+    wp_presentation_feedback_sync_output(wl_surface->conn, surface->feedbacks[i], surface->output->obj->id);
+    wp_presentation_feedback_presented(
+        wl_surface->conn, surface->feedbacks[i], 0,
+        tv_sec & 0xFFFFFFFF, tv_usec * 1000,
+        1000000000LL / output->current_mode->refresh_rate, 0,
+        sequence,
+        WP_PRESENTATION_FEEDBACK_KIND_HW_CLOCK |
+            WP_PRESENTATION_FEEDBACK_KIND_HW_COMPLETION |
+            WP_PRESENTATION_FEEDBACK_KIND_VSYNC);
+    c_wl_object_del(wl_surface->conn, surface->feedbacks[i]);
+  }
+
+  if (surface->feedbacks_n)
+    c_wl_connection_flush(wl_surface->conn);
+
+
+  c_callback_remove(&output->cb, surface->feedback_cb);
+  surface->feedbacks_n = 0;
+  surface->feedback_cb = NULL;
+  return 0;
+}
+
+static int wl_buffer_released(struct c_output *output,
+              unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec,
+              unsigned int crtc_id, void *userdata) {
+
+  struct c_wl_buffer *buf = userdata;
+
+  if (buf->obj)
+   wl_buffer_release(buf->obj->conn, buf->obj->id);
+
+  c_callback_remove(&output->cb, buf->cb);
+  buf->cb = NULL;
+  c_unref(buf);
+
+  return 0;
+}
+
+static int wl_surface_done_frames(struct c_output *output,
+              unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec,
+              unsigned int crtc_id, void *userdata) {
+
+  struct c_wl_surface *surface = userdata;
+  struct c_wl_object *wl_surface = surface->obj;
+
+  for (size_t i = 0; i < surface->frames_n; i++) {
+    c_wl_connection_callback_done(wl_surface->conn, surface->frames[i]);
+  }
+
+  if (surface->frames_n)
+    c_wl_connection_flush(wl_surface->conn);
+
+  c_callback_remove(&output->cb, surface->frame_cb);
+  surface->frames_n = 0;
+  surface->frame_cb = NULL;
+  return 0;
+}
+
 static void page_flip_handler(int fd, unsigned int sequence,
                               unsigned int tv_sec, unsigned int tv_usec,
                               unsigned int crtc_id, void *userdata) {
-
   struct c_output *output = userdata;
 
   output->swapchain.front ^= 1;
   output->waiting_for_flip = 0;
+  
+  c_callback_notify_all(output->cb, c_output_events, pageflip, output,
+                        sequence, tv_sec, tv_usec, crtc_id);
 
-  struct c_wl_object *wl_surface;
-  struct c_wl_surface *surface;
-
-  c_list_for_each(output->active_surfaces, wl_surface) {
-    if ((surface = wl_surface->data)) {
-      for (size_t i = 0; i < surface->frames_n; i++) {
-        c_wl_connection_callback_done(wl_surface->conn, surface->frames[i]);
-      }
-
-      if (!surface->output) goto frames;
-
-      for (size_t i = 0; i< surface->feedbacks_n; i++) {
-        wp_presentation_feedback_sync_output(wl_surface->conn, surface->feedbacks[i], surface->output->obj->id);
-        wp_presentation_feedback_presented(
-            wl_surface->conn, surface->feedbacks[i], 0,
-            tv_sec & 0xFFFFFFFF, tv_usec * 1000,
-            1000000000LL / output->current_mode->refresh_rate, 0,
-            sequence,
-            WP_PRESENTATION_FEEDBACK_KIND_HW_CLOCK |
-                WP_PRESENTATION_FEEDBACK_KIND_HW_COMPLETION |
-                WP_PRESENTATION_FEEDBACK_KIND_VSYNC);
-        c_wl_object_del(wl_surface->conn, surface->feedbacks[i]);
-      }
-
-      surface->feedbacks_n = 0;
-
-frames:
-      if (surface->frames_n)
-        c_wl_connection_flush(wl_surface->conn);
-
-      surface->frames_n = 0;
-    }
-  }
 }
 
 static int handle_drm_event(struct c_output_manager *mgr) {
@@ -155,7 +198,7 @@ static int handle_drm_event(struct c_output_manager *mgr) {
 static int schedule_pageflip(struct c_output_manager *mgr, struct c_output *output) {
   int ret = 0;
   if (output->need_redraw && !output->waiting_for_flip) {
-    if (mgr->on_redraw(mgr, output, mgr->on_redraw_userdata)) return -1;
+    c_callback_notify_all(output->cb, c_output_events, schedule, mgr, output);
 
     int fence_fd;
     if (mgr->renderer->egl->ext_support.KHR_fence_sync && output->timeline) {
@@ -200,9 +243,67 @@ C_EVENT_CALLBACK drm_callback(struct c_event_loop *loop, int fd, void *userdata)
   return C_EVENT_OK;
 }
 
-void *on_wp_presentation_bind(struct c_wl_connection *conn, struct c_wl_object *self, void *userdata) {
+static void *on_wp_presentation_bind(struct c_wl_connection *conn, struct c_wl_object *self, void *userdata) {
   wp_presentation_clock_id(conn, self->id, CLOCK_MONOTONIC);
   return NULL;
+}
+
+static int on_wl_surface_commit(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
+  struct c_wl_surface *surface = c_wl_self(conn, args)->data;
+
+  struct c_wl_surface_state *p = &surface->pending;
+  struct c_wl_surface_state *a = &surface->active;
+  
+  if (p->commited & C_WL_SURFACE_STATE_BUFFER)   { 
+    if (a->buffer) {
+      if (a->buffer->obj && surface->output && !a->buffer->cb) {
+        c_ref(a->buffer);
+        a->buffer->cb = c_output_listen(surface->output->output, &buffer_released, a->buffer);
+      } else if (a->buffer->obj) {
+        wl_buffer_release(a->buffer->obj->conn, a->buffer->obj->id);
+      }
+      c_unref(a->buffer);
+    }
+
+    a->buffer = p->buffer;       
+    if (a->buffer && a->buffer->shm)
+      a->buffer->shm->dirty = 1;
+
+    p->buffer = NULL;
+    p->commited &= ~C_WL_SURFACE_STATE_BUFFER;
+  };
+
+  if (!surface->frame_cb && surface->output && surface->frames_n > 0) {
+    surface->frame_cb = c_output_listen(surface->output->output, &frames_done, surface);
+  }
+  return 0;
+}
+
+static int on_wl_surface_destroy(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
+  struct c_wl_surface *surface = c_wl_self(conn, args)->data;
+  if (surface->output) {
+    struct c_output *output = surface->output->output;
+
+    if (surface->feedback_cb) {
+      c_callback_remove(&output->cb, surface->feedback_cb);
+      surface->feedback_cb = NULL;
+    }
+
+    if (surface->frame_cb) {
+      c_callback_remove(&output->cb, surface->frame_cb);
+      surface->frame_cb = NULL;
+    }
+  }
+
+  return 0;
+}
+
+static int on_wp_presentation_feedback(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
+  struct c_wl_surface *surface = c_wl_object_get(conn, args[1].o)->data;
+  if (!surface->feedback_cb && surface->output) {
+    surface->feedback_cb = c_output_listen(surface->output->output, &presented, surface);
+  }
+  return 0;
 }
 
 int c_output_commit(struct c_output_manager *mgr, struct c_output *output) {
@@ -225,20 +326,18 @@ void c_output_set_mode(struct c_output_manager *mgr, struct c_output *output, st
   c_output_commit(mgr, output);
 }
 
-void c_output_register_on_redraw(struct c_output_manager *mgr, on_redraw_handler handler, void *userdata) {
-  mgr->on_redraw = handler;
-  mgr->on_redraw_userdata = userdata;
+struct c_callback *c_output_listen(struct c_output *output, struct c_output_events *listeners, void *userdata) {
+  return c_callback_add(output->cb, listeners, userdata);
 }
 
 void c_output_manager_free(struct c_output_manager *mgr) {
   if (mgr->outputs) {
     struct c_output *output;
     c_list_for_each(mgr->outputs, output) {
-      c_list_destroy(output->active_surfaces);
       destroy_swapchain(output);
+      c_list_destroy(output->cb);
       c_drm_free_output(mgr->drm_fd, output);
     }
-
     c_list_destroy(mgr->outputs);
   }
 
@@ -251,9 +350,11 @@ void c_output_manager_free(struct c_output_manager *mgr) {
   free(mgr);
 }
 
-struct c_output_manager *c_output_manager_init(struct c_session *session,
-                                               struct c_event_loop *loop,
-                                               struct c_wl_display *display) {
+struct c_output_manager *c_output_manager_init(struct c_session *session, struct c_event_loop *loop) {
+  frames_done.pageflip = wl_surface_done_frames;
+  presented.pageflip = wp_presentation_presented;
+  buffer_released.pageflip = wl_buffer_released;
+
   struct c_output_manager *mgr = calloc(1, sizeof(*mgr));
   if (!mgr) {
     c_log_errno(C_LOG_ERROR, "failed to allocate c_output_manager");
@@ -279,7 +380,7 @@ struct c_output_manager *c_output_manager_init(struct c_session *session,
     goto error;
   }
 
-  mgr->renderer = c_renderer_init(mgr, display);
+  mgr->renderer = c_renderer_init(mgr);
   if (!mgr->renderer) {
     c_log(C_LOG_ERROR, "failed to initialize renderer");
     goto error;
@@ -291,7 +392,7 @@ struct c_output_manager *c_output_manager_init(struct c_session *session,
 
   struct c_output *output;
   c_list_for_each(mgr->outputs, output) {
-    output->active_surfaces = c_list_new();
+    output->cb = c_list_new();
     if (mgr->renderer->egl->ext_support.KHR_fence_sync) {
       output->timeline = c_drm_sync_object_init(drm_fd);
       if (!output->timeline) {
@@ -302,8 +403,13 @@ struct c_output_manager *c_output_manager_init(struct c_session *session,
     }
   }
 
-  c_event_loop_add(loop, drm_fd, drm_callback, mgr);
+  wl_surface.commit = on_wl_surface_commit;
+  wl_surface.destroy = on_wl_surface_destroy;
+  wl_surface_listen(&wl_surface, NULL);
+  wp_presentation.feedback = on_wp_presentation_feedback;
+  wp_presentation_listen(&wp_presentation, NULL);
 
+  c_event_loop_add(loop, drm_fd, drm_callback, mgr);
   c_wl_interface_support("wp_presentation", on_wp_presentation_bind, NULL);
 
   return mgr;

@@ -16,6 +16,7 @@
 #include "render/gl/gles.h"
 #include "render/framebuffer.h"
 
+#include "wayland/display.h"
 #include "wayland/proto/wayland.h"
 #include "wayland/impl/wayland.h"
 #include "wayland/proto/linux-dmabuf-v1.h"
@@ -24,8 +25,8 @@
 #include "util/shm.h"
 #include "util/mem.h"
 
-static struct c_wl_shm_pool_listeners shm_pool_listeneres;
-struct c_zwp_linux_dmabuf_v1_listeners linux_dmabuf_listeners;
+static struct wl_shm_pool shm_pool;
+struct zwp_linux_dmabuf_v1 linux_dmabuf;
 
 static int import_raw(struct c_renderer *render, struct c_rawbuf *shm) {
 	if (c_gles_texture_from_raw(render->gl, shm) == -1) {
@@ -314,7 +315,7 @@ static int on_shm_buffer_create(struct c_wl_connection *conn, c_wl_args args, vo
   c_wl_error_set_and_return(args[0].o, WL_SHM_ERROR_INVALID_FORMAT, "format not supported");
 }
 
-struct c_renderer *c_renderer_init(struct c_output_manager *mgr, struct c_wl_display *display) {
+struct c_renderer *c_renderer_init(struct c_output_manager *mgr) {
   struct c_renderer *render = calloc(1, sizeof(struct c_renderer));
   if (!render) 
     return NULL;
@@ -328,12 +329,12 @@ struct c_renderer *c_renderer_init(struct c_output_manager *mgr, struct c_wl_dis
   render->formats = c_egl_query_formats(render->egl, &render->format_table_entries);
   render->format_table_fd = create_format_table(render);
 
-  shm_pool_listeneres.create_buffer = on_shm_buffer_create;
-  wl_shm_pool_add_listener(display, &shm_pool_listeneres, render);
+  shm_pool.create_buffer = on_shm_buffer_create;
+  wl_shm_pool_listen(&shm_pool, render);
 
-  linux_dmabuf_listeners.get_default_feedback = send_feedback;
-  linux_dmabuf_listeners.get_surface_feedback = send_feedback;
-  zwp_linux_dmabuf_v1_add_listener(display, &linux_dmabuf_listeners, mgr);
+  linux_dmabuf.get_default_feedback = send_feedback;
+  linux_dmabuf.get_surface_feedback = send_feedback;
+  zwp_linux_dmabuf_v1_listen(&linux_dmabuf, mgr);
 
   c_wl_interface_support("wl_shm", on_wl_shm_bind, render);
   

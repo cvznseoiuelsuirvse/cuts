@@ -1,5 +1,6 @@
 #include <stdlib.h>
 
+#include "wayland/display.h"
 #include "wayland/proto/wayland.h"
 
 #include "seat/session/session.h"
@@ -87,7 +88,7 @@ void c_session_free(struct c_session *backend) {
   free(backend);
 }
 
-struct c_session *c_session_init(struct c_event_loop *loop, struct c_wl_display *display, struct c_input_config *config) {
+struct c_session *c_session_init(struct c_event_loop *loop, struct c_input_config *config) {
   struct c_session *backend = calloc(1, sizeof(*backend));
   if (!backend) {
     c_log(C_LOG_ERROR, "calloc failed");

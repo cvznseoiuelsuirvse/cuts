@@ -48,26 +48,29 @@ void c_wl_surface_state_apply(struct c_wl_surface *surface) {
   struct c_wl_surface_state *p = &surface->pending;
   struct c_wl_surface_state *a = &surface->active;
 
-  if (p->commited & C_WL_SURFACE_STATE_DAMAGE)   { a->damage = p->damage;       };
-  if (p->commited & C_WL_SURFACE_STATE_INPUT)    { a->input  = p->input;        };
-  if (p->commited & C_WL_SURFACE_STATE_OPAQUE)   { a->opaque = p->opaque;       };
-  if (p->commited & C_WL_SURFACE_STATE_SCALE)    { a->scale     = p->scale;     };
-  if (p->commited & C_WL_SURFACE_STATE_OPAQUE)   { a->transform = p->transform; };
-
-  if (p->commited & C_WL_SURFACE_STATE_BUFFER)   { 
-    if (a->buffer) {
-      if (a->buffer->obj)
-        wl_buffer_release(a->buffer->obj->conn, a->buffer->obj->id);
-      c_unref(a->buffer);
-    }
-
-    a->buffer = p->buffer;       
-    if (a->buffer && a->buffer->shm)
-      a->buffer->shm->dirty = 1;
-    p->buffer = NULL;
+  if (p->commited & C_WL_SURFACE_STATE_DAMAGE) {
+    a->damage = p->damage;
+    p->commited &= ~C_WL_SURFACE_STATE_DAMAGE;
   };
 
-  p->commited = 0;
+  if (p->commited & C_WL_SURFACE_STATE_INPUT) {
+    a->input = p->input;
+    p->commited &= ~C_WL_SURFACE_STATE_INPUT;
+  };
+
+  if (p->commited & C_WL_SURFACE_STATE_OPAQUE) {
+    a->opaque = p->opaque;
+    p->commited &= ~C_WL_SURFACE_STATE_OPAQUE;
+  };
+  if (p->commited & C_WL_SURFACE_STATE_SCALE) {
+    a->scale = p->scale;
+    p->commited &= ~C_WL_SURFACE_STATE_SCALE;
+  };
+  if (p->commited & C_WL_SURFACE_STATE_TRANSFORM) {
+    a->transform = p->transform;
+    p->commited &= ~C_WL_SURFACE_STATE_TRANSFORM;
+  };
+
 };
 
 int wl_display_get_registry(struct c_wl_connection *conn, c_wl_args args) {
@@ -353,6 +356,7 @@ int wl_surface_destroy(struct c_wl_connection *conn, c_wl_args args) {
 
   for (size_t i = 0; i < surface->feedbacks_n; i++) {
     wp_presentation_feedback_discarded(conn, surface->feedbacks[i]);
+    surface->feedbacks_n = 0;
   }
 
   if (surface->active.buffer) {
@@ -704,14 +708,14 @@ int wl_data_device_manager_get_data_device(struct c_wl_connection *conn, c_wl_ar
   return 0;
 }
 
-int wl_data_device_set_selection(struct c_wl_connection *conn, c_wl_args args) {
+int wl_data_device_set_data_source(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
   struct c_wl_data_device *data_device = self->data;
 
   c_wl_object_id wl_data_source_id = args[1].o;
-  if (!wl_data_source_id && data_device->selection) {
-    c_unref(data_device->selection);
-    data_device->selection = NULL;
+  if (!wl_data_source_id && data_device->data_source) {
+    c_unref(data_device->data_source);
+    data_device->data_source = NULL;
     return 0;
   }
 
@@ -720,10 +724,10 @@ int wl_data_device_set_selection(struct c_wl_connection *conn, c_wl_args args) {
 
   struct c_wl_data_source *data_source = wl_data_source->data;
 
-  if (data_device->selection)
-    c_unref(data_device->selection);
+  if (data_device->data_source)
+    c_unref(data_device->data_source);
 
-  data_device->selection = data_source;
+  data_device->data_source = data_source;
   c_ref(data_source);
 
   return 0;
@@ -744,8 +748,8 @@ int wl_data_device_start_drag(struct c_wl_connection *conn, c_wl_args args) {
 
   if (source_id) {
     C_WL_CHECK_IF_REGISTERED(source_id, wl_data_source);
-    data_device->dnd.source = wl_data_source->data;
-    c_ref(data_device->dnd.source);
+    data_device->dnd.data_source = wl_data_source->data;
+    c_ref(data_device->dnd.data_source);
   }
 
   C_WL_CHECK_IF_REGISTERED(origin_id, origin_wl_surface);
@@ -771,10 +775,10 @@ int wl_data_device_release(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_object *self = c_wl_self(conn, args);
   struct c_wl_data_device *data_device = self->data;
 
-  if (data_device->selection) c_unref(data_device->selection);
+  if (data_device->data_source) c_unref(data_device->data_source);
 
   if (data_device->dnd.origin) c_unref(data_device->dnd.origin);
-  if (data_device->dnd.source) c_unref(data_device->dnd.source);
+  if (data_device->dnd.data_source) c_unref(data_device->dnd.data_source);
 
   if (data_device->dnd.icon)   {
     data_device->dnd.icon->role = 0;
@@ -872,8 +876,8 @@ int wl_data_offer_set_actions(struct c_wl_connection *conn, c_wl_args args) {
   if (preferred_action & (preferred_action - 1))
     c_wl_error_set_and_return(self->id, WL_DATA_OFFER_ERROR_INVALID_ACTION_MASK, "invalid preferred_action");
 
-  assert(data_offer->device);
-  if (!data_offer->device->dnd.origin)
+  assert(data_offer->data_device);
+  if (!data_offer->data_device->dnd.origin)
     c_wl_error_set_and_return(
         self->id, WL_DATA_OFFER_ERROR_INVALID_ACTION,
         "this data offer isn't associated with drag-and-drop");

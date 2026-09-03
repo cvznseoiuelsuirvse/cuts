@@ -12,6 +12,7 @@
 #include "wayland/proto/ext-data-control-v1.h"
 #include "wayland/proto/wlr-layer-shell-unstable-v1.h"
 
+#include "wayland/display.h"
 #include "wayland/impl/wayland.h"
 #include "wayland/impl/xdg-shell.h"
 #include "wayland/impl/ext-data-control-v1.h"
@@ -82,6 +83,8 @@
 #define is_client_fullscreen(client) ((client)->state & CLIENT_FULLSCREEN)
 #define is_client_floating(client) ((client)->state & CLIENT_FLOAT)
 #define is_client(client, _type) ((client)->node && (client)->node->type == _type)
+
+#define WL_LISTENER(func)     int func(struct c_wl_connection *, c_wl_args, void *)
 
 #define text_rect_width(text_len, bar)                                         \
   ((text_len * (bar->glyph.width + bar->glyph.spacing)) - bar->glyph.spacing + \
@@ -188,7 +191,6 @@ struct {
     struct c_scene_node   *icon_node;
   } dnd;
 
-
   c_list *clients;
   struct client *focused_client;
   int focused_client_idx;
@@ -207,6 +209,21 @@ struct {
   uint32_t fullscreen;
   int    pids[64];
 
+  struct wl_seat                        seat;
+  struct wl_surface                     surface;
+  struct xdg_surface                    xdg_surface;
+  struct xdg_toplevel                   xdg_toplevel;
+  struct wl_data_device                 data_device;
+  struct wl_data_source                 data_source;
+  struct wl_data_offer                  data_offer;
+  struct ext_data_control_manager_v1    data_control_manager;
+  struct ext_data_control_device_v1     data_control_device;
+  struct ext_data_control_offer_v1      data_control_offer;
+  struct zxdg_toplevel_decoration_v1    decor;
+  struct wp_cursor_shape_device_v1      cursor_shape;
+  struct wp_fractional_scale_manager_v1 fraction_scale;
+  struct zwlr_layer_shell_v1            layer_shell;
+  struct zwlr_layer_surface_v1          layer_surface;
 } cuts = {0};
 
 struct tile_layout {
@@ -233,6 +250,7 @@ int get_fontpath(const char *font, char *fontpath, size_t size);
 uint32_t utf8_char(const char *s, size_t *i);
 size_t utf8_len(const char *s);
 void output_commit(struct c_output *output);
+void assign_output_to_surface(struct c_wl_object *wl_surface);
 struct c_wl_surface *wl_surface_from_node(struct c_scene_node *node);
 void set_background(struct monitor *mon, struct c_output_mode *mode);
 void cursor_move(struct c_cursor *cur, double x, double y);
@@ -243,6 +261,8 @@ void clear_dnd(struct c_wl_connection *conn);
 int spawn_proc(const char *s);
 
 struct client *tag_select_client(int direction);
+struct client *client_from_connection(struct c_wl_connection *connection);
+struct client *client_from_surface(struct c_wl_surface *surface);
 struct client *client_new(struct c_wl_connection *connection);
 void client_free(struct client *client);
 void client_unfocus(struct client *client);
@@ -252,7 +272,6 @@ void client_pointer_move(struct client *client, double hotspot_x, double hotspot
 void client_button(struct client *client);
 void client_key(struct client *client);
 void client_close(struct client *client);
-struct client *client_from_connection(struct c_wl_connection *connection);
 void client_border_create(struct client *client);
 void client_border_delete(struct client *client);
 void client_border_set_color(struct client *client, const uint32_t color[4]);
@@ -272,53 +291,33 @@ void on_keyboard_key(struct c_input_keyboard_event *event, void *userdata);
 
 void *on_wl_output_bind(struct c_wl_connection *conn,
                                struct c_wl_object *wl_output, void *userdata);
-int on_wl_seat_get_keyboard(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-int on_wl_seat_get_pointer(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-void assign_output_to_surface(struct c_wl_object *wl_surface);
-int on_wl_surface_commit(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-int on_wl_surface_destroy(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-int on_xdg_surface_get_toplevel(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-int on_xdg_toplevel_set_title(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-int on_xdg_toplevel_unset_fullscreen(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-int on_xdg_toplevel_set_fullscreen(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-int on_xdg_toplevel_destroy(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-void on_connection_gone(struct c_wl_connection *conn, void *userdata);
-int on_wl_data_source_destroy(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-int on_clipboard_offer_receive(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-int on_wl_data_offer_set_actions(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-int on_wl_data_offer_accept(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-int on_wl_data_offer_finish(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-int on_wl_data_offer_destroy(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-int on_zxdg_toplevel_decoration_v1_set_mode(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-int on_wl_data_device_start_drag(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-int on_wl_data_device_set_selection(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-int on_ext_data_control_device_v1_set_selection(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-int on_ext_data_control_manager_v1_get_data_device(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-int on_wp_cursor_shape_device_v1_set_shape(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-int on_wp_fractional_scale_manager_v1_get_fractional_scale(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-int on_zwlr_layer_shell_v1_get_layer_surface(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-int on_zwlr_layer_surface_v1_set_size(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-int on_zwlr_layer_surface_v1_set_keyboard_interactivity(struct c_wl_connection *conn, c_wl_args args, void *userdata);
-int on_zwlr_layer_surface_v1_destroy(struct c_wl_connection *conn, c_wl_args args, void *userdata);
 
-void quit(bind_args *args);
-void spawn(bind_args *args);
-void window_kill(bind_args *args);
-void set_layout(bind_args *args);
-void toggle_fullscreen(bind_args *args);
-void move_focus(bind_args *args);
-void switch_tag(bind_args *args);
-void toggle_floating(bind_args *args);
-void change_mfact(bind_args *args);
-void change_nmaster(bind_args *args);
-void window_move(int done, bind_args *args);
-void window_move_to_workspace(bind_args *args);
-void window_resize(int done, bind_args *args);
-void change_border(bind_args *args);
-void change_gap(bind_args *args);
-
-void zoom();
-void tile();
+WL_LISTENER(on_wl_seat_get_keyboard);
+WL_LISTENER(on_wl_seat_get_pointer);
+WL_LISTENER(on_wl_surface_commit);
+WL_LISTENER(on_wl_surface_destroy);
+WL_LISTENER(on_xdg_surface_get_toplevel);
+WL_LISTENER(on_xdg_toplevel_set_title);
+WL_LISTENER(on_xdg_toplevel_unset_fullscreen);
+WL_LISTENER(on_xdg_toplevel_set_fullscreen);
+WL_LISTENER(on_xdg_toplevel_destroy);
+WL_LISTENER(on_wl_data_source_destroy);
+WL_LISTENER(on_clipboard_offer_receive);
+WL_LISTENER(on_wl_data_offer_set_actions);
+WL_LISTENER(on_wl_data_offer_accept);
+WL_LISTENER(on_wl_data_offer_finish);
+WL_LISTENER(on_wl_data_offer_destroy);
+WL_LISTENER(on_zxdg_toplevel_decoration_v1_set_mode);
+WL_LISTENER(on_wl_data_device_start_drag);
+WL_LISTENER(on_wl_data_device_set_selection);
+WL_LISTENER(on_ext_data_control_device_v1_set_selection);
+WL_LISTENER(on_ext_data_control_manager_v1_get_data_device);
+WL_LISTENER(on_wp_cursor_shape_device_v1_set_shape);
+WL_LISTENER(on_wp_fractional_scale_manager_v1_get_fractional_scale);
+WL_LISTENER(on_zwlr_layer_shell_v1_get_layer_surface);
+WL_LISTENER(on_zwlr_layer_surface_v1_set_size);
+WL_LISTENER(on_zwlr_layer_surface_v1_set_keyboard_interactivity);
+WL_LISTENER(on_zwlr_layer_surface_v1_destroy);
 
 void bar_destroy();
 void bar_set_title(const char *title);
@@ -334,7 +333,6 @@ void bar_create(struct c_output_mode *mode, double scale);
 C_EVENT_CALLBACK stdin_text(struct c_event_loop *loop, int fd, void *userdata);
 void signal_handler(int signal, void *userdata);
 void cleanup(int err);
-int main();
 
 uint32_t utf8_char(const char *s, size_t *i) {
   const unsigned char *c = (const unsigned char *)s;
@@ -366,6 +364,23 @@ size_t utf8_len(const char *s) {
 void output_commit(struct c_output *output) {
   if (c_output_commit(cuts.mgr, output))
     c_event_loop_stop(cuts.loop);
+}
+
+void assign_output_to_surface(struct c_wl_object *wl_surface) {
+  struct c_wl_surface *surface = wl_surface->data;
+
+  if (surface->output) return;
+
+  struct c_wl_object *o;
+  struct c_wl_output *output;
+
+  c_wl_objects_for_each(wl_surface->conn, o) {
+    if (STREQ(o->iface->name, "wl_output") && (output = o->data)->output == cuts.focused_mon->output) {
+      surface->output = output;
+      c_ref(output);
+      return;
+    }
+  }
 }
 
 struct c_wl_surface *wl_surface_from_node(struct c_scene_node *node) {
@@ -465,8 +480,8 @@ struct c_wl_data_offer *advertise_drag(struct c_window *window, struct c_wl_obje
   double lx, ly;
   struct c_wl_surface *target = c_window_surface_at(window, pointer_x, pointer_y, &lx, &ly);
   wl_data_device_enter(conn, data_device->id, c_wl_serial(), target->obj->id,
-                       C_WL_FIXED_FROM_DOUBLE(lx),
-                       C_WL_FIXED_FROM_DOUBLE(ly), data_offer->obj->id);
+                       c_wl_fixed_from_double(lx),
+                       c_wl_fixed_from_double(ly), data_offer->obj->id);
   wl_data_offer_source_actions(conn, data_offer->obj->id, data_source->actions);
   return data_offer;
 }
@@ -597,6 +612,50 @@ struct client *tag_select_client(int direction) {
   return NULL;
 }
 
+struct client *client_from_connection(struct c_wl_connection *connection) {
+  struct client *client;
+  c_list_for_each(cuts.clients, client) {
+    if (client->conn == connection)
+      return client;
+  }
+
+  return NULL;
+}
+
+struct client *client_from_surface(struct c_wl_surface *surface) {
+  if (!surface) return NULL;
+
+  for (;;) {
+    if (surface->sub.surface && surface->sub.surface->parent) {
+      surface = surface->sub.surface->parent;
+      continue;
+    }
+    if (surface->xdg_surface && surface->xdg_surface->parent) {
+      surface = surface->xdg_surface->parent->surface;
+      continue;
+    }
+    break;
+  }
+
+  struct client *client;
+  c_list_for_each(cuts.clients, client) {
+    if (!client->node) continue;
+
+    struct c_wl_surface *root;
+    if (is_client(client, C_SCENE_NODE_WINDOW)) {
+      struct c_window *window = client->node->data;
+      root = window->surface->surface;
+    } else {
+      root = wl_surface_from_node(client->node);
+    }
+    if (root == surface) return client;
+  }
+
+  return NULL;
+}
+
+
+
 struct client *client_new(struct c_wl_connection *connection) {
   struct client *client = calloc(1, sizeof(*client));
   if (!client) {
@@ -661,7 +720,7 @@ void client_focus(struct client *client, double hotspot_x, double hotspot_y) {
     if (STREQ(o->iface->name, "wl_data_device")) {
       if (cuts.cb.src) {
         advertise_selection(o);
-      } else if (is_window && cuts.dnd.src && cuts.dnd.data_device->dnd.source) {
+      } else if (is_window && cuts.dnd.src && cuts.dnd.data_device->dnd.data_source) {
         advertise_drag(window, o);
         cuts.dnd.dst = conn;
       }
@@ -713,48 +772,6 @@ void client_close(struct client *client) {
       bar_clear_title();
     }
   }
-}
-
-struct client *client_from_connection(struct c_wl_connection *connection) {
-  struct client *client;
-  c_list_for_each(cuts.clients, client) {
-    if (client->conn == connection)
-      return client;
-  }
-
-  return NULL;
-}
-
-struct client *client_from_surface(struct c_wl_surface *surface) {
-  if (!surface) return NULL;
-
-  for (;;) {
-    if (surface->sub.surface && surface->sub.surface->parent) {
-      surface = surface->sub.surface->parent;
-      continue;
-    }
-    if (surface->xdg_surface && surface->xdg_surface->parent) {
-      surface = surface->xdg_surface->parent->surface;
-      continue;
-    }
-    break;
-  }
-
-  struct client *client;
-  c_list_for_each(cuts.clients, client) {
-    if (!client->node) continue;
-
-    struct c_wl_surface *root;
-    if (is_client(client, C_SCENE_NODE_WINDOW)) {
-      struct c_window *window = client->node->data;
-      root = window->surface->surface;
-    } else {
-      root = wl_surface_from_node(client->node);
-    }
-    if (root == surface) return client;
-  }
-
-  return NULL;
 }
 
 void client_border_create(struct client *client) {
@@ -956,8 +973,8 @@ void on_mouse_movement(struct c_input_mouse_event *event, void *userdata) {
           double lx, ly;
           c_window_surface_at(window, hot_x, hot_y, &lx, &ly);
           wl_data_device_motion(cuts.dnd.dst, o->id, now_ms(),
-                                C_WL_FIXED_FROM_DOUBLE(lx),
-                                C_WL_FIXED_FROM_DOUBLE(ly));
+                                c_wl_fixed_from_double(lx),
+                                c_wl_fixed_from_double(ly));
         }
       }
     }
@@ -1091,23 +1108,6 @@ int on_wl_seat_get_pointer(struct c_wl_connection *conn, c_wl_args args, void *u
   return 0;
 }
 
-void assign_output_to_surface(struct c_wl_object *wl_surface) {
-  struct c_wl_surface *surface = wl_surface->data;
-
-  if (surface->output) return;
-
-  struct c_wl_object *o;
-  struct c_wl_output *output;
-
-  c_wl_objects_for_each(wl_surface->conn, o) {
-    if (STREQ(o->iface->name, "wl_output") && (output = o->data)->output == cuts.focused_mon->output) {
-      surface->output = output;
-      c_ref(output);
-      return;
-    }
-  }
-}
-
 int on_wl_surface_commit(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
   struct c_wl_object *wl_surface = c_wl_self(conn, args);
   struct c_wl_surface *surface = wl_surface->data;
@@ -1117,13 +1117,7 @@ int on_wl_surface_commit(struct c_wl_connection *conn, c_wl_args args, void *use
 
   assign_output_to_surface(wl_surface);
 
-  if (surface->output) {
-    struct c_output *output = surface->output->output;
-    if (surface->frames_n > 0 && c_list_idx(output->active_surfaces, wl_surface) < 0)
-      c_list_push(output->active_surfaces, wl_surface, 0);
-    output_commit(surface->output->output);
-  }
-
+  if (surface->output) output_commit(surface->output->output);
   return 0;
 }
 
@@ -1137,8 +1131,6 @@ int on_wl_surface_destroy(struct c_wl_connection *conn, c_wl_args args, void *us
 
   if (is_client(client, C_SCENE_NODE_WINDOW)) {
     struct c_window *window = client->node->data; 
-    c_log_value(surface, "%p");
-    c_log_value(window->focused, "%p");
     if (surface == window->focused)
       window->focused = NULL;
   }
@@ -1147,7 +1139,6 @@ no_client:
   if (!surface->output) return 0;
 
   struct c_output *output = surface->output->output;
-  c_list_remove(&output->active_surfaces, wl_surface);
   output_commit(output);
   c_unref(surface->output);
   return 0;
@@ -1310,11 +1301,11 @@ int on_wl_data_offer_finish(struct c_wl_connection *conn, c_wl_args args, void *
 int on_wl_data_offer_destroy(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
   struct c_wl_object *self = c_wl_self(conn, args);
   struct c_wl_data_offer *data_offer = self->data;
-  struct c_wl_data_device *data_device = data_offer->device;
+  struct c_wl_data_device *data_device = data_offer->data_device;
 
   if (data_device) {
-    data_device->offer = NULL;
-    data_offer->device = NULL;
+    data_device->data_offer = NULL;
+    data_offer->data_device = NULL;
   }
 
   return 0;
@@ -1331,7 +1322,7 @@ int on_zxdg_toplevel_decoration_v1_set_mode(struct c_wl_connection *conn, c_wl_a
 int on_wl_data_device_start_drag(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
   struct c_wl_object *wl_data_device = c_wl_self(conn, args);
   struct c_wl_data_device *data_device = wl_data_device->data;
-  struct c_wl_data_source *data_source = data_device->dnd.source;
+  struct c_wl_data_source *data_source = data_device->dnd.data_source;
 
   struct client *client = client_from_surface(data_device->dnd.origin);
 
@@ -1344,9 +1335,9 @@ int on_wl_data_device_start_drag(struct c_wl_connection *conn, c_wl_args args, v
 
   struct c_wl_data_offer *data_offer = advertise_drag(window, wl_data_device);
   cuts.dnd.data_offer = data_offer;
-  data_offer->device = data_device;
+  data_offer->data_device = data_device;
 
-  data_device->offer = data_offer;
+  data_device->data_offer = data_offer;
   if (data_device->dnd.icon) {
     cuts.dnd.icon.surface = data_device->dnd.icon;
 
@@ -2211,11 +2202,11 @@ int main() {
   struct c_input_config input_config = {
     .accel_profile = accel_profile,
   };
-  struct c_session *session = c_session_init(loop, display, &input_config);
+  struct c_session *session = c_session_init(loop, &input_config);
   check_init(session, ret, out);
   cuts.session = session;
 
-  struct c_output_manager *mgr = c_output_manager_init(session, loop, display);
+  struct c_output_manager *mgr = c_output_manager_init(session, loop);
   check_init(mgr, ret, out);
   cuts.mgr = mgr;
 
@@ -2308,129 +2299,95 @@ mode_iter_end:
 
   if (c_input_init_xkb_state(session->input, &xkb_rules) < 0) goto out;
 
-  struct c_input_event_listener_mouse mouse_listener = {
-    .on_mouse_movement = on_mouse_movement,
-    .on_mouse_button = on_mouse_button,
-    .on_mouse_scroll = on_mouse_scroll,
+  struct c_input_events input_listener = {
+    .mouse_movement = on_mouse_movement,
+    .mouse_button = on_mouse_button,
+    .mouse_scroll = on_mouse_scroll,
+    .keyboard_key = on_keyboard_key,
   };
-  c_input_add_event_listener_mouse(session->input, &mouse_listener, NULL);
-
-  struct c_input_event_listener_keyboard listener_keyboard = {
-    .on_keyboard_key = on_keyboard_key,
-  };
-  c_input_add_event_listener_keyboard(session->input, &listener_keyboard, NULL);
+  c_input_add_event_listener(session->input, &input_listener, NULL);
 
   for (size_t i = 0; i < LENGTH(keys); i++) {
     struct key_bind *b = &keys[i];
-    c_input_add_combo_handler(session->input, b->modmask, b->keysym, 0, (void (*)(void *))b->handler, &b->args);
+    c_input_add_combo(session->input, b->modmask, b->keysym, 0, (void (*)(void *))b->handler, &b->args);
   }
 
   for (size_t i = 0; i < LENGTH(mouse); i++) {
     struct mouse_bind *b = &mouse[i];
     if (b->drag)
-      c_input_add_drag_combo_handler(
+      c_input_add_drag_combo(
           session->input, b->modmask, b->keysym, b->btn,
           (void (*)(int, void *))b->drag_handler, &b->args);
 
     else
-      c_input_add_combo_handler(session->input, b->modmask, b->keysym, b->btn,
+      c_input_add_combo(session->input, b->modmask, b->keysym, b->btn,
                                 (void (*)(void *))b->handler, &b->args);
   }
 
-  struct c_wl_seat_listeners seat_listeners = {
-    .get_keyboard = on_wl_seat_get_keyboard,
-    .get_pointer = on_wl_seat_get_pointer,
-  };
-  wl_seat_add_listener(display, &seat_listeners, session->input);
+  cuts.seat.get_keyboard = on_wl_seat_get_keyboard;
+  cuts.seat.get_pointer = on_wl_seat_get_pointer;
+  wl_seat_listen(&cuts.seat, session->input);
 
-  struct c_wl_surface_listeners surface_listeners = {
-    .commit = on_wl_surface_commit,
-    .destroy = on_wl_surface_destroy,
-  };
-  wl_surface_add_listener(display, &surface_listeners, NULL);
+  cuts.surface.commit = on_wl_surface_commit;
+  cuts.surface.destroy = on_wl_surface_destroy;
+  wl_surface_listen(&cuts.surface, NULL);
 
-  struct c_xdg_surface_listeners xdg_surface_listeners = {
-    .get_toplevel = on_xdg_surface_get_toplevel,
-  };
-  xdg_surface_add_listener(display, &xdg_surface_listeners, NULL);
+  cuts.xdg_surface.get_toplevel = on_xdg_surface_get_toplevel;
+  xdg_surface_listen(&cuts.xdg_surface, NULL);
 
-  struct c_xdg_toplevel_listeners xdg_toplevel_listeners = {
-    .destroy = on_xdg_toplevel_destroy,
-    .set_title = on_xdg_toplevel_set_title,
-    .set_fullscreen = on_xdg_toplevel_set_fullscreen,
-    .unset_fullscreen = on_xdg_toplevel_unset_fullscreen,
-  };
-  xdg_toplevel_add_listener(display, &xdg_toplevel_listeners, NULL);
+  cuts.xdg_toplevel.destroy = on_xdg_toplevel_destroy;
+  cuts.xdg_toplevel.set_title = on_xdg_toplevel_set_title;
+  cuts.xdg_toplevel.set_fullscreen = on_xdg_toplevel_set_fullscreen;
+  cuts.xdg_toplevel.unset_fullscreen = on_xdg_toplevel_unset_fullscreen;
+  xdg_toplevel_listen(&cuts.xdg_toplevel, NULL);
 
-  struct c_wl_data_device_listeners data_device_listeners = {
-    .start_drag = on_wl_data_device_start_drag,
-    .set_selection = on_wl_data_device_set_selection,
-  };
-  wl_data_device_add_listener(display, &data_device_listeners, NULL);
+  cuts.data_device.start_drag = on_wl_data_device_start_drag;
+  cuts.data_device.set_selection = on_wl_data_device_set_selection;
+  wl_data_device_listen(&cuts.data_device, NULL);
 
-  struct c_wl_data_source_listeners data_source_listeners = {
-    .destroy = on_wl_data_source_destroy,
-  };
-  wl_data_source_add_listener(display, &data_source_listeners, NULL);
+  cuts.data_source.destroy = on_wl_data_source_destroy;
+  wl_data_source_listen(&cuts.data_source, NULL);
 
-  struct c_wl_data_offer_listeners data_offer_listeners = {
-    .receive = on_clipboard_offer_receive,
-    .set_actions = on_wl_data_offer_set_actions,
-    .accept = on_wl_data_offer_accept,
-    .finish = on_wl_data_offer_finish,
-    .destroy = on_wl_data_offer_destroy,
-  };
-  wl_data_offer_add_listener(display, &data_offer_listeners, NULL);
+  cuts.data_offer.receive = on_clipboard_offer_receive;
+  cuts.data_offer.set_actions = on_wl_data_offer_set_actions;
+  cuts.data_offer.accept = on_wl_data_offer_accept;
+  cuts.data_offer.finish = on_wl_data_offer_finish;
+  cuts.data_offer.destroy = on_wl_data_offer_destroy;
+  wl_data_offer_listen(&cuts.data_offer, NULL);
+
+  cuts.data_control_manager.get_data_device = on_ext_data_control_manager_v1_get_data_device;
+  ext_data_control_manager_v1_listen(&cuts.data_control_manager, NULL);
+
+  cuts.data_control_device.set_selection = on_ext_data_control_device_v1_set_selection;
+  ext_data_control_device_v1_listen(&cuts.data_control_device, NULL);
+
+  cuts.data_control_offer.receive = on_clipboard_offer_receive;
+  ext_data_control_offer_v1_listen(&cuts.data_control_offer, NULL);
+
+  cuts.decor.set_mode = on_zxdg_toplevel_decoration_v1_set_mode;
+  zxdg_toplevel_decoration_v1_listen(&cuts.decor, NULL);
+
+  cuts.cursor_shape.set_shape = on_wp_cursor_shape_device_v1_set_shape;
+  wp_cursor_shape_device_v1_listen(&cuts.cursor_shape, NULL);
+
+  cuts.fraction_scale.get_fractional_scale = on_wp_fractional_scale_manager_v1_get_fractional_scale;
+  wp_fractional_scale_manager_v1_listen(&cuts.fraction_scale, NULL);
+
+  cuts.layer_shell.get_layer_surface = on_zwlr_layer_shell_v1_get_layer_surface;
+  zwlr_layer_shell_v1_listen(&cuts.layer_shell, NULL);
+
+  cuts.layer_surface.set_size = on_zwlr_layer_surface_v1_set_size;
+  cuts.layer_surface.set_keyboard_interactivity = on_zwlr_layer_surface_v1_set_keyboard_interactivity;
+  cuts.layer_surface.destroy = on_zwlr_layer_surface_v1_destroy;
+  zwlr_layer_surface_v1_listen(&cuts.layer_surface, NULL);
+
   c_wl_interface_support("wl_data_device_manager", NULL, NULL);
-
-  struct c_ext_data_control_manager_v1_listeners data_control_manager_listeners = {
-    .get_data_device = on_ext_data_control_manager_v1_get_data_device,
-  };
-  ext_data_control_manager_v1_add_listener(display, &data_control_manager_listeners, NULL);
-
-  struct c_ext_data_control_device_v1_listeners data_control_device_listeners = {
-    .set_selection = on_ext_data_control_device_v1_set_selection,
-  };
-  ext_data_control_device_v1_add_listener(display, &data_control_device_listeners, NULL);
-
-  struct c_ext_data_control_offer_v1_listeners data_control_offer_listeners = {
-    .receive = on_clipboard_offer_receive,
-  };
-  ext_data_control_offer_v1_add_listener(display, &data_control_offer_listeners, NULL);
   c_wl_interface_support("ext_data_control_manager_v1", NULL, NULL);
-
-  struct c_zxdg_toplevel_decoration_v1_listeners decor_listeners = {
-    .set_mode = on_zxdg_toplevel_decoration_v1_set_mode,
-  };
-  zxdg_toplevel_decoration_v1_add_listener(display, &decor_listeners, NULL);
   c_wl_interface_support("zxdg_decoration_manager_v1", NULL, NULL);
-
-  struct c_wp_cursor_shape_device_v1_listeners cursor_shape_listeners = {
-    .set_shape = on_wp_cursor_shape_device_v1_set_shape,
-  };
-  wp_cursor_shape_device_v1_add_listener(display, &cursor_shape_listeners, NULL);
   c_wl_interface_support("wp_cursor_shape_manager_v1", NULL, NULL);
-
-  struct c_wp_fractional_scale_manager_v1_listeners fraction_scale_listeners = {
-    .get_fractional_scale = on_wp_fractional_scale_manager_v1_get_fractional_scale,
-  };
-  wp_fractional_scale_manager_v1_add_listener(display, &fraction_scale_listeners, NULL);
   c_wl_interface_support("wp_fractional_scale_manager_v1", NULL, NULL);
-
-  struct c_zwlr_layer_shell_v1_listeners layer_shell_listeners = {
-    .get_layer_surface = on_zwlr_layer_shell_v1_get_layer_surface,
-  };
-  zwlr_layer_shell_v1_add_listener(display, &layer_shell_listeners, NULL);
-
-  struct c_zwlr_layer_surface_v1_listeners layer_surface_listeners = {
-    .set_size = on_zwlr_layer_surface_v1_set_size,
-    .set_keyboard_interactivity = on_zwlr_layer_surface_v1_set_keyboard_interactivity,
-    .destroy = on_zwlr_layer_surface_v1_destroy,
-  };
-  zwlr_layer_surface_v1_add_listener(display, &layer_surface_listeners, NULL);
   c_wl_interface_support("zwlr_layer_shell_v1", NULL, NULL);
-
-  c_wl_interface_support("wp_viewporter", NULL, NULL);
+  // c_wl_interface_support("wp_viewporter", NULL, NULL);
 
   for (size_t i = 0; i < LENGTH(autostart); i++) {
     cuts.pids[i] = spawn_proc(autostart[i]);;

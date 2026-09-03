@@ -9,6 +9,7 @@
 #include "util/event_loop.h"
 #include "util/helpers.h"
 #include "util/log.h"
+#include "util/callback.h"
 
 #define MAX_INTERFACES 2048
 static const struct c_wl_interface *__interfaces[MAX_INTERFACES];
@@ -19,19 +20,11 @@ enum connection_event_notifiers {
   C_WL_DISPLAY_ON_CONNECTION_GONE,
 };
 
-struct __interface_listeners {
-  char iface_name[100];
-  int destructor;
-  void *listeners;
-  void *userdata;
-};
-
 struct c_wl_display {
 	char 	 socket_path[108];
 
 	struct c_wl_interface *interfaces;
-	c_list *interface_listeners;
-
+  c_list *cb;
   c_list *connections;
 };
 
@@ -118,30 +111,13 @@ size_t c_wl_interface_get_all(const struct c_wl_interface ***interfaces) {
   return __ninterfaces;
 };
 
-void c_wl_display_add_interface_listener(struct c_wl_display *display,
-                                         const char *iface, void *listeners,
-                                         void *userdata) {
-  struct __interface_listeners l;
-  snprintf(l.iface_name, sizeof(l.iface_name), "%s", iface);
-  l.listeners = listeners;
-  l.userdata = userdata;
-      
-  c_list_push(display->interface_listeners, &l, sizeof(l));
-}
+void c_wl_interface_add_listener(const char *name, void *l, void *userdata) {
+  struct c_wl_interface *iface = (struct c_wl_interface *)c_wl_interface_get(name);
+  assert(iface);
 
-void c_wl_display_get_interface_listener(struct c_wl_display *display, const char *iface,
-                               void ***handlers, void **userdata) {
-  *handlers = NULL;
-  *userdata = NULL;
-
-  struct __interface_listeners *l;
-  c_list_for_each(display->interface_listeners, l) {
-    if (STREQ(l->iface_name, iface)) {
-      *handlers = l->listeners;
-      *userdata = l->userdata;
-      break;
-    }
-  }
+  if (!iface->cb)
+    iface->cb = c_list_new();
+  c_callback_add(iface->cb, l, userdata);
 }
 
 C_EVENT_CALLBACK client_epoll_callback(struct c_event_loop *loop, int fd, void *data) {
@@ -219,7 +195,6 @@ struct c_wl_display *c_wl_display_init(struct c_event_loop *loop) {
 
   c_event_loop_add(loop, fd, server_epoll_callback, display);
 
-  display->interface_listeners = c_list_new();
   display->connections = c_list_new();
 
   c_wl_interface_support("wl_compositor", NULL, NULL);
@@ -241,9 +216,11 @@ void c_wl_display_free(struct c_wl_display *display) {
     c_list_destroy(display->connections);
   }
 
-  if (display->interface_listeners)
-    c_list_destroy(display->interface_listeners);
-
+  for (size_t i = 0; i < __ninterfaces; i++) {
+    const struct c_wl_interface *interface = __interfaces[i];
+    if (interface->cb) c_list_destroy(interface->cb);
+  }
+    
   unsetenv("WAYLAND_DISPLAY");
   free(display);
 }

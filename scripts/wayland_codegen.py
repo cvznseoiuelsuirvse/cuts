@@ -133,7 +133,7 @@ def parse_request(interface_name: str, request: ET.Element, file_type: Literal["
 
     request_name = request.get("name")
     is_destructor = request.get("type", "") == "destructor"
-    listener = f"c_wl_interface_listener_handler {request_name};"
+    listener = f"int (*{request_name})(struct c_wl_connection *, c_wl_args, void *);"
 
     desc = next(c for c in request if c.tag == "description")
     if interface_name == "wl_registry" and request_name == "bind":
@@ -209,11 +209,11 @@ def parse_requests(interface: ET.Element, requests: list[ET.Element], file_type:
                 s+=f"#define C_{interface_name.upper()}_{request.name.upper()}_DEPRECATED_SINCE {request.deprecated_since}\n\n"
             s += request.func_decl + "\n"
 
-        s+=f"struct c_{interface_name}_listeners {{\n"
+        s+=f"struct {interface_name} {{\n"
         for request in reqs:
             s+="  " + request.listener_field + "\n"
         s+="};\n"
-        s+=f"void {interface_name}_add_listener(struct c_wl_display *display, struct c_{interface_name}_listeners *listeners, void *userdata);\n"
+        s+=f"void {interface_name}_listen(struct {interface_name} *st, void *userdata);\n"
 
     if file_type == "c":
         destr = -1
@@ -227,8 +227,8 @@ def parse_requests(interface: ET.Element, requests: list[ET.Element], file_type:
 
         s+=")\n"
 
-        s+=f"void {interface_name}_add_listener(struct c_wl_display *display, struct c_{interface_name}_listeners *listeners, void *userdata) {{\n"
-        s+=f"  c_wl_display_add_interface_listener(display, \"{interface_name}\", listeners, userdata);\n"
+        s+=f"void {interface_name}_listen(struct {interface_name} *st, void *userdata) {{\n"
+        s+=f"  c_wl_interface_add_listener(\"{interface_name}\", st, userdata);\n"
         s+="}\n"
 
     return s
@@ -309,9 +309,7 @@ def parse(xml_path: str, basename: str) -> None:
         f.write(f'#ifndef {h_guard_name}\n')
         f.write(f'#define {h_guard_name}\n\n')
 
-        f.write('#include <stdint.h>\n\n')
-        f.write('#include "wayland/server.h"\n')
-        f.write('#include "wayland/display.h"\n')
+        f.write('#include <stdint.h>\n')
         f.write('#include "wayland/types.h"\n\n\n')
 
         enums_s = []
@@ -334,7 +332,6 @@ def parse(xml_path: str, basename: str) -> None:
     with open(f"{basename}.c", "w") as f:
         f.write(f'/* auto-generated */\n')
         f.write('#include <stdint.h>\n\n')
-        f.write('#include "wayland/server.h"\n')
         f.write('#include "wayland/display.h"\n')
         f.write(f'#include "wayland/proto/{os.path.basename(basename)}.h"\n\n\n')
 

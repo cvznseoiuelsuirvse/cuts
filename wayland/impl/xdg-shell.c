@@ -3,6 +3,7 @@
 
 #include "wayland/types.h"
 
+#include "wayland/display.h"
 #include "wayland/proto/xdg-shell.h"
 #include "wayland/impl/xdg-shell.h"
 #include "wayland/proto/wayland.h"

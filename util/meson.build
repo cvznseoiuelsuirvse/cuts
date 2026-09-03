@@ -8,6 +8,7 @@ util_sources = files(
   'signal.c',
   'shm.c',
   'mem.c',
+  'callback.c',
 )
 util_include = include_directories('..')
 util_dep = declare_dependency(

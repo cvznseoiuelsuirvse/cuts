@@ -34,12 +34,6 @@ struct c_input_mouse_event {
 	enum c_input_mouse_axis_source axis_source;
 };
 
-struct c_input_event_listener_mouse {
-	void (*on_mouse_movement)(struct c_input_mouse_event *event, void *userdata);
-	void (*on_mouse_scroll)  (struct c_input_mouse_event *event, void *userdata);
-	void (*on_mouse_button)  (struct c_input_mouse_event *event, void *userdata);
-};
-
 struct c_input_keyboard_event {
 	struct libinput_event_keyboard *libinput_event;
 	int32_t  key;
@@ -52,8 +46,11 @@ struct c_input_keyboard_event {
 	xkb_layout_index_t group;
 };
 
-struct c_input_event_listener_keyboard {
-	void (*on_keyboard_key)     (struct c_input_keyboard_event *event, void *userdata);
+struct c_input_events {
+	void (*mouse_movement)(struct c_input_mouse_event *event, void *userdata);
+	void (*mouse_scroll)  (struct c_input_mouse_event *event, void *userdata);
+	void (*mouse_button)  (struct c_input_mouse_event *event, void *userdata);
+	void (*keyboard_key)  (struct c_input_keyboard_event *event, void *userdata);
 };
 
 struct c_input_libinput_interface {
@@ -79,8 +76,8 @@ struct c_input {
 
 	uint8_t capabilities;
 
-	c_list *event_listeners;
-	c_list *combo_listeners;
+	c_list *event_cb;
+	c_list *combo_cb;
 
   struct {
     uint32_t mod_mask;
@@ -110,18 +107,12 @@ void c_input_free(struct c_input *input);
 int c_input_init_xkb_state(struct c_input *input, struct xkb_rule_names *rule_names);
 int c_input_get_xkb_keymap_fd(struct c_input *input, int *fd);
 
-void c_input_add_event_listener_mouse(struct c_input *input, 
-									  struct c_input_event_listener_mouse *listener, void *userdata);
-
-void c_input_add_event_listener_keyboard(struct c_input *input, 
-									struct c_input_event_listener_keyboard *listener, void *userdata);
-
-void c_input_add_combo_handler(struct c_input *input, uint32_t mod_mask,
-                               xkb_keysym_t keysym, uint32_t btn,
-                               void (*handler)(void *userdata), void *userdata);
-
-void c_input_add_drag_combo_handler(
-    struct c_input *input, uint32_t mod_mask, xkb_keysym_t keysym, uint32_t btn,
-    void (*handler)(int done, void *userdata), void *userdata);
-
+void c_input_add_event_listener(struct c_input *input, struct c_input_events *subs, void *userdata);
+void c_input_add_combo(struct c_input *input, uint32_t mod_mask,
+                       xkb_keysym_t keysym, uint32_t btn,
+                       void (*handler)(void *userdata), void *userdata);
+void c_input_add_drag_combo(struct c_input *input, uint32_t mod_mask,
+                            xkb_keysym_t keysym, uint32_t btn,
+                            void (*handler)(int done, void *userdata),
+                            void *userdata);
 #endif

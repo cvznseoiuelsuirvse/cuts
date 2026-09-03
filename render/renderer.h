@@ -5,10 +5,7 @@
 #include <gbm.h>
 
 #include "output/output.h"
-#include "wayland/display.h"
-#include "wayland/server.h"
 #include "render/types.h"
-
 
 struct c_renderer {
 	struct c_egl *egl;
@@ -19,7 +16,7 @@ struct c_renderer {
   int format_table_fd;
 };
 
-struct c_renderer *c_renderer_init(struct c_output_manager *mgr, struct c_wl_display *display);
+struct c_renderer *c_renderer_init(struct c_output_manager *mgr);
 void c_renderer_free(struct c_renderer *renderer);
 int c_renderer_create_format_table(struct c_renderer *renderer);
 

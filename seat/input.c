@@ -4,6 +4,7 @@
 #include "seat/input.h"
 #include "util/log.h"
 #include "util/shm.h"
+#include "util/callback.h"
 
 #define IS_MOUSE_COMBO(cl, input)                                              \
   ((cl->mod_mask & input->state.mod_mask) == cl->mod_mask) &&                  \
@@ -18,21 +19,15 @@ enum __input_event_listener_type {
   INPUT_EVENT_LISTENER_KEYBOARD,
 };
 
-struct __input_event_listener {
-  void *userdata;
-  void *listener;
-  enum __input_event_listener_type type;
-};
-
 struct __input_combo_listener {
   uint32_t     mod_mask;
   xkb_keysym_t keysym;
-  uint32_t btn;
+  uint32_t     btn;
 
   void (*handler)(void *);
   void (*drag_handler)(int, void *);
-  void *userdata;
 
+  void *userdata;
 };
 
 enum c_input_notifier {
@@ -62,46 +57,6 @@ static struct xkb_keymap *get_xkb_keymap(struct c_input *input) {
   return input->xkb.keymap;
 }
 
-static void c_input_notify_keyboard(struct c_input *input, 
-                                 struct c_input_keyboard_event *event, enum c_input_notifier notifier) {
-  struct __input_event_listener *l;
-
-#define notify_keyboard(callback)                                              \
-  c_list_for_each(input->event_listeners, l) {                                 \
-    if (l->type == INPUT_EVENT_LISTENER_KEYBOARD &&                            \
-        ((struct c_input_event_listener_keyboard *)l->listener)->callback)     \
-      ((struct c_input_event_listener_keyboard *)l->listener)                  \
-          ->callback(event, l->userdata);                                      \
-  }
-
-  switch (notifier) {
-    case C_INPUT_NOTIFY_ON_KEYBOARD_KEY: notify_keyboard(on_keyboard_key); break;
-    default: break;
-  }
-}
-
-static void c_input_notify_mouse(struct c_input *input, 
-                                 struct c_input_mouse_event *event, enum c_input_notifier notifier) {
-  struct __input_event_listener *l;
-
-#define notify_mouse(callback)                                                 \
-  c_list_for_each(input->event_listeners, l) {                                 \
-    if (l->type == INPUT_EVENT_LISTENER_MOUSE &&                               \
-        ((struct c_input_event_listener_mouse *)l->listener)->callback) {      \
-      ((struct c_input_event_listener_mouse *)l->listener)                     \
-          ->callback(event, l->userdata);                                      \
-    }                                                                          \
-  }
-
-  switch (notifier) {
-    case C_INPUT_NOTIFY_ON_MOUSE_MOVEMENT:  notify_mouse(on_mouse_movement); break;
-    case C_INPUT_NOTIFY_ON_MOUSE_SCROLL:    notify_mouse(on_mouse_scroll); break;
-    case C_INPUT_NOTIFY_ON_MOUSE_BUTTON:    notify_mouse(on_mouse_button); break;
-    default: break;
-  }
-}
-
-
 static void handle_event_mouse(struct c_input *input, struct libinput_event_pointer *event, enum libinput_event_type type) {
   assert(event);
   struct c_input_mouse_event mouse_event = {0};
@@ -120,7 +75,7 @@ static void handle_event_mouse(struct c_input *input, struct libinput_event_poin
         mouse_event.abs = 1;
       }
 
-      c_input_notify_mouse(input, &mouse_event, C_INPUT_NOTIFY_ON_MOUSE_MOVEMENT);
+      c_callback_notify_all(input->event_cb, c_input_events, mouse_movement, &mouse_event);
 
       if (input->state.drag_handler)
         input->state.drag_handler(0, input->state.drag_handler_userdata);
@@ -135,7 +90,7 @@ static void handle_event_mouse(struct c_input *input, struct libinput_event_poin
         input->state.button = mouse_event.button;
 
         struct __input_combo_listener *cl;
-        c_list_for_each(input->combo_listeners, cl) {
+        c_list_for_each(input->combo_cb, cl) {
           if (IS_MOUSE_COMBO(cl, input)) {
             if (cl->drag_handler) {
               input->state.drag_handler = cl->drag_handler;
@@ -158,8 +113,7 @@ static void handle_event_mouse(struct c_input *input, struct libinput_event_poin
         input->state.drag_handler_userdata = NULL;
       }
 
-      c_input_notify_mouse(input, &mouse_event, C_INPUT_NOTIFY_ON_MOUSE_BUTTON);
-
+      c_callback_notify_all(input->event_cb, c_input_events, mouse_button, &mouse_event);
       break;
 
     case LIBINPUT_EVENT_POINTER_SCROLL_WHEEL:
@@ -168,7 +122,7 @@ static void handle_event_mouse(struct c_input *input, struct libinput_event_poin
       mouse_event.axis_discrete = mouse_event.axis120 / 120;
       mouse_event.axis_source = C_MOUSE_AXIS_SOURCE_WHEEL;
 
-      c_input_notify_mouse(input, &mouse_event, C_INPUT_NOTIFY_ON_MOUSE_SCROLL);
+      c_callback_notify_all(input->event_cb, c_input_events, mouse_scroll, &mouse_event);
       break;
 
     case LIBINPUT_EVENT_POINTER_SCROLL_FINGER:
@@ -177,7 +131,9 @@ static void handle_event_mouse(struct c_input *input, struct libinput_event_poin
   }
 
 }
-static void handle_event_keyboard(struct c_input *input, struct libinput_event_keyboard *event, struct libinput_device *libinput_dev) {
+static void handle_event_keyboard(struct c_input *input,
+                                  struct libinput_event_keyboard *event,
+                                  struct libinput_device *libinput_dev) {
   assert(event);
 
   struct xkb_state *state = get_xkb_state(input);
@@ -215,7 +171,7 @@ static void handle_event_keyboard(struct c_input *input, struct libinput_event_k
 
   if (keyboard_event.pressed == 1) {
     struct __input_combo_listener *cl;
-    c_list_for_each(input->combo_listeners, cl) {
+    c_list_for_each(input->combo_cb, cl) {
       if (IS_KEYBOARD_COMBO(cl)) {
         cl->handler(cl->userdata);
         return;
@@ -223,7 +179,7 @@ static void handle_event_keyboard(struct c_input *input, struct libinput_event_k
     }
   }
 
-  c_input_notify_keyboard(input, &keyboard_event, C_INPUT_NOTIFY_ON_KEYBOARD_KEY);
+  c_callback_notify_all(input->event_cb, c_input_events, keyboard_key, &keyboard_event);
 }
 
 static void set_accel_profile(struct libinput_device *dev, enum libinput_config_accel_profile profile) {
@@ -343,25 +299,11 @@ C_EVENT_CALLBACK libinput_dispatch_handler(struct c_event_loop *loop, int fd, vo
   return ret == 0 ? C_EVENT_OK : C_EVENT_ERROR_FATAL;
 }
 
-static void add_listener(c_list *listeners,
-                         enum __input_event_listener_type type, void *listener, void *userdata) {
-  struct __input_event_listener l = {
-    .userdata = userdata,
-    .listener = listener,
-    .type = type,
-  };
-  c_list_push(listeners, &l, sizeof(l));
+void c_input_add_event_listener(struct c_input *input, struct c_input_events *subs, void *userdata) {
+  c_callback_add(input->event_cb, subs, userdata);
 }
 
-void c_input_add_event_listener_keyboard(struct c_input *input, struct c_input_event_listener_keyboard *listener, void *userdata) {
-  add_listener(input->event_listeners, INPUT_EVENT_LISTENER_KEYBOARD, listener, userdata);
-}
-
-void c_input_add_event_listener_mouse(struct c_input *input, struct c_input_event_listener_mouse *listener, void *userdata) {
-  add_listener(input->event_listeners, INPUT_EVENT_LISTENER_MOUSE, listener, userdata);
-}
-
-void c_input_add_combo_handler(struct c_input *input, uint32_t mod_mask,
+void c_input_add_combo(struct c_input *input, uint32_t mod_mask,
                                xkb_keysym_t keysym, uint32_t btn,
                                void (*handler)(void *userdata), void *userdata) {
   struct __input_combo_listener l = {
@@ -372,10 +314,10 @@ void c_input_add_combo_handler(struct c_input *input, uint32_t mod_mask,
     .drag_handler = NULL,
     .userdata = userdata,
   };
-  c_list_push(input->combo_listeners, &l, sizeof(l));
+  c_list_push(input->combo_cb, &l, sizeof(l));
 }
 
-void c_input_add_drag_combo_handler(
+void c_input_add_drag_combo(
     struct c_input *input, uint32_t mod_mask, xkb_keysym_t keysym, uint32_t btn,
     void (*handler)(int done, void *userdata), void *userdata) {
 
@@ -387,7 +329,7 @@ void c_input_add_drag_combo_handler(
     .handler = NULL,
     .userdata = userdata,
   };
-  c_list_push(input->combo_listeners, &l, sizeof(l));
+  c_list_push(input->combo_cb, &l, sizeof(l));
 }
 
 int c_input_init_xkb_state(struct c_input *input, struct xkb_rule_names *rule_names) {
@@ -447,8 +389,9 @@ void c_input_free(struct c_input *input) {
   if (input->libinput)
     libinput_unref(input->libinput);
 
-  if (input->combo_listeners)
-    c_list_destroy(input->combo_listeners);
+  if (input->combo_cb) {
+    c_list_destroy(input->combo_cb);
+  }
 
   if (input->xkb.state)
     xkb_state_unref(input->xkb.state);
@@ -459,13 +402,16 @@ void c_input_free(struct c_input *input) {
   if (input->xkb.ctx)
     xkb_context_unref(input->xkb.ctx);
 
-  if (input->event_listeners)
-    c_list_destroy(input->event_listeners);
+  if (input->event_cb)
+    c_list_destroy(input->event_cb);
 
   free(input);
 }
 
-struct c_input * c_input_init(struct c_event_loop *loop, struct c_input_libinput_interface *libinput_interface, struct c_input_config *config) {
+struct c_input *
+c_input_init(struct c_event_loop *loop,
+             struct c_input_libinput_interface *libinput_interface,
+             struct c_input_config *config) {
   struct c_input *input = calloc(1, sizeof(*input));
   if (!input) {
     c_log(C_LOG_ERROR, "calloc failed");
@@ -500,8 +446,8 @@ struct c_input * c_input_init(struct c_event_loop *loop, struct c_input_libinput
   int fd = libinput_get_fd(libinput);
   c_event_loop_add(loop, fd, libinput_dispatch_handler, input);
 
-  input->event_listeners = c_list_new();
-  input->combo_listeners = c_list_new();
+  input->event_cb = c_list_new();
+  input->combo_cb = c_list_new();
 
   input->xkb.ctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
   if (!input->xkb.ctx) {

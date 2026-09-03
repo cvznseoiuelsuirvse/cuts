@@ -1,3 +1,4 @@
+#include "wayland/display.h"
 #include "wayland/server.h"
 #include "wayland/impl/wayland.h"
 #include "wayland/proto/fractional-scale-v1.h"

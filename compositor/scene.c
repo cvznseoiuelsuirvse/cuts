@@ -19,6 +19,8 @@ struct c_scene {
   uint32_t z_state[5];
 };
 
+static struct c_output_events output_events;
+
 static void unref_window_quads(struct c_scene_node *node) {
   struct c_renderer_quad *quad;
   c_list_for_each(node->quads, quad)
@@ -135,15 +137,16 @@ static void collect_window_tree(struct c_window *window, struct c_wl_surface *su
   matrix3_rotate(q.transform, surface->active.transform);
   matrix3_translate(q.transform, -0.5f, -0.5f);
 
-  matrix3_translate(q.transform, src_x / raw_w, src_y / raw_h);
   matrix3_scale(q.transform, src_w / raw_w, src_h / raw_h);
+  matrix3_translate(q.transform, src_x / raw_w, src_y / raw_h);
 
-  if (window && surface->xdg_surface) {
+  if (surface->xdg_surface) {
     double crop_w = surface->xdg_surface->active.geo.width;
     double crop_h = surface->xdg_surface->active.geo.height;
 
     double crop_x = surface->xdg_surface->active.geo.x;
     double crop_y = surface->xdg_surface->active.geo.y;
+    c_log(C_LOG_DEBUG, "%f %f %f %f", crop_w, crop_h, crop_x, crop_y);
 
     matrix3_translate(q.transform, crop_x / surf_w, crop_y / surf_h);
     matrix3_scale(q.transform, crop_w / surf_w, crop_h / surf_h);
@@ -152,7 +155,9 @@ static void collect_window_tree(struct c_window *window, struct c_wl_surface *su
     surf_y = crop_y;
     surf_w = crop_w;
     surf_h = crop_h;
+
   }
+
 
   q.x = window ? window->x : x;
   q.y = window ? window->y : y;
@@ -165,8 +170,8 @@ static void collect_window_tree(struct c_window *window, struct c_wl_surface *su
     struct c_wl_subsurface *ss;
     c_list_for_each(surface->sub.children, ss) {
       collect_window_tree(NULL, ss->surface, scale,
-                          q.x + (ss->x - surf_x) * scale,
-                          q.y + (ss->y - surf_y) * scale, quads);
+                          q.x - (ss->x - surf_x) * scale,
+                          q.y - (ss->y - surf_y) * scale, quads);
     }
   }
 
@@ -174,8 +179,8 @@ static void collect_window_tree(struct c_window *window, struct c_wl_surface *su
     struct c_xdg_surface *xs;
     c_list_for_each(surface->xdg_surface->children, xs) {
       collect_window_tree(NULL, xs->surface, scale,
-                          q.x + (xs->popup.x - xs->active.geo.x) * scale,
-                          q.y + (xs->popup.y - xs->active.geo.y) * scale, quads);
+                          q.x - (xs->popup.x - xs->active.geo.x) * scale,
+                          q.y - (xs->popup.y - xs->active.geo.y) * scale, quads);
     }
   }
 }
@@ -283,7 +288,11 @@ struct c_scene *c_scene_init(struct c_output_manager *mgr) {
     return NULL;
   }
 
-  c_output_register_on_redraw(mgr, on_redraw, scene);
+  output_events.schedule = on_redraw;
+  struct c_output *o;
+  c_list_for_each(mgr->outputs, o)
+    c_output_listen(o, &output_events, scene);
+
   scene->nodes = c_list_new();
 
   for (int i = 0; i < 5; i++)

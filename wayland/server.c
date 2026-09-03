@@ -16,6 +16,7 @@
 #include "util/log.h"
 #include "util/mem.h"
 #include "util/bitmap.h"
+#include "util/callback.h"
 
 #define MAX_CMSG_FDS 256
 
@@ -240,21 +241,21 @@ int c_wl_connection_post(struct c_wl_connection *conn, struct c_wl_message *msg,
 static int handle_request(struct c_wl_connection *conn,
                           struct c_wl_object *object, c_wl_args args,
                           uint16_t op, int *handlers_called) {
-  struct c_wl_request request = object->iface->requests[op];
-  int destructor = object->iface->destructor_request;
-  void *userdata = object->listeners.userdata;
-  void **handlers = object->listeners.handlers;
-
-  c_wl_interface_listener_handler handler = NULL;
-  if (handlers)
-     handler = handlers[op];
+  const struct c_wl_interface *iface = object->iface;
+  struct c_wl_request request = iface->requests[op];
+  int destructor = iface->destructor_request;
 
   int status = 0;
-
-  if (handler && destructor == op) {
-    status = handler(conn, args, userdata);
-    *handlers_called |= USER_HANDLER_D;
-    if (status) goto out;
+  int (*handler)(struct c_wl_connection *, c_wl_args, void *) = NULL;
+  if (destructor == op && iface->cb) {
+    struct c_callback *cb;
+    c_list_for_each(iface->cb, cb) {
+      void **handlers = cb->listeners;
+      handler = handlers[op];
+      if (handler) status = handler(conn, args, cb->userdata);
+      if (status) goto out;
+      *handlers_called |= USER_HANDLER_D;
+    }
   }
 
   if (request.impl) {
@@ -263,9 +264,15 @@ static int handle_request(struct c_wl_connection *conn,
     if (status) goto out;
   }
 
-  if (handler && destructor != op) {
-    status = handler(conn, args, userdata);
-    *handlers_called |= USER_HANDLER;
+  if (destructor != op && iface->cb) {
+    struct c_callback *cb;
+    c_list_for_each(iface->cb, cb) {
+      void **handlers = cb->listeners;
+      handler = handlers[op];
+      if (handler) status = handler(conn, args, cb->userdata);
+      if (status) goto out;
+      *handlers_called |= USER_HANDLER;
+    }
   }
 
 out:
@@ -446,12 +453,8 @@ struct c_wl_object *c_wl_object_add(struct c_wl_connection *conn, c_wl_new_id id
     .version = version,
     .iface = interface,
     .data = data,
-    .listeners = {NULL, NULL},
+    .cb = NULL,
   };
-
-  c_wl_display_get_interface_listener(conn->display, interface->name,
-                                      &new_object.listeners.handlers,
-                                      &new_object.listeners.userdata);
 
   if (0 < id && id < 0xFF000000) {
     c_bitmap_set(conn->client_id_pool, id - 1);

@@ -1,5 +1,6 @@
 #include <stdlib.h>
 
+#include "wayland/display.h"
 #include "wayland/server.h"
 #include "wayland/impl/wayland.h"
 #include "wayland/proto/wlr-layer-shell-unstable-v1.h"

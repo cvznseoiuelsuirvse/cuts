@@ -5,6 +5,11 @@
 #include <xkbcommon/xkbcommon.h>
 #include <linux/input-event-codes.h>
 
+#define BIND_KEY(func)        void func(bind_args *)
+#define BIND_MOUSE(func)      void func(bind_args *)
+#define BIND_MOUSE_DRAG(func) void func(int done, bind_args *)
+#define LAYOUT_FUNC(func)     void func()
+
 struct monitor_config {
   const char *name;
   double scale;
@@ -94,27 +99,22 @@ struct layout {
 	const char *repr;
 };
 
-// bind functions
-void quit(bind_args *);
-void spawn(bind_args *);
-void window_kill(bind_args *);
-void move_focus(bind_args *);
-void switch_tag(bind_args *);
-void toggle_floating(bind_args *);
-void window_move_to_workspace(bind_args *);
-void change_mfact(bind_args *);
-void change_nmaster(bind_args *);
-void set_layout(bind_args *);
-void toggle_fullscreen(bind_args *);
-void change_border(bind_args *args);
-void change_gap(bind_args *args);
-
-// bind drag functions
-void window_move(int, bind_args *);
-void window_resize(int, bind_args *);
-
-// layout functions
-void tile();
-void zoom();
+BIND_KEY(quit);
+BIND_KEY(spawn);
+BIND_KEY(window_kill);
+BIND_KEY(move_focus);
+BIND_KEY(switch_tag);
+BIND_KEY(toggle_floating);
+BIND_KEY(window_move_to_workspace);
+BIND_KEY(change_mfact);
+BIND_KEY(change_nmaster);
+BIND_KEY(set_layout);
+BIND_KEY(toggle_fullscreen);
+BIND_KEY(change_border);
+BIND_KEY(change_gap);
+BIND_MOUSE_DRAG(window_move);
+BIND_MOUSE_DRAG(window_resize);
+LAYOUT_FUNC(tile);
+LAYOUT_FUNC(zoom);
 
 #endif
