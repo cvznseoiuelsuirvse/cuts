@@ -11,15 +11,27 @@ void c_zwlr_layer_surface_state_apply(struct c_zwlr_layer_surface *surface) {
   struct c_zwlr_layer_surface_state *p = &surface->pending;
   struct c_zwlr_layer_surface_state *a = &surface->active;
 
-  if (p->commited & C_ZWLR_LAYER_SURFACE_STATE_LAYER)            { a->layer = p->layer; } 
-  if (p->commited & C_ZWLR_LAYER_SURFACE_STATE_ANCHOR)           { a->anchor = p->anchor; } 
-  if (p->commited & C_ZWLR_LAYER_SURFACE_STATE_SIZE)             { a->width = p->width; a->height = p->height; } 
-  if (p->commited & C_ZWLR_LAYER_SURFACE_STATE_EXCLUSIVE_ZONE)   { a->exclusive_zone = p->exclusive_zone; } 
-  if (p->commited & C_ZWLR_LAYER_SURFACE_STATE_KEYBOARD_INTERAC) 
-  { a->keyboard_interactivity = p->keyboard_interactivity; } 
-
-  p->commited = 0;
-
+  if (p->commited & C_ZWLR_LAYER_SURFACE_STATE_LAYER) {
+    a->layer = p->layer;
+    p->commited &= ~C_ZWLR_LAYER_SURFACE_STATE_LAYER;
+  }
+  if (p->commited & C_ZWLR_LAYER_SURFACE_STATE_ANCHOR) {
+    a->anchor = p->anchor;
+    p->commited &= ~C_ZWLR_LAYER_SURFACE_STATE_ANCHOR;
+  }
+  if (p->commited & C_ZWLR_LAYER_SURFACE_STATE_SIZE) {
+    a->width = p->width;
+    a->height = p->height;
+    p->commited &= ~C_ZWLR_LAYER_SURFACE_STATE_SIZE;
+  }
+  if (p->commited & C_ZWLR_LAYER_SURFACE_STATE_EXCLUSIVE_ZONE) {
+    a->exclusive_zone = p->exclusive_zone;
+    p->commited &= ~C_ZWLR_LAYER_SURFACE_STATE_EXCLUSIVE_ZONE;
+  }
+  if (p->commited & C_ZWLR_LAYER_SURFACE_STATE_KEYBOARD_INTERAC) {
+    a->keyboard_interactivity = p->keyboard_interactivity;
+    p->commited &= ~C_ZWLR_LAYER_SURFACE_STATE_KEYBOARD_INTERAC;
+  }
 };
 
 int zwlr_layer_shell_v1_get_layer_surface(struct c_wl_connection *conn, c_wl_args args) {

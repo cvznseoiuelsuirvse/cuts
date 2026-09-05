@@ -8,7 +8,7 @@
 enum c_xdg_surface_state_commited {
   C_XDG_SURFACE_STATE_MAX_SIZE = 1 << 0,
   C_XDG_SURFACE_STATE_MIN_SIZE = 1 << 1,
-  C_XDG_SURFACE_STATE_GEOM     = 1 << 2,
+  C_XDG_SURFACE_STATE_GEO      = 1 << 2,
 };
 
 struct c_xdg_surface_state {
@@ -50,8 +50,8 @@ struct c_xdg_positioner {
 struct c_xdg_surface {
   C_WL_BASE;
 
-  c_wl_uint serial;
-  c_wl_uint acked_serial;
+  c_wl_uint configure;
+  c_wl_uint ack_configure;
 
   struct c_xdg_surface_state pending, active;
   

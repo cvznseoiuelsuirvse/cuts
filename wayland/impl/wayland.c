@@ -44,7 +44,7 @@ void defer_wl_buffer(void *data) {
   if (buf->pool) c_unref(buf->pool);
 }
 
-void c_wl_surface_state_apply(struct c_wl_surface *surface) {
+int c_wl_surface_state_apply(struct c_wl_surface *surface) {
   struct c_wl_surface_state *p = &surface->pending;
   struct c_wl_surface_state *a = &surface->active;
 
@@ -71,6 +71,12 @@ void c_wl_surface_state_apply(struct c_wl_surface *surface) {
     p->commited &= ~C_WL_SURFACE_STATE_TRANSFORM;
   };
 
+  int error = 0;
+  if (surface->xdg_surface)       c_xdg_surface_state_apply(surface->xdg_surface);
+  if (surface->wlr_layer_surface) c_zwlr_layer_surface_state_apply(surface->wlr_layer_surface);
+  if (surface->viewport)          error = c_wp_viewport_state_apply(surface->viewport);
+
+  return error;
 };
 
 int wl_display_get_registry(struct c_wl_connection *conn, c_wl_args args) {
@@ -381,23 +387,23 @@ int wl_surface_destroy(struct c_wl_connection *conn, c_wl_args args) {
       c_unref(surface);
   }
 
-  if (surface->sub.surface) {
-      surface->sub.surface->surface = NULL;
-      c_unref(surface->sub.surface);
-      surface->sub.surface = NULL;
+  if (surface->subsurface) {
+      surface->subsurface->surface = NULL;
+      c_unref(surface->subsurface);
+      surface->subsurface = NULL;
       c_unref(surface);
   }
 
-  if (surface->sub.children) {
+  if (surface->children) {
     struct c_wl_subsurface *ss;
-    c_list_for_each(surface->sub.children, ss) {
+    c_list_for_each(surface->children, ss) {
       ss->parent = NULL;
       c_unref(ss);
       c_unref(surface);
     }
 
-    c_list_destroy(surface->sub.children);
-    surface->sub.children = NULL;
+    c_list_destroy(surface->children);
+    surface->children = NULL;
   }
 
   if (surface->viewport) {
@@ -488,10 +494,17 @@ int wl_surface_commit(struct c_wl_connection *conn, c_wl_args args) {
 
   int error = 0;
 
-  c_wl_surface_state_apply(surface);
-  if (surface->xdg_surface)       c_xdg_surface_state_apply(surface->xdg_surface);
-  if (surface->wlr_layer_surface) c_zwlr_layer_surface_state_apply(surface->wlr_layer_surface);
-  if (surface->viewport)          error = c_wp_viewport_state_apply(surface->viewport);
+  if (surface->subsurface && surface->subsurface->sync) return 0;
+
+  if ((error = c_wl_surface_state_apply(surface))) return error;
+  
+  if (surface->children) {
+    struct c_wl_subsurface *ss;
+    c_list_for_each(surface->children, ss) {
+      if (ss->sync && ((error = c_wl_surface_state_apply(ss->surface))))
+        return error;
+    }
+  }
 
   return error;
 }
@@ -553,10 +566,11 @@ int wl_subcompositor_get_subsurface(struct c_wl_connection *conn, c_wl_args args
                               "child surface already has a role");
   }
 
+  subsurface->sync = 1;
   subsurface->parent = surface_parent;
   c_ref(surface_parent);
 
-  surface->sub.surface = subsurface;
+  surface->subsurface = subsurface;
   c_ref(subsurface);
 
   subsurface->surface = surface;
@@ -564,15 +578,15 @@ int wl_subcompositor_get_subsurface(struct c_wl_connection *conn, c_wl_args args
 
   subsurface->surface->role = C_WL_SURFACE_ROLE_SUBSURFACE;
 
-  if (surface->sub.children && c_list_idx(surface->sub.children, surface_parent) != -1)
+  if (surface->children && c_list_idx(surface->children, surface_parent) != -1)
     c_wl_error_set_and_return(
         args[0].o, WL_SUBCOMPOSITOR_ERROR_BAD_SURFACE,
         "parent surface is one of the child's descendants");
 
-  if (!surface_parent->sub.children)
-    surface_parent->sub.children = c_list_new();
+  if (!surface_parent->children)
+    surface_parent->children = c_list_new();
 
-  c_list_push(surface_parent->sub.children, subsurface, 0);
+  c_list_push(surface_parent->children, subsurface, 0);
   c_ref(subsurface);
 
   subsurface->obj = c_wl_object_add(conn, wl_subsurface_id, self->version, c_wl_interface_get("wl_subsurface"), subsurface);
@@ -590,12 +604,30 @@ int wl_subsurface_set_position(struct c_wl_connection *conn, c_wl_args args) {
 int wl_subsurface_set_sync(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_subsurface *surface = c_wl_self(conn, args)->data;
   surface->sync = 1;
+
+  if (surface->surface->children) {
+    struct c_wl_subsurface *ss;
+    c_list_for_each(surface->surface->children, ss) {
+      c_wl_arg arg = {.o = ss->obj->id};
+      wl_subsurface_set_sync(conn, &arg);
+    }
+  }
+
   return 0;
 }
 
 int wl_subsurface_set_desync(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_subsurface *surface = c_wl_self(conn, args)->data;
   surface->sync = 0;
+
+  if (surface->surface->children) {
+    struct c_wl_subsurface *ss;
+    c_list_for_each(surface->surface->children, ss) {
+      c_wl_arg arg = {.o = ss->obj->id};
+      wl_subsurface_set_desync(conn, &arg);
+    }
+  }
+
   return 0;
 }
 
@@ -605,14 +637,14 @@ int wl_subsurface_destroy(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_surface    *surface_parent = subsurface->parent;
 
   if (surface_parent) {
-    c_list_remove(&surface_parent->sub.children, subsurface);
+    c_list_remove(&surface_parent->children, subsurface);
     c_unref(subsurface);
     c_unref(surface_parent);
   }
 
   if (surface) {
     surface->role = 0;
-    surface->sub.surface = NULL;
+    surface->subsurface = NULL;
     c_unref(surface);
     c_unref(subsurface);
   }
@@ -629,11 +661,11 @@ int wl_subsurface_place_above(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_surface    *sibling = wl_surface_sibling->data;
   struct c_wl_surface    *parent = surface->parent;
 
-  c_list_remove(&parent->sub.children, surface);
-  int sibling_idx = c_list_idx(parent->sub.children, sibling);
+  c_list_remove(&parent->children, surface);
+  int sibling_idx = c_list_idx(parent->children, sibling);
   assert(sibling_idx != -1);
 
-  c_list_insert(&parent->sub.children, sibling_idx, surface, 0);
+  c_list_insert(&parent->children, sibling_idx, surface, 0);
   return 0;
 };
 
@@ -645,11 +677,11 @@ int wl_subsurface_place_below(struct c_wl_connection *conn, c_wl_args args) {
   struct c_wl_surface    *sibling = wl_surface_sibling->data;
   struct c_wl_surface    *parent = surface->parent;
 
-  c_list_remove(&parent->sub.children, surface);
-  int sibling_idx = c_list_idx(parent->sub.children, sibling);
+  c_list_remove(&parent->children, surface);
+  int sibling_idx = c_list_idx(parent->children, sibling);
   assert(sibling_idx != -1);
 
-  c_list_insert(&parent->sub.children, sibling_idx+1, surface, 0);
+  c_list_insert(&parent->children, sibling_idx+1, surface, 0);
   return 0;
 };
 

@@ -65,8 +65,8 @@ def parse_event(interface_name: str, event: ET.Element, event_n: int, file_type:
     deprecated_since = int(event.get("deprecated-since", 0))
     event_name = event.get("name")
 
-    desc = next(c for c in event if c.tag == "description")
-    if file_type == "h" and desc.text:
+    desc = next((c for c in event if c.tag == "description"), None)
+    if file_type == "h" and desc and desc.text:
         s += f" /* {desc.text.strip()} */\n"
 
     args = [c for c in event if c.tag == "arg"]
@@ -135,7 +135,7 @@ def parse_request(interface_name: str, request: ET.Element, file_type: Literal["
     is_destructor = request.get("type", "") == "destructor"
     listener = f"int (*{request_name})(struct c_wl_connection *, c_wl_args, void *);"
 
-    desc = next(c for c in request if c.tag == "description")
+    desc = next((c for c in request if c.tag == "description"), None)
     if interface_name == "wl_registry" and request_name == "bind":
         args = [
             ET.Element("arg", {"name": "name",      "type": "uint"}),
@@ -154,7 +154,7 @@ def parse_request(interface_name: str, request: ET.Element, file_type: Literal["
     struct +=  f'    {{{f"\"{request_name}\",":<25} {f"{interface_name}_{request_name},":<30} {f"{nargs},":<3} {signature if nargs > 0 else '{0}'}}},\n'
 
     if file_type == "h":
-        if desc.text:
+        if desc is not None and desc.text:
             if args:
                 decl += f"   /* {desc.text.strip()}\n\n"
 

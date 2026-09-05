@@ -30,12 +30,12 @@ int c_wp_viewport_state_apply(struct c_wp_viewport *vp) {
     }
 
     a->src = p->src;
-    memset(&p->src, 0, sizeof(p->src));
+    p->commited &= ~C_WP_VIEWPORT_STATE_SRC;
   }
 
   if (p->commited & C_WP_VIEWPORT_STATE_DST) { 
-    a->dst  = p->dst;    
-    memset(&p->dst, 0, sizeof(p->dst));
+    a->dst = p->dst;    
+    p->commited &= ~C_WP_VIEWPORT_STATE_DST;
   }
 
   return 0;

@@ -6,8 +6,10 @@
 #include <fcntl.h>
 
 #include "wayland/display.h"
-#include "wayland/proto/presentation-time.h"
+
 #include "wayland/impl/wayland.h"
+#include "wayland/proto/presentation-time.h"
+#include "wayland/proto/wayland-drm.h"
 
 #include "output/output.h"
 #include "output/drm/drm.h"
@@ -248,6 +250,15 @@ static void *on_wp_presentation_bind(struct c_wl_connection *conn, struct c_wl_o
   return NULL;
 }
 
+static void *on_wl_drm_bind(struct c_wl_connection *conn, struct c_wl_object *wl_drm, void *userdata) {
+  struct c_output_manager *mgr = userdata;
+  char *render_node = drmGetRenderDeviceNameFromFd(mgr->drm_fd);
+  wl_drm_device(conn, wl_drm->id, render_node);
+  wl_drm_capabilities(conn, wl_drm->id, WL_DRM_CAPABILITY_PRIME);
+  free(render_node);
+  return NULL;
+}
+
 static int on_wl_surface_commit(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
   struct c_wl_surface *surface = c_wl_self(conn, args)->data;
 
@@ -409,8 +420,10 @@ struct c_output_manager *c_output_manager_init(struct c_session *session, struct
   wp_presentation.feedback = on_wp_presentation_feedback;
   wp_presentation_listen(&wp_presentation, NULL);
 
-  c_event_loop_add(loop, drm_fd, drm_callback, mgr);
+  c_wl_interface_support("wl_drm", on_wl_drm_bind, mgr);
   c_wl_interface_support("wp_presentation", on_wp_presentation_bind, NULL);
+
+  c_event_loop_add(loop, drm_fd, drm_callback, mgr);
 
   return mgr;
 

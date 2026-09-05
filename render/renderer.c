@@ -26,7 +26,8 @@
 #include "util/mem.h"
 
 static struct wl_shm_pool shm_pool;
-struct zwp_linux_dmabuf_v1 linux_dmabuf;
+static struct zwp_linux_dmabuf_v1 linux_dmabuf;
+static struct zwp_linux_buffer_params_v1 linux_dmabuf_params;
 
 static int import_raw(struct c_renderer *render, struct c_rawbuf *shm) {
 	if (c_gles_texture_from_raw(render->gl, shm) == -1) {
@@ -57,21 +58,21 @@ static int import_dmabuf(struct c_renderer *render, struct c_dmabuf *dmabuf) {
 		c_log(C_LOG_ERROR, "%s (0x%08"PRIx32") 0x%08"PRIx64" pair not found",
 		      format_name, dmabuf->drm_format, dmabuf->modifier);
 		ret = -1;
-		goto out_pre_image;
+		goto out;
 	}
 
 	if (format->n_planes != dmabuf->n_planes) {
 		c_log(C_LOG_ERROR, "%s (0x%08"PRIx32") requires %d planes, but %d was specified",
 		      format_name, dmabuf->drm_format, format->n_planes, dmabuf->n_planes);
 		ret = -1;
-		goto out_pre_image;
+		goto out;
 	}
 
 	if (dmabuf->width > format->max_width || dmabuf->height > format->max_height) {
 		c_log(C_LOG_ERROR, "buffer is too large. %s (0x%08"PRIx32") max resolution: %ux%u",
 		      format_name, format->drm_format, format->max_width, format->max_height);
 		ret = -1;
-		goto out_pre_image;
+		goto out;
 	}
 
 	dmabuf->image = c_egl_create_image_from_dmabuf(render->egl, dmabuf);
@@ -90,16 +91,12 @@ static int import_dmabuf(struct c_renderer *render, struct c_dmabuf *dmabuf) {
   c_log(C_LOG_DEBUG, "imported DMA %p: %dx%d %s (0x%08" PRIx32 ") 0x%08" PRIx64,
         dmabuf, dmabuf->width, dmabuf->height, format_name, dmabuf->drm_format, dmabuf->modifier);
 out:
-	for (uint32_t i = 0; i < dmabuf->n_planes; i++) close(dmabuf->planes[i].fd);
-
-out_pre_image:
 
 	free(format_name);
 	return ret;
 }
 
 static void defer_dma(void *data) {
-  c_log(C_LOG_DEBUG, __PRETTY_FUNCTION__);
   struct c_dmabuf *buf = data;
   struct c_renderer *renderer = buf->renderer;
   if (buf->image && renderer->egl->proc.eglDestroyImageKHR)
@@ -109,6 +106,9 @@ static void defer_dma(void *data) {
     glDeleteTextures(1, &buf->texture->texture);
     free(buf->texture);
   }
+
+	for (uint32_t i = 0; i < buf->n_planes; i++) close(buf->planes[i].fd);
+
   c_log(C_LOG_DEBUG, "DMA %p destroyed", buf);
 }
 
@@ -128,24 +128,19 @@ static struct c_gles_texture *ensure_imported(struct c_renderer *render, void *b
     struct c_dmabuf *buf = buffer;
 		if (!buf->texture) {
 			if (import_dmabuf(render, buf) < 0) return NULL;
-
-      buf->renderer = render;
-      c_defer(buf, defer_dma);
     }
 
 		return buf->texture;
 
 	} else if (buf_type == C_BUFFER_RAW) {
     struct c_rawbuf *buf = buffer;
-    int no_texture = !buf->texture;
 		if (!buf->texture || buf->dirty) {
+      int no_tex = !buf->texture;
 			if (import_raw(render, buf) < 0) return NULL;
       buf->dirty = 0;
-      if (no_texture) {
+      if (no_tex)
         c_defer(buf, defer_shm);
-      }
     }
-
 		return buf->texture;
 	}
 
@@ -201,11 +196,11 @@ static int get_dev_id(int drm_fd, dev_t *dev_id) {
 }
 
 static int send_feedback(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
-  struct c_output_manager *mgr = userdata;
+  struct c_renderer *renderer = userdata;
   struct c_wl_object *feedback = c_wl_object_get(conn, args[1].n);
 
   dev_t drm_dev_id;
-  if (get_dev_id(mgr->drm_fd, &drm_dev_id) == -1)  {
+  if (get_dev_id(renderer->drm_fd, &drm_dev_id) == -1)  {
     c_log_errno(C_LOG_ERROR, "failed to get drm rdev"); 
     return 1;
   }
@@ -215,13 +210,13 @@ static int send_feedback(struct c_wl_connection *conn, c_wl_args args, void *use
     &drm_dev_id,
   };
 
-  int ft_fd = create_format_table(mgr->renderer);
+  int ft_fd = create_format_table(renderer);
   if (ft_fd == -1) {
     c_log(C_LOG_ERROR, "failed to create format table");
     return 1;
   }
 
-  size_t format_table_entries = mgr->renderer->format_table_entries;
+  size_t format_table_entries = renderer->format_table_entries;
 
   zwp_linux_dmabuf_feedback_v1_main_device(conn, feedback->id, &device);
 
@@ -241,8 +236,16 @@ static int send_feedback(struct c_wl_connection *conn, c_wl_args args, void *use
   arr.data = data;
 
   zwp_linux_dmabuf_feedback_v1_tranche_formats(conn, feedback->id, &arr);
+  zwp_linux_dmabuf_feedback_v1_tranche_done(conn, feedback->id);
   zwp_linux_dmabuf_feedback_v1_done(conn, feedback->id);
 
+  return 0;
+}
+
+static int on_create(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
+  struct c_wl_buffer *buffer = c_wl_self(conn, args)->data;
+  c_defer(buffer->dma, defer_dma);
+  buffer->dma->renderer = userdata;
   return 0;
 }
 
@@ -313,6 +316,7 @@ static int on_shm_buffer_create(struct c_wl_connection *conn, c_wl_args args, vo
   }
 
   c_wl_error_set_and_return(args[0].o, WL_SHM_ERROR_INVALID_FORMAT, "format not supported");
+  c_defer(rawbuf, defer_shm);
 }
 
 struct c_renderer *c_renderer_init(struct c_output_manager *mgr) {
@@ -320,6 +324,7 @@ struct c_renderer *c_renderer_init(struct c_output_manager *mgr) {
   if (!render) 
     return NULL;
 
+  render->drm_fd = mgr->drm_fd;
   render->egl = c_egl_init(mgr->gbm_device);
   if (!render->egl) goto error;
 
@@ -334,7 +339,11 @@ struct c_renderer *c_renderer_init(struct c_output_manager *mgr) {
 
   linux_dmabuf.get_default_feedback = send_feedback;
   linux_dmabuf.get_surface_feedback = send_feedback;
-  zwp_linux_dmabuf_v1_listen(&linux_dmabuf, mgr);
+  zwp_linux_dmabuf_v1_listen(&linux_dmabuf, render);
+
+  linux_dmabuf_params.create = on_create;
+  linux_dmabuf_params.create_immed = on_create;
+  zwp_linux_buffer_params_v1_listen(&linux_dmabuf_params, render);
 
   c_wl_interface_support("wl_shm", on_wl_shm_bind, render);
   

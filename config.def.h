@@ -89,7 +89,9 @@ static struct xkb_rule_names xkb_rules = {
 };
 
 static struct monitor_config monitors[] = {};
-static const char *autostart[] = {};
+static const char *autostart[] = {
+  // "swaybg -i ~/img.png",
+};
 
 static struct layout layouts[] = {
 	{tile, "//"},

@@ -8,6 +8,8 @@
 #include "render/types.h"
 
 struct c_renderer {
+  int drm_fd;
+
 	struct c_egl *egl;
 	struct c_gles *gl;
 

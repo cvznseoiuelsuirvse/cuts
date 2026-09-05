@@ -1,8 +1,14 @@
 #include "render/types.h"
 #include "wayland/impl/wayland.h"
 #include "wayland/impl/viewporter.h"
-
 #include "compositor/util.h"
+
+double get_surface_scale(struct c_wl_surface *surface) {
+  if (surface->fscale)
+    return surface->fscale / 120.0f;
+
+  return surface->active.scale;
+}
 
 void get_surface_raw_buf_size(struct c_wl_surface *surface, int32_t *width, int32_t *height) {
   if (surface->active.buffer->dma) {
@@ -14,13 +20,8 @@ void get_surface_raw_buf_size(struct c_wl_surface *surface, int32_t *width, int3
   }
 }
 
-void get_surface_buf_size(struct c_wl_surface *surface, int32_t *width, int32_t *height) {
-  double scale;
-  if (surface->fscale)
-    scale = surface->fscale / 120.0f;
-  else
-    scale = surface->active.scale;
-
+void get_surface_logical_buf_size(struct c_wl_surface *surface, double *width, double *height) {
+  double scale = get_surface_scale(surface);
   if (surface->active.buffer->dma) {
     *width = surface->active.buffer->dma->width / scale;
     *height = surface->active.buffer->dma->height / scale;
@@ -31,23 +32,9 @@ void get_surface_buf_size(struct c_wl_surface *surface, int32_t *width, int32_t 
 }
 
 void get_surface_size(struct c_wl_surface *surface, double *width, double *height) {
-  int32_t buf_w, buf_h;
-  get_surface_buf_size(surface, &buf_w, &buf_h);
+  double l_w, l_h;
+  get_surface_logical_buf_size(surface, &l_w, &l_h);
 
-  *width = buf_w;
-  *height = buf_h;
-
-  if (!surface->viewport) return;
-
-  struct c_wp_viewport_state *vp = &surface->viewport->active;
-
-  if (vp->src.width > 0 && vp->src.height > 0) {
-    *width = vp->src.width;
-    *height = vp->src.height;
-  }
-
-  if (vp->dst.width > 0 && vp->dst.height > 0) {
-    *width = vp->dst.width;
-    *height = vp->dst.height;
-  }
+  *width = l_w;
+  *height = l_h;
 }

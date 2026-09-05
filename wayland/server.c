@@ -481,8 +481,8 @@ int c_wl_object_del(struct c_wl_connection *conn, c_wl_object_id id) {
   struct c_wl_object *o = c_map_get(conn->objects, id);
   if (!o) return 1;
   
+  c_log(C_LOG_DEBUG, "del %s#%lu", o->iface->name, id);
   if (o->data) {
-    c_log(C_LOG_DEBUG, "del %s#%lu", o->iface->name, id);
     c_unref(o->data);
   }
 

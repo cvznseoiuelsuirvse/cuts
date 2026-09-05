@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <math.h>
 
 #include "render/renderer.h"
 #include "compositor/window.h"
@@ -18,8 +19,7 @@ struct c_scene {
 	c_list *nodes; // struct c_scene_node *
   uint32_t z_state[5];
 };
-
-static struct c_output_events output_events;
+struct c_output_events output_events;
 
 static void unref_window_quads(struct c_scene_node *node) {
   struct c_renderer_quad *quad;
@@ -101,35 +101,39 @@ static void collect_window_tree(struct c_window *window, struct c_wl_surface *su
     q.buffer = buffer->shm;
     q.buffer_type = C_BUFFER_RAW;
   }
+  q.x = x;
+  q.y = y;
 
-  int32_t raw_w, raw_h;
-  get_surface_raw_buf_size(surface, &raw_w, &raw_h);
+  int32_t b_w, b_h;
+  get_surface_raw_buf_size(surface, &b_w, &b_h);
 
-  double src_x = 0, src_y = 0;
-  double src_w = raw_w, src_h = raw_h;
+  double s_x = 0;
+  double s_y = 0;
+  double s_w = b_w;
+  double s_h = b_h;
 
-  double surf_x = 0, surf_y = 0;
-  double surf_w, surf_h;
-  get_surface_size(surface, &surf_w, &surf_h);
+  double S_x = 0;
+  double S_y = 0;
+  double S_w;
+  double S_h;
+  get_surface_size(surface, &S_w, &S_h);
 
   if (surface->viewport) {
     struct c_wp_viewport_state *vp = &surface->viewport->active;
     if (vp->src.width > 0 && vp->src.height > 0) {
-      src_x = vp->src.x;
-      src_y = vp->src.y;
-      src_w = vp->src.width;
-      src_h = vp->src.height;
-      surf_w = src_w;
-      surf_h = src_h;
+      s_x = vp->src.x;
+      s_y = vp->src.y;
+      s_w = vp->src.width;
+      s_h = vp->src.height;
+      S_w = s_w;
+      S_h = s_h;
     }
 
     if (vp->dst.width > 0 && vp->dst.height > 0) {
-      surf_w = vp->dst.width;
-      surf_h = vp->dst.height;
+      S_w = vp->dst.width;
+      S_h = vp->dst.height;
     }
   }
-
-  if (surf_w <= 0 || surf_h <= 0) return;
 
   matrix3_new(q.transform);
 
@@ -137,41 +141,43 @@ static void collect_window_tree(struct c_window *window, struct c_wl_surface *su
   matrix3_rotate(q.transform, surface->active.transform);
   matrix3_translate(q.transform, -0.5f, -0.5f);
 
-  matrix3_scale(q.transform, src_w / raw_w, src_h / raw_h);
-  matrix3_translate(q.transform, src_x / raw_w, src_y / raw_h);
+  matrix3_translate(q.transform, s_x / b_w, s_y / b_h);
+  matrix3_scale(q.transform, s_w / b_w, s_h / b_h);
 
-  if (surface->xdg_surface) {
-    double crop_w = surface->xdg_surface->active.geo.width;
-    double crop_h = surface->xdg_surface->active.geo.height;
+  if (window && surface->xdg_surface) {
+    double g_w = surface->xdg_surface->active.geo.width;
+    double g_h = surface->xdg_surface->active.geo.height;
+    double g_x = surface->xdg_surface->active.geo.x;
+    double g_y = surface->xdg_surface->active.geo.y;
 
-    double crop_x = surface->xdg_surface->active.geo.x;
-    double crop_y = surface->xdg_surface->active.geo.y;
-    c_log(C_LOG_DEBUG, "%f %f %f %f", crop_w, crop_h, crop_x, crop_y);
+    double buf_aspect = s_w / s_h;
+    double geo_aspect = g_w / g_h;
+    if (fabs(buf_aspect - geo_aspect) / geo_aspect > 0.01)
+      g_w = g_h * buf_aspect;
 
-    matrix3_translate(q.transform, crop_x / surf_w, crop_y / surf_h);
-    matrix3_scale(q.transform, crop_w / surf_w, crop_h / surf_h);
+    matrix3_translate(q.transform, g_x / S_w, g_y / S_h);
+    matrix3_scale(q.transform, g_w / S_w, g_h / S_h);
 
-    surf_x = crop_x;
-    surf_y = crop_y;
-    surf_w = crop_w;
-    surf_h = crop_h;
-
+    S_x = g_x;
+    S_y = g_y;
+    S_w = g_w;
+    S_h = g_h;
   }
 
+  q.width = S_w * scale;
+  q.height = S_h * scale;
 
-  q.x = window ? window->x : x;
-  q.y = window ? window->y : y;
-  q.width = surf_w * scale;
-  q.height = surf_h * scale;
-
+  c_log(C_LOG_DEBUG, "surface#%d (%d)", surface->obj->id, surface->role);
+  if (surface->subsurface)
+    c_log(C_LOG_DEBUG, "  sync=%d", surface->subsurface->sync);
   c_list_push(quads, &q, sizeof(q));
 
-  if (surface->sub.children) {
+  if (surface->children) {
     struct c_wl_subsurface *ss;
-    c_list_for_each(surface->sub.children, ss) {
+    c_list_for_each(surface->children, ss) {
       collect_window_tree(NULL, ss->surface, scale,
-                          q.x - (ss->x - surf_x) * scale,
-                          q.y - (ss->y - surf_y) * scale, quads);
+                          q.x + (ss->x - S_x) * scale,
+                          q.y + (ss->y - S_y) * scale, quads);
     }
   }
 
@@ -179,8 +185,8 @@ static void collect_window_tree(struct c_window *window, struct c_wl_surface *su
     struct c_xdg_surface *xs;
     c_list_for_each(surface->xdg_surface->children, xs) {
       collect_window_tree(NULL, xs->surface, scale,
-                          q.x - (xs->popup.x - xs->active.geo.x) * scale,
-                          q.y - (xs->popup.y - xs->active.geo.y) * scale, quads);
+                          q.x + (xs->popup.x - xs->active.geo.x) * scale,
+                          q.y + (xs->popup.y - xs->active.geo.y) * scale, quads);
     }
   }
 }
@@ -210,8 +216,8 @@ static int on_redraw(struct c_output_manager *mgr, struct c_output *output, void
       struct c_wl_buffer *buffer = surf->surface->active.buffer;
       if (!buffer) continue;
 
-      int32_t w, h;
-      get_surface_buf_size(surf->surface, &w, &h);
+      double w, h;
+      get_surface_logical_buf_size(surf->surface, &w, &h);
 
       if (surf->width)  w = surf->width;
       if (surf->height) h = surf->height;

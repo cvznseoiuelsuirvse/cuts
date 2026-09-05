@@ -45,10 +45,10 @@ struct c_wl_surface *surface_hit_test(struct c_window *window,
 
   struct c_wl_surface *hit = NULL;
 
-  if (surface->sub.children) {
+  if (surface->children) {
     struct c_wl_subsurface *ss;
     struct c_wl_surface *h;
-    c_list_for_each(surface->sub.children, ss) {
+    c_list_for_each(surface->children, ss) {
       h = surface_hit_test(NULL, ss->surface, scale, px, py,
                            offset_x + ss->x - surf_x,
                            offset_y + ss->y - surf_y,
@@ -175,8 +175,9 @@ void c_window_deactivate(struct c_window *window) {
   };
 
   int serial = c_wl_serial();
-  xdg_surface->serial = serial;
+  xdg_surface->configure = serial;
 
+  xdg_toplevel_configure_bounds(window->conn, xdg_surface->toplevel.obj->id, width, height);
   xdg_toplevel_configure(window->conn, xdg_surface->toplevel.obj->id, width, height, &arr);
   xdg_surface_configure(window->conn, xdg_surface->obj->id, serial);
 
@@ -199,8 +200,9 @@ void c_window_activate(struct c_window *window) {
   };
 
   int serial = c_wl_serial();
-  xdg_surface->serial = serial;
+  xdg_surface->configure = serial;
 
+  xdg_toplevel_configure_bounds(window->conn, xdg_surface->toplevel.obj->id, width, height);
   xdg_toplevel_configure(window->conn, xdg_surface->toplevel.obj->id, width, height, &arr);
   xdg_surface_configure(window->conn, xdg_surface->obj->id, serial);
 

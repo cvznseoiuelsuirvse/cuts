@@ -72,14 +72,11 @@ struct c_wl_surface {
 	enum c_wl_surface_roles role;
   c_wl_int fscale;
 
-  struct c_xdg_surface          *xdg_surface;
-  struct c_zwlr_layer_surface   *wlr_layer_surface;
-  struct c_wp_viewport          *viewport;
-
-  struct {
-    struct c_wl_subsurface *surface;
-    c_list *children;
-  } sub;
+  struct c_xdg_surface        *xdg_surface;
+  struct c_zwlr_layer_surface *wlr_layer_surface;
+  struct c_wp_viewport        *viewport;
+  struct c_wl_subsurface      *subsurface;
+  c_list *children;
 
   struct c_callback *frame_cb;
   struct c_callback *feedback_cb;

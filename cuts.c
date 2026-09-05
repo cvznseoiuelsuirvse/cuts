@@ -129,7 +129,7 @@ struct monitor {
 };
 
 struct clipboard_selection {
-  struct c_wl_object *obj;
+  C_WL_BASE;
   c_wl_string mimetypes[64];
   size_t mimes;
 };
@@ -144,6 +144,8 @@ enum client_state {
 struct client {
   uint32_t tag;
   enum client_state state;
+
+  uint32_t resize_configure;
 
   struct c_wl_connection *conn;
   struct monitor *mon;
@@ -297,6 +299,7 @@ WL_LISTENER(on_wl_seat_get_pointer);
 WL_LISTENER(on_wl_surface_commit);
 WL_LISTENER(on_wl_surface_destroy);
 WL_LISTENER(on_xdg_surface_get_toplevel);
+WL_LISTENER(on_xdg_surface_ack_configure);
 WL_LISTENER(on_xdg_toplevel_set_title);
 WL_LISTENER(on_xdg_toplevel_unset_fullscreen);
 WL_LISTENER(on_xdg_toplevel_set_fullscreen);
@@ -499,6 +502,8 @@ void advertise_selection(struct c_wl_object *data_device) {
                       c_wl_interface_get("wl_data_offer"), data_offer);
   wl_data_device_data_offer(conn, data_device->id, data_offer->obj->id);
 
+  c_log_value(cuts.cb.selection->mimes, "%d");
+  c_log_value(*cuts.cb.selection->mimetypes, "%s");
   for (size_t i = 0; i < cuts.cb.selection->mimes; i++)
     wl_data_offer_offer(conn, data_offer->obj->id, cuts.cb.selection->mimetypes[i]);
 
@@ -626,8 +631,8 @@ struct client *client_from_surface(struct c_wl_surface *surface) {
   if (!surface) return NULL;
 
   for (;;) {
-    if (surface->sub.surface && surface->sub.surface->parent) {
-      surface = surface->sub.surface->parent;
+    if (surface->subsurface && surface->subsurface->parent) {
+      surface = surface->subsurface->parent;
       continue;
     }
     if (surface->xdg_surface && surface->xdg_surface->parent) {
@@ -951,24 +956,22 @@ void on_mouse_movement(struct c_input_mouse_event *event, void *userdata) {
   struct client *focused = NULL;
   uint32_t top = 0;
 
-  struct client *client;
-  clients_for_each_in_tag(client) {
-    if (!is_client(client, C_SCENE_NODE_WINDOW)) continue;
+  struct client *c;
+  clients_for_each_in_tag(c) {
+    if (!is_client(c, C_SCENE_NODE_WINDOW)) continue;
 
-    struct c_window *window = client->node->data;
-    if (CURSOR_INSIDE(hot_x, hot_y, window->x, window->y, window->width, window->height) && client->node->z >= top) {
-        focused = client;
-        top = client->node->z;
+    struct c_window *window = c->node->data;
+    if (CURSOR_INSIDE(hot_x, hot_y, window->x, window->y, window->width, window->height) && c->node->z >= top) {
+        focused = c;
+        top = c->node->z;
     }
   }
 
   if (focused == cuts.focused_client) {
-    client_pointer_move(focused, hot_x, hot_y);
-
-    if (is_client(client, C_SCENE_NODE_WINDOW) && cuts.dnd.dst) {
-      struct c_window *window = client->node->data;
+    if (cuts.dnd.dst) {
+      struct c_window *window = focused->node->data;
       struct c_wl_object *o;
-      c_wl_objects_for_each(client->conn, o) {
+      c_wl_objects_for_each(focused->conn, o) {
         if (STREQ(o->iface->name, "wl_data_device")) {
           double lx, ly;
           c_window_surface_at(window, hot_x, hot_y, &lx, &ly);
@@ -977,6 +980,8 @@ void on_mouse_movement(struct c_input_mouse_event *event, void *userdata) {
                                 c_wl_fixed_from_double(ly));
         }
       }
+    } else {
+      client_pointer_move(focused, hot_x, hot_y);
     }
 
   } else if (focused) {
@@ -1124,18 +1129,19 @@ int on_wl_surface_commit(struct c_wl_connection *conn, c_wl_args args, void *use
 int on_wl_surface_destroy(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
   struct c_wl_object *wl_surface = c_wl_self(conn, args);
   struct c_wl_surface *surface = wl_surface->data;
-  struct client *client = client_from_surface(surface);
-  if (!client) goto no_client;
-
-  if (client->node) c_scene_node_update(client->node);
-
-  if (is_client(client, C_SCENE_NODE_WINDOW)) {
-    struct c_window *window = client->node->data; 
-    if (surface == window->focused)
-      window->focused = NULL;
+  struct client *client;
+  c_list_for_each(cuts.clients, client) {
+    if (client->conn == conn) {
+      if (client->node) c_scene_node_update(client->node);
+      if (is_client(client, C_SCENE_NODE_WINDOW)) {
+        struct c_window *window = client->node->data; 
+        if (surface == window->focused)
+          window->focused = NULL;
+        break;
+      }
+    }
   }
 
-no_client:
   if (!surface->output) return 0;
 
   struct c_output *output = surface->output->output;
@@ -1150,9 +1156,9 @@ int on_xdg_surface_get_toplevel(struct c_wl_connection *conn, c_wl_args args, vo
 
   struct c_window *window = c_window_new(conn, surface);
   window->states = (1 << XDG_TOPLEVEL_STATE_TILED_TOP)       |
-                               (1 << XDG_TOPLEVEL_STATE_TILED_RIGHT)     |
-                               (1 << XDG_TOPLEVEL_STATE_TILED_BOTTOM)    |
-                               (1 << XDG_TOPLEVEL_STATE_TILED_LEFT)      ;
+                   (1 << XDG_TOPLEVEL_STATE_TILED_RIGHT)     |
+                   (1 << XDG_TOPLEVEL_STATE_TILED_BOTTOM)    |
+                   (1 << XDG_TOPLEVEL_STATE_TILED_LEFT)      ;
   window->scale = cuts.focused_mon->scale;
 
   client->node = c_scene_add_window(cuts.scene, window);
@@ -1168,6 +1174,18 @@ int on_xdg_surface_get_toplevel(struct c_wl_connection *conn, c_wl_args args, vo
   LAYOUT(client->mon);
 
   if (!(cuts.fullscreen & cuts.tag)) client_change_focus(client, pointer_x, pointer_y);
+  return 0;
+}
+
+int on_xdg_surface_ack_configure(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
+  struct c_xdg_surface *surf = c_wl_self(conn, args)->data;
+  struct client *client = client_from_surface(surf->surface);
+
+  if (client->resize_configure == surf->ack_configure) {
+    c_scene_node_update(client->node);
+    client->resize_configure = 0;
+  }
+
   return 0;
 }
 
@@ -1377,6 +1395,9 @@ int on_wl_data_device_set_selection(struct c_wl_connection *conn, c_wl_args args
 
 int on_ext_data_control_device_v1_set_selection(struct c_wl_connection *conn, c_wl_args args, void *userdata) {
   struct c_ext_data_control_source *data_source = c_wl_object_get(conn, args[1].o)->data;
+
+  c_log_value( data_source->mimes, "%d");
+  c_log_value(*data_source->mimetypes, "%s");
 
   if (cuts.cb.src)
     cuts.cb.cancelled(cuts.cb.src, cuts.cb.selection->obj->id);
@@ -1689,26 +1710,18 @@ void window_resize(int done, bind_args *args) {
   window->width = CLAMP(window->width + dist_x, MIN_WINDOW_SIZE, UINT32_MAX);
   window->height = CLAMP(window->height + dist_y, MIN_WINDOW_SIZE, UINT32_MAX);
 
+  c_log(C_LOG_DEBUG, "resize debug: window->width=%d window->height=%d", window->width, window->height);
+
   if (!cuts.pointer.is_dragging && !done) {
     c_cursor_set_shape(cuts.pointer.cur, C_CURSOR_NWSE_RESIZE);
   } else if (done) {
     c_cursor_set_shape(cuts.pointer.cur, C_CURSOR_DEFAULT);
   }
   
-  c_scene_node_update(client->node);
+  client_border_sync(client);
+  if (!client->resize_configure) c_window_activate(window);
+
   cuts.pointer.is_dragging = !done;
-
-  if (done)
-    window->states &= ~(ENUM_FLAG(XDG_TOPLEVEL_STATE_RESIZING) |
-                        ENUM_FLAG(XDG_TOPLEVEL_STATE_CONSTRAINED_LEFT) |
-                        ENUM_FLAG(XDG_TOPLEVEL_STATE_CONSTRAINED_TOP));
-  else
-    window->states |=  (ENUM_FLAG(XDG_TOPLEVEL_STATE_RESIZING) |
-                        ENUM_FLAG(XDG_TOPLEVEL_STATE_CONSTRAINED_LEFT) |
-                        ENUM_FLAG(XDG_TOPLEVEL_STATE_CONSTRAINED_TOP));
-  c_log_value(window->states, "%08b");
-
-  LAYOUT(client->mon);
 }
 
 void change_border(bind_args *args) {
@@ -2186,7 +2199,8 @@ int main() {
   c_signal_handler_add(SIGABRT, signal_handler, NULL);
 
   struct c_log_config cfg;
-  cfg.level_mask = C_LOG_INFO | C_LOG_DEBUG | C_LOG_ERROR | C_LOG_WARNING;
+  cfg.level_mask = C_LOG_INFO | C_LOG_ERROR | C_LOG_WARNING;
+  cfg.level_mask |= C_LOG_DEBUG;
   cfg.level_mask |= C_LOG_WAYLAND;
   cfg.color = 1;
   c_log_setup(&cfg);
@@ -2333,6 +2347,7 @@ mode_iter_end:
   wl_surface_listen(&cuts.surface, NULL);
 
   cuts.xdg_surface.get_toplevel = on_xdg_surface_get_toplevel;
+  cuts.xdg_surface.ack_configure = NULL;
   xdg_surface_listen(&cuts.xdg_surface, NULL);
 
   cuts.xdg_toplevel.destroy = on_xdg_toplevel_destroy;
@@ -2387,7 +2402,7 @@ mode_iter_end:
   c_wl_interface_support("wp_cursor_shape_manager_v1", NULL, NULL);
   c_wl_interface_support("wp_fractional_scale_manager_v1", NULL, NULL);
   c_wl_interface_support("zwlr_layer_shell_v1", NULL, NULL);
-  // c_wl_interface_support("wp_viewporter", NULL, NULL);
+  c_wl_interface_support("wp_viewporter", NULL, NULL);
 
   for (size_t i = 0; i < LENGTH(autostart); i++) {
     cuts.pids[i] = spawn_proc(autostart[i]);;

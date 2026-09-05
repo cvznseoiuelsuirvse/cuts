@@ -94,11 +94,18 @@ void c_xdg_surface_state_apply(struct c_xdg_surface *surface) {
   struct c_xdg_surface_state *p = &surface->pending;
   struct c_xdg_surface_state *a = &surface->active;
 
-  if (p->commited & C_XDG_SURFACE_STATE_MAX_SIZE) { a->max  = p->max;    }
-  if (p->commited & C_XDG_SURFACE_STATE_MIN_SIZE) { a->min  = p->min;    }
-  if (p->commited & C_XDG_SURFACE_STATE_GEOM)     { a->geo  = p->geo;    }
-
-  p->commited = 0;
+  if (p->commited & C_XDG_SURFACE_STATE_MAX_SIZE) {
+    a->max = p->max;
+    p->commited &= ~C_XDG_SURFACE_STATE_MAX_SIZE;
+  }
+  if (p->commited & C_XDG_SURFACE_STATE_MIN_SIZE) {
+    a->min = p->min;
+    p->commited &= ~C_XDG_SURFACE_STATE_MIN_SIZE;
+  }
+  if (p->commited & C_XDG_SURFACE_STATE_GEO) {
+    a->geo = p->geo;
+    p->commited &= ~C_XDG_SURFACE_STATE_GEO;
+  }
 }
 
 int xdg_wm_base_get_xdg_surface(struct c_wl_connection *conn, union c_wl_arg *args) {
@@ -148,7 +155,7 @@ int xdg_surface_ack_configure(struct c_wl_connection *conn, union c_wl_arg *args
     return -1;
   }
   
-  xs->acked_serial = serial;
+  xs->ack_configure = serial;
   return 0;
 }
 
@@ -196,7 +203,7 @@ int xdg_surface_set_window_geometry(struct c_wl_connection *conn, union c_wl_arg
   surface->pending.geo.width = width;
   surface->pending.geo.height = height;
 
-  surface->pending.commited |= C_XDG_SURFACE_STATE_GEOM;
+  surface->pending.commited |= C_XDG_SURFACE_STATE_GEO;
 
   return 0;
 }
