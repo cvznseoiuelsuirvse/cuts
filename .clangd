@@ -1,0 +1,8 @@
+CompileFlags:
+  Compiler: /usr/bin/gcc
+  Add: 
+      - "-xc"
+      - "-Wall"
+      - "-Wextra"
+      - "-ferror-limit=0"
+      - "-Wno-unused-parameter"
